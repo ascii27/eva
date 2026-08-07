@@ -6,24 +6,24 @@ import {
   SpaceGrotesk_400Regular,
   SpaceGrotesk_500Medium,
 } from '@expo-google-fonts/space-grotesk';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { DevControls } from '../controls/DevControls';
 import { useEcho } from '../speech/useEcho';
+import { useWakeWord } from '../speech/useWakeWord';
+import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
 import type { FaceMode, MouthOutput } from './types';
 import type { VisemeKey } from './visemes';
+import { hhmm } from '../util/time';
 
 const TRIPLE_TAP_WINDOW_MS = 800;
 const SPEAK_TEST_LINE = 'The Q3 doc is filed under Platform Planning.';
-
-function timeNow(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+const WAKE_ENABLED_KEY = 'eva.wakeEnabled.v1';
 
 export function FaceScreen() {
   const [fontsLoaded] = useFonts({
@@ -48,7 +48,7 @@ export function FaceScreen() {
   const [devVisible, setDevVisible] = useState(false);
 
   const log = useCallback((text: string) => {
-    setEntries((prev) => [...prev.slice(-19), { time: timeNow(), text }]);
+    setEntries((prev) => [...prev.slice(-19), { time: hhmm(), text }]);
   }, []);
 
   const echo = useEcho({
@@ -60,6 +60,62 @@ export function FaceScreen() {
     },
     onIssue: (message) => log(message),
   });
+
+  // Wake watching. `echoBusy` bridges the gap between claiming a round (the
+  // recognizer isn't ours anymore) and the face actually leaving idle; it
+  // clears when the round settles back to idle. Suspending on any non-idle
+  // mode also keeps the watcher off while Eva speaks — she must never wake
+  // on her own voice.
+  const [wakeEnabled, setWakeEnabled] = useState(false);
+  const [echoBusy, setEchoBusy] = useState(false);
+  const [wakeEvents, setWakeEvents] = useState<WakeEvent[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(WAKE_ENABLED_KEY).then((v) => {
+      if (v === '1') setWakeEnabled(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (mode === 'idle') setEchoBusy(false);
+  }, [mode]);
+
+  const echoRef = useRef(echo);
+  echoRef.current = echo;
+  const devVisibleRef = useRef(false);
+
+  // Every round starter — dev buttons, wake detections, and Phase 3's
+  // Eva-initiated replies — must claim the round through here, so the wake
+  // watcher stands down before useEcho's async ramp-up grabs the mic.
+  const startRound = useCallback((begin: () => void) => {
+    setEchoBusy(true);
+    begin();
+  }, []);
+
+  const onWake = useCallback(
+    (snippet: string) => {
+      log(`wake · ${snippet}`);
+      startRound(() => void echoRef.current.listen());
+      // Count refresh is cosmetic; skip the storage read unless the overlay
+      // is showing (it re-reads on every open anyway).
+      if (devVisibleRef.current) void getWakeEvents().then(setWakeEvents);
+    },
+    [log, startRound],
+  );
+
+  const wake = useWakeWord({
+    enabled: wakeEnabled,
+    suspended: echoBusy || mode !== 'idle',
+    onWake,
+    onIssue: log,
+  });
+
+  const toggleWake = useCallback(() => {
+    setWakeEnabled((v) => {
+      void AsyncStorage.setItem(WAKE_ENABLED_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
 
   // Manual mode picks abandon any in-flight speech round, like the design's pick().
   const pickMode = useCallback(
@@ -82,6 +138,11 @@ export function FaceScreen() {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    devVisibleRef.current = devVisible;
+    if (devVisible) void getWakeEvents().then(setWakeEvents);
+  }, [devVisible]);
 
   const taps = useRef<number[]>([]);
   const onHotspotTap = useCallback(() => {
@@ -117,6 +178,7 @@ export function FaceScreen() {
           width={colW}
           lastSaid={lastSaid}
           entries={entries}
+          watching={wake.status === 'watching'}
         />
       )}
 
@@ -147,13 +209,20 @@ export function FaceScreen() {
           }}
           onSpeakTest={() => {
             echo.cancel();
-            echo.say(SPEAK_TEST_LINE);
+            startRound(() => echo.say(SPEAK_TEST_LINE));
           }}
           onListen={() => {
             echo.cancel();
-            echo.listen();
+            startRound(() => void echo.listen());
           }}
           onClose={() => setDevVisible(false)}
+          wakeEnabled={wakeEnabled}
+          wakeStatus={wake.status}
+          wakeEvents={wakeEvents}
+          onToggleWake={toggleWake}
+          onClearWakeLog={() => {
+            void clearWakeEvents().then(() => setWakeEvents([]));
+          }}
         />
       )}
     </View>

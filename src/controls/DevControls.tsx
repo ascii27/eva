@@ -4,6 +4,11 @@ import { EYE_COLORS } from '../face/constants';
 import { hexToRgba } from '../face/geometry';
 import type { FaceMode, MouthOutput } from '../face/types';
 import { VIS, VISEME_KEYS, VisemeKey } from '../face/visemes';
+import type { WakeStatus } from '../speech/useWakeWord';
+import type { WakeEvent } from '../speech/wakeLog';
+import { hhmm } from '../util/time';
+
+const WAKE_LOG_SHOWN = 30;
 
 const MODES: Array<{ id: FaceMode; label: string; trigger: string }> = [
   { id: 'idle', label: 'Idle', trigger: 'default' },
@@ -31,6 +36,11 @@ interface DevControlsProps {
   onSpeakTest: () => void;
   onListen: () => void;
   onClose: () => void;
+  wakeEnabled: boolean;
+  wakeStatus: WakeStatus;
+  wakeEvents: WakeEvent[];
+  onToggleWake: () => void;
+  onClearWakeLog: () => void;
 }
 
 export function DevControls(props: DevControlsProps) {
@@ -130,6 +140,25 @@ export function DevControls(props: DevControlsProps) {
             <Btn label="Speak test" onPress={props.onSpeakTest} />
             <Btn label="Listen" onPress={props.onListen} />
           </View>
+
+          <Text style={styles.sectionLabel}>WAKE WORD</Text>
+          <Btn
+            label="Wake watching"
+            sub={props.wakeStatus}
+            active={props.wakeEnabled}
+            onPress={props.onToggleWake}
+          />
+          <View style={styles.headerRow}>
+            <Text style={styles.sectionLabel}>WAKE LOG · {props.wakeEvents.length}</Text>
+            <Pressable onPress={props.onClearWakeLog} hitSlop={12}>
+              <Text style={styles.close}>CLEAR</Text>
+            </Pressable>
+          </View>
+          {props.wakeEvents.slice(-WAKE_LOG_SHOWN).map((e, i) => (
+            <Text key={`${e.ts}-${i}`} style={styles.wakeLine} numberOfLines={1}>
+              {hhmm(e.ts)} · {e.snippet}
+            </Text>
+          ))}
         </ScrollView>
       </View>
     </View>
@@ -229,6 +258,12 @@ const styles = StyleSheet.create({
     fontFamily: 'JetBrainsMono_500Medium',
     fontSize: 9,
     letterSpacing: 0.9,
+    color: '#6f766f',
+  },
+  wakeLine: {
+    fontFamily: 'JetBrainsMono_400Regular',
+    fontSize: 10,
+    lineHeight: 16,
     color: '#6f766f',
   },
 });

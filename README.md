@@ -10,7 +10,8 @@ This repo is the **client**. Eva's reasoning, her Notion stewardship, and the Sl
 - ✅ Full state vocabulary (idle / listening / thinking / speaking / alert / confused / pleased), autonomous blink + late-night yawn, 13-viseme lip-sync mouth with waveform fallback
 - ✅ On-device TTS (`expo-speech`) and on-device STT (`expo-speech-recognition` with `requiresOnDeviceRecognition` — the app refuses to listen if on-device recognition is unsupported rather than sending audio to the network)
 - ✅ Echo loop for verification: listen → thinking → speak the transcript back
-- ⬜ Wake word (Phase 2), live Eva over Slack (Phase 3), appliance hardening (Phase 4)
+- 🔶 Wake word "Hey Eva" (Phase 2): implemented — continuous on-device recognition with fuzzy phrase matching (Porcupine's free tier was discontinued June 2026), wake-event log for false-trigger measurement; device verification pending
+- ⬜ Live Eva over Slack (Phase 3), appliance hardening (Phase 4)
 
 ## Development
 
@@ -47,6 +48,7 @@ Device setup, one-time, in iOS Settings:
 1. Triple-tap top-left → **Listen** → say something → Eva should think, then echo it back, then look pleased.
 2. **Airplane-mode test** (the privacy invariant): with all radios off, Listen and Speak test must both still work. If STT errors offline, the on-device model isn't installed — check dictation language settings.
 3. Leave it on the desk: eyes should drift and blink on their own, and after 22:00 the face starts yawning.
+4. **Wake word**: in the overlay, enable **Wake watching** (persists across relaunches; side column shows `EVA · WATCHING` while idle). Say "Hey Eva", pause, then speak — the face pops to listening, echoes the sentence back, and resumes watching. Each detection lands in the overlay's WAKE LOG with a timestamp and the transcript snippet that triggered it; for the false-trigger measurement, clear the log in the morning and classify the day's entries in the evening. A Speak-test line containing "Hey Eva" must *not* trigger a wake (watching suspends whenever Eva isn't idle).
 
 ## Architecture
 
