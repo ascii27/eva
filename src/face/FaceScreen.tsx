@@ -11,6 +11,9 @@ import { useFonts } from 'expo-font';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { DevControls } from '../controls/DevControls';
+import { SlackPairing } from '../controls/SlackPairing';
+import { speakableFromMrkdwn } from '../slack/sanitize';
+import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
 import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
@@ -46,10 +49,17 @@ export function FaceScreen() {
   const [blinkNonce, setBlinkNonce] = useState(0);
   const [yawnNonce, setYawnNonce] = useState(0);
   const [devVisible, setDevVisible] = useState(false);
+  const [pairingVisible, setPairingVisible] = useState(false);
 
   const log = useCallback((text: string) => {
     setEntries((prev) => [...prev.slice(-19), { time: hhmm(), text }]);
   }, []);
+
+  const slack = useSlack({
+    // Eva messages that didn't answer a pending ask: transcript only, never
+    // spoken — the alert surfacing rules are Phase 4.
+    onUnsolicited: (ev) => log(`eva · ${speakableFromMrkdwn(ev.text ?? '')}`),
+  });
 
   const echo = useEcho({
     setMode,
@@ -59,7 +69,23 @@ export function FaceScreen() {
       log(`said · ${text}`);
     },
     onIssue: (message) => log(message),
+    ask: slack.status === 'unpaired' ? undefined : slack.ask,
+    onLatency: (line) => {
+      log(line);
+      console.log(`[latency] ${line}`);
+    },
   });
+
+  // Connection breadcrumbs on transitions only — retries stay quiet.
+  const prevSlackStatus = useRef<SlackStatus | null>(null);
+  useEffect(() => {
+    const prev = prevSlackStatus.current;
+    prevSlackStatus.current = slack.status;
+    if (prev === null || slack.status === 'connecting') return;
+    if (slack.status === 'connected') log('slack · connected');
+    else if (slack.status === 'disconnected') log('slack · offline (retrying)');
+    else log('slack · unpaired');
+  }, [slack.status, log]);
 
   // Wake watching. `echoBusy` bridges the gap between claiming a round (the
   // recognizer isn't ours anymore) and the face actually leaving idle; it
@@ -95,7 +121,7 @@ export function FaceScreen() {
   const onWake = useCallback(
     (snippet: string) => {
       log(`wake · ${snippet}`);
-      startRound(() => void echoRef.current.listen());
+      startRound(() => void echoRef.current.listen(Date.now()));
       // Count refresh is cosmetic; skip the storage read unless the overlay
       // is showing (it re-reads on every open anyway).
       if (devVisibleRef.current) void getWakeEvents().then(setWakeEvents);
@@ -179,6 +205,7 @@ export function FaceScreen() {
           lastSaid={lastSaid}
           entries={entries}
           watching={wake.status === 'watching'}
+          connection={slack.status}
         />
       )}
 
@@ -223,7 +250,19 @@ export function FaceScreen() {
           onClearWakeLog={() => {
             void clearWakeEvents().then(() => setWakeEvents([]));
           }}
+          slackStatus={slack.status}
+          onSlackPair={() => setPairingVisible(true)}
+          onSlackReconnect={slack.reconnect}
+          onAsk={(text) => {
+            echo.cancel();
+            log(`asked · ${text}`);
+            startRound(() => echo.ask(text));
+          }}
         />
+      )}
+
+      {pairingVisible && fontsLoaded && (
+        <SlackPairing onPair={slack.pair} onForget={slack.unpair} onClose={() => setPairingVisible(false)} />
       )}
     </View>
   );

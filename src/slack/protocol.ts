@@ -26,7 +26,7 @@ export interface RoundMarks {
 
 export type AskResult =
   | { kind: 'reply'; raw: string; speakable: string; postedAt: number; replyAt: number }
-  | { kind: 'timeout' }
+  | { kind: 'timeout'; postedAt: number }
   | { kind: 'offline' }
   | { kind: 'error'; message: string };
 
