@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { speakableFromMrkdwn } from '../sanitize';
+import { isToolEcho, speakableFromMrkdwn } from '../sanitize';
 
 describe('speakableFromMrkdwn', () => {
   it('passes plain conversational text through untouched', () => {
@@ -71,4 +71,31 @@ describe('speakableFromMrkdwn', () => {
     const input = '*Tomorrow:*\n• 9am — standup\n• 11am — 1:1 with <@U0AAAAAAA>\nDetails in <https://example.com/cal|your calendar> :calendar:';
     expect(speakableFromMrkdwn(input)).toBe('Tomorrow: 9am — standup. 11am — 1:1 with. Details in your calendar');
   });
+});
+
+describe('isToolEcho', () => {
+  it('flags a terminal echo whose only speech is a label', () => {
+    expect(isToolEcho(":computer: terminal\n```\nTZ=Asia/Tokyo date '+%Y-%m-%d %H:%M'\n```")).toBe(true);
+  });
+
+  it('flags a bare code block', () => {
+    expect(isToolEcho('```\nconst x = 1;\n```')).toBe(true);
+  });
+
+  it('flags a message that sanitizes to nothing', () => {
+    expect(isToolEcho(':tada:')).toBe(true);
+  });
+
+  it('keeps a real answer', () => {
+    expect(isToolEcho('It’s 2026-08-07 23:29:32 JST in Tokyo right now.')).toBe(false);
+  });
+
+  it('keeps a short answer with no code fence', () => {
+    expect(isToolEcho('Done.')).toBe(false);
+  });
+
+  it('keeps a substantial answer that happens to include code', () => {
+    expect(isToolEcho('Run this in your shell to fix the clock:\n```\nsudo sntp -sS time.apple.com\n```')).toBe(false);
+  });
+
 });

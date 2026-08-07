@@ -13,10 +13,12 @@ import {
   SlackConfig,
 } from './config';
 import { isEvaReply, isSelf, type AskResult, type MessageEvent } from './protocol';
-import { speakableFromMrkdwn } from './sanitize';
+import { isToolEcho, speakableFromMrkdwn } from './sanitize';
 import { SlackSocket } from './socket';
 
-export const ASK_TIMEOUT_MS = 45_000;
+// Sized to Eva's observed real-world latency (50s+ when cold) — retune down
+// once her side answers the voice surface faster.
+export const ASK_TIMEOUT_MS = 90_000;
 
 export type SlackStatus = 'unpaired' | 'disconnected' | 'connecting' | 'connected';
 
@@ -74,6 +76,9 @@ export function useSlack({ onUnsolicited, onIssue }: UseSlackOptions = {}) {
       if (!cfg || !p) return false;
       if (!isEvaReply(ev, { channelId: cfg.channelId, evaUserId: cfg.evaUserId, askTs: p.askTs })) return false;
       const raw = ev.text ?? '';
+      // Terminal echoes and other tool noise precede Eva's real answer —
+      // let them fall through to the transcript and keep waiting.
+      if (isToolEcho(raw)) return false;
       settlePending({
         kind: 'reply',
         raw,

@@ -173,6 +173,21 @@ export function FaceScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Headless Slack round trip: EXPO_PUBLIC_ASK_AUTOTEST="question" asks Eva
+  // once after launch (waits out env pairing + socket connect first).
+  const askTested = useRef(false);
+  React.useEffect(() => {
+    const question = process.env.EXPO_PUBLIC_ASK_AUTOTEST;
+    if (!question || askTested.current) return;
+    askTested.current = true;
+    const id = setTimeout(() => {
+      log(`asked · ${question}`);
+      startRound(() => echoRef.current.ask(question));
+    }, 8000);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     devVisibleRef.current = devVisible;
     if (devVisible) void getWakeEvents().then(setWakeEvents);

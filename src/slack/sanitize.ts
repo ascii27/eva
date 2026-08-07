@@ -21,6 +21,18 @@ function replaceAngleToken(body: string): string {
   return label ?? ''; // links: speak the label, never the url
 }
 
+/**
+ * True for messages that are tool noise rather than an answer — Eva prefixes
+ * real replies with terminal echoes (":computer: terminal" + a code block)
+ * whose entire speech content is a stray label. A pending ask should skip
+ * these and wait for the substantive message that follows.
+ */
+export function isToolEcho(raw: string): boolean {
+  const speakable = speakableFromMrkdwn(raw);
+  if (!speakable) return true;
+  return speakable.length < 12 && raw.includes('```');
+}
+
 export function speakableFromMrkdwn(raw: string): string {
   let text = raw.replace(CODE_BLOCK_RE, '');
   // Unwrap twice so nested emphasis (`*_x_*`) fully unwraps.
