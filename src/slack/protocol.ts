@@ -75,6 +75,8 @@ export function isSelf(ev: MessageEvent, botUserId: string): boolean {
   return ev.user === botUserId || (!ev.user && !!ev.bot_id);
 }
 
+// Cap low: this is a home appliance and apps.connections.open is cheap, so
+// during an outage the link should come back within ~15s of the network.
 export function backoffDelay(attempt: number): number {
-  return Math.min(1000 * 2 ** attempt, 30_000);
+  return Math.min(1000 * 2 ** attempt, 15_000);
 }

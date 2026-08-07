@@ -112,10 +112,11 @@ describe('isSelf', () => {
 });
 
 describe('backoffDelay', () => {
-  it('doubles from one second and caps at thirty', () => {
+  it('doubles from one second and caps at fifteen', () => {
     expect(backoffDelay(0)).toBe(1000);
     expect(backoffDelay(1)).toBe(2000);
     expect(backoffDelay(3)).toBe(8000);
-    expect(backoffDelay(10)).toBe(30_000);
+    expect(backoffDelay(4)).toBe(15_000);
+    expect(backoffDelay(10)).toBe(15_000);
   });
 });

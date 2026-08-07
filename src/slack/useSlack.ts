@@ -192,6 +192,9 @@ export function useSlack({ onUnsolicited, onIssue }: UseSlackOptions = {}) {
       // Posting rides HTTPS, not the socket, so a briefly-'connecting' link
       // (Slack's routine graceful refreshes) must not drop the question.
       if (!cfg || statusRef.current === 'unpaired' || statusRef.current === 'disconnected') {
+        // Being spoken to is the strongest liveness signal there is — skip
+        // whatever backoff is pending and dial right now.
+        if (statusRef.current === 'disconnected') void socket.current?.reconnectNow();
         return { kind: 'offline' };
       }
       settlePending({ kind: 'error', message: 'superseded by a newer ask' });
