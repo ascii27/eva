@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Eva",
+    "slug": "eva",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "dev.galloway.eva",
+      "infoPlist": {
+        "UIRequiresFullScreen": true
+      }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-dev-client",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Eva listens for your voice so you can talk to her hands-free.",
+          "speechRecognitionPermission": "Eva transcribes your speech on-device; audio never leaves this iPhone."
+        }
+      ]
+    ]
+  }
+}
