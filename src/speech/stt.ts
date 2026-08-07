@@ -74,19 +74,36 @@ export function addListeners(ev: SttEvents): () => void {
       const best = e.results[0];
       if (best) ev.onResult({ transcript: best.transcript, confidence: best.confidence, isFinal: e.isFinal });
     }),
-    m.addListener('error', (e) => ev.onError(e.error, e.message)),
-    m.addListener('end', () => ev.onEnd()),
+    m.addListener('error', (e) => {
+      if (__DEV__) console.log(`[stt] error ${e.error} (native ${e.code ?? '?'}): ${e.message}`);
+      ev.onError(e.error, e.message);
+    }),
+    m.addListener('end', () => {
+      if (__DEV__) console.log('[stt] end');
+      ev.onEnd();
+    }),
   ];
   return () => subs.forEach((s) => s.remove());
 }
 
 export function startListening(): void {
+  if (__DEV__) console.log('[stt] start');
   getStt()?.ExpoSpeechRecognitionModule.start({
     lang: 'en-US',
     interimResults: true,
     requiresOnDeviceRecognition: true,
     addsPunctuation: true,
     continuous: false,
+    iosTaskHint: 'dictation',
+    // The library's default session mode is 'measurement', which disables
+    // system audio processing and is prone to activation interruptions right
+    // after an AVSpeechSynthesizer (TTS) session winds down. 'default' is the
+    // forgiving choice for a device that alternates speaking and listening.
+    iosCategory: {
+      category: 'playAndRecord',
+      categoryOptions: ['defaultToSpeaker', 'allowBluetooth'],
+      mode: 'default',
+    },
   });
 }
 

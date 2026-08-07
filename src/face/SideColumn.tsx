@@ -71,8 +71,12 @@ export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries }: Side
 
       <View style={{ marginTop: 'auto', gap: 6 * k }}>
         <Text style={[styles.sectionLabel, { fontSize: 9 * k, letterSpacing: 1.26 * k }]}>TRANSCRIPT</Text>
-        {entries.slice(-4).map((e, i) => (
-          <Text key={i} style={[styles.logLine, { fontSize: 11 * k, lineHeight: 17.6 * k }]} numberOfLines={1}>
+        {entries.slice(-4).map((e, i, all) => (
+          <Text
+            key={i}
+            style={[styles.logLine, { fontSize: 11 * k, lineHeight: 17.6 * k }]}
+            numberOfLines={i === all.length - 1 ? 4 : 1}
+          >
             {e.time} · {e.text}
           </Text>
         ))}
