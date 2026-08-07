@@ -8,7 +8,9 @@
 const CODE_BLOCK_RE = /```[\s\S]*?```/g;
 const INLINE_RE = /([*_~`])([^*_~`\n]+)\1/g;
 const ANGLE_TOKEN_RE = /<([^<>\n]+)>/g;
-const EMOJI_RE = /:[a-z0-9_+\-]+:/g;
+// Requires one non-digit so clock times ("23:52:26") survive; loses only
+// the rare all-numeric codes like :100:.
+const EMOJI_RE = /:[0-9]*[a-z_+\-][a-z0-9_+\-]*:/g;
 const BULLET_RE = /^(?:[•\-*]|\d+[.)])\s+/;
 const QUOTE_RE = /^>\s?/;
 const ENDS_PUNCTUATED_RE = /[.!?…:;,]$/;

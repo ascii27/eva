@@ -59,6 +59,12 @@ describe('speakableFromMrkdwn', () => {
     expect(speakableFromMrkdwn('done :tada: nicely :thumbsup:')).toBe('done nicely');
   });
 
+  it('does not mistake clock times for emoji codes', () => {
+    expect(speakableFromMrkdwn('It’s 23:52:26 JST in Tokyo right now.')).toBe(
+      'It’s 23:52:26 JST in Tokyo right now.',
+    );
+  });
+
   it('unescapes html entities', () => {
     expect(speakableFromMrkdwn('research &amp; development &lt;3 &gt;')).toBe('research & development <3 >');
   });
