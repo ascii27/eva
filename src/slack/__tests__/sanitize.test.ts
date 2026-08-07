@@ -88,6 +88,17 @@ describe('isToolEcho', () => {
     expect(isToolEcho('```\nconst x = 1;\n```')).toBe(true);
   });
 
+  it('flags emoji-labeled tool traces regardless of length', () => {
+    expect(isToolEcho(':books: skill_view: "hermes-agent"\n:computer: terminal\n```\nTZ=Asia/Tokyo date\n```')).toBe(
+      true,
+    );
+  });
+
+  it('flags emoji-labeled gateway status notices', () => {
+    expect(isToolEcho(':warning: Gateway restarting — Your current task will be interrupted.')).toBe(true);
+    expect(isToolEcho(':recycle: Gateway online — Hermes is back and ready.')).toBe(true);
+  });
+
   it('flags a message that sanitizes to nothing', () => {
     expect(isToolEcho(':tada:')).toBe(true);
   });

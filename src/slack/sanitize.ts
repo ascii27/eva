@@ -24,12 +24,14 @@ function replaceAngleToken(body: string): string {
 }
 
 /**
- * True for messages that are tool noise rather than an answer — Eva prefixes
- * real replies with terminal echoes (":computer: terminal" + a code block)
- * whose entire speech content is a stray label. A pending ask should skip
- * these and wait for the substantive message that follows.
+ * True for messages that are tool noise rather than an answer. Eva's system
+ * register consistently opens with an emoji-code label (":computer: terminal",
+ * ":books: skill_view: …", ":warning: Gateway restarting…") while her
+ * conversational answers open with plain prose — that prefix is the signature.
+ * A pending ask should skip these and wait for the substantive message.
  */
 export function isToolEcho(raw: string): boolean {
+  if (/^\s*:[a-z0-9_+\-]+:/.test(raw)) return true;
   const speakable = speakableFromMrkdwn(raw);
   if (!speakable) return true;
   return speakable.length < 12 && raw.includes('```');
