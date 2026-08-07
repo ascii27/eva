@@ -3,6 +3,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { hexToRgba } from './geometry';
 import type { FaceMode } from './types';
+import type { SlackStatus } from '../slack/useSlack';
 import { hhmm } from '../util/time';
 
 /** Per-mode "Last said" placeholder, from the design; real utterances override. */
@@ -30,11 +31,24 @@ interface SideColumnProps {
   entries: TranscriptEntry[];
   /** Wake watching is live — shown while the face is otherwise idle. */
   watching?: boolean;
+  /** Real Slack link state — drives the label and dot. */
+  connection: SlackStatus;
 }
 
-export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries, watching }: SideColumnProps) {
+export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries, watching, connection }: SideColumnProps) {
   const connLabel =
-    mode === 'alert' ? 'Eva · initiating' : watching && mode === 'idle' ? 'Eva · watching' : 'Eva · connected';
+    mode === 'alert'
+      ? 'Eva · initiating'
+      : connection === 'connected'
+        ? watching && mode === 'idle'
+          ? 'Eva · watching'
+          : 'Eva · connected'
+        : connection === 'connecting'
+          ? 'Eva · connecting'
+          : connection === 'disconnected'
+            ? 'Eva · offline'
+            : 'Eva · not paired';
+  const dotLive = connection === 'connected';
   return (
     <View style={[styles.root, { width, padding: 24 * k, paddingVertical: 26 * k }]}>
       <LinearGradient
@@ -49,9 +63,9 @@ export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries, watchi
             width: 6 * k,
             height: 6 * k,
             borderRadius: 3 * k,
-            backgroundColor: eyeColor,
-            shadowColor: eyeColor,
-            shadowOpacity: 0.7,
+            backgroundColor: dotLive ? eyeColor : '#4e5a54',
+            shadowColor: dotLive ? eyeColor : 'transparent',
+            shadowOpacity: dotLive ? 0.7 : 0,
             shadowRadius: 4 * k,
             shadowOffset: { width: 0, height: 0 },
           }}

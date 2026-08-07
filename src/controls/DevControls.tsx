@@ -1,9 +1,10 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { EYE_COLORS } from '../face/constants';
 import { hexToRgba } from '../face/geometry';
 import type { FaceMode, MouthOutput } from '../face/types';
 import { VIS, VISEME_KEYS, VisemeKey } from '../face/visemes';
+import type { SlackStatus } from '../slack/useSlack';
 import type { WakeStatus } from '../speech/useWakeWord';
 import type { WakeEvent } from '../speech/wakeLog';
 import { hhmm } from '../util/time';
@@ -41,10 +42,22 @@ interface DevControlsProps {
   wakeEvents: WakeEvent[];
   onToggleWake: () => void;
   onClearWakeLog: () => void;
+  slackStatus: SlackStatus;
+  onSlackPair: () => void;
+  onSlackReconnect: () => void;
+  /** Typed question → full Eva round trip (the simulator path — no STT needed). */
+  onAsk: (text: string) => void;
 }
 
 export function DevControls(props: DevControlsProps) {
   const { eyeColor } = props;
+  const [askText, setAskText] = useState('');
+  const submitAsk = () => {
+    const text = askText.trim();
+    if (!text) return;
+    setAskText('');
+    props.onAsk(text);
+  };
   const activeStyle = {
     borderColor: hexToRgba(eyeColor, 0.5),
     backgroundColor: hexToRgba(eyeColor, 0.12),
@@ -139,6 +152,25 @@ export function DevControls(props: DevControlsProps) {
           <View style={styles.row}>
             <Btn label="Speak test" onPress={props.onSpeakTest} />
             <Btn label="Listen" onPress={props.onListen} />
+          </View>
+
+          <Text style={styles.sectionLabel}>SLACK</Text>
+          <View style={styles.row}>
+            <Btn label="Pair" sub={props.slackStatus} onPress={props.onSlackPair} />
+            <Btn label="Reconnect" onPress={props.onSlackReconnect} />
+          </View>
+          <View style={styles.row}>
+            <TextInput
+              style={styles.askInput}
+              value={askText}
+              onChangeText={setAskText}
+              placeholder="type a question for Eva"
+              placeholderTextColor="#4e5a54"
+              autoCapitalize="none"
+              onSubmitEditing={submitAsk}
+              returnKeyType="send"
+            />
+            <Btn label="Ask" onPress={submitAsk} />
           </View>
 
           <Text style={styles.sectionLabel}>WAKE WORD</Text>
@@ -265,5 +297,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     lineHeight: 16,
     color: '#6f766f',
+  },
+  askInput: {
+    flexGrow: 1,
+    flexShrink: 1,
+    fontFamily: 'JetBrainsMono_400Regular',
+    fontSize: 11,
+    color: '#d6efe4',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2a2d2a',
+    backgroundColor: '#101210',
   },
 });
