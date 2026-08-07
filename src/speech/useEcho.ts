@@ -110,6 +110,10 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue }: EchoHand
       settle('confused', CONFUSED_BEAT_MS);
       return;
     }
+    // Give the TTS audio session time to fully deactivate — starting the
+    // recognizer mid-teardown surfaces as an "interrupted" error on iOS.
+    stopSpeaking();
+    await new Promise((r) => setTimeout(r, 300));
     transcript.current = '';
     confidence.current = -1;
     active.current = true;
