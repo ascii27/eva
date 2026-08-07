@@ -1,0 +1,28 @@
+{
+  "display_information": {
+    "name": "Eva Companion",
+    "description": "Voice bridge for the Eva desk device."
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "eva-companion",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["chat:write", "channels:history", "channels:read", "groups:history", "groups:read"]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "bot_events": ["message.channels", "message.groups"]
+    },
+    "interactivity": {
+      "is_enabled": false
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}
