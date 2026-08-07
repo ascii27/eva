@@ -71,6 +71,18 @@ export function FaceScreen() {
     [echo],
   );
 
+  // Headless TTS check: EXPO_PUBLIC_TTS_AUTOTEST=1 speaks the test line once
+  // shortly after launch, so the pipeline can be exercised without touching
+  // the screen (used when driving the simulator from the CLI).
+  const autoTested = useRef(false);
+  React.useEffect(() => {
+    if (!process.env.EXPO_PUBLIC_TTS_AUTOTEST || autoTested.current) return;
+    autoTested.current = true;
+    const id = setTimeout(() => echo.say(SPEAK_TEST_LINE), 4000);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const taps = useRef<number[]>([]);
   const onHotspotTap = useCallback(() => {
     const now = Date.now();

@@ -1,20 +1,36 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 
-const VOICE_KEY = 'eva.voiceId';
+// v2: v1 wrongly persisted auto-picks; bumping the key discards those.
+const VOICE_KEY = 'eva.voiceId.v2';
 
 /**
- * One system voice is canonically Eva's. Prefer the persisted pick; otherwise
- * the first Enhanced-quality English voice on the device (Enhanced voices are
- * a one-time download in iOS Settings — a device setup step, not an app one).
+ * One system voice is canonically Eva's. An explicitly chosen voice (setVoice)
+ * is persisted and wins; otherwise re-rank on every call so that downloading
+ * an Enhanced voice later (a one-time step in iOS Settings) upgrades Eva
+ * automatically instead of being shadowed by an earlier auto-pick.
  */
 export async function resolveVoice(): Promise<string | undefined> {
   const voices = await Speech.getAvailableVoicesAsync();
   const stored = await AsyncStorage.getItem(VOICE_KEY);
   if (stored && voices.some((v) => v.identifier === stored)) return stored;
-  const english = voices.filter((v) => v.language?.startsWith('en'));
-  const pick = english.find((v) => v.quality === Speech.VoiceQuality.Enhanced) ?? english[0];
-  if (pick) await AsyncStorage.setItem(VOICE_KEY, pick.identifier);
+  // Preference: Enhanced first, then real (non-novelty) voices, then en-US.
+  // Novelty voices (Trinoids, Zarvox, …) ship on every iPhone under the legacy
+  // synthesis bundle and report Default quality like real voices do.
+  const novelty = (v: Speech.Voice) => v.identifier?.startsWith('com.apple.speech.synthesis.voice');
+  const english = voices
+    .filter((v) => v.language?.startsWith('en'))
+    .sort((a, b) => {
+      const rank = (v: Speech.Voice) =>
+        (v.quality === Speech.VoiceQuality.Enhanced ? 0 : 4) + (novelty(v) ? 2 : 0) + (v.language === 'en-US' ? 0 : 1);
+      return rank(a) - rank(b);
+    });
+  const pick = english[0];
+  if (__DEV__) {
+    console.log(
+      `[tts] ${voices.length} voices, ${english.length} english; picked ${pick?.name ?? 'system default'} (${pick?.quality ?? '?'})`,
+    );
+  }
   return pick?.identifier;
 }
 
@@ -36,10 +52,19 @@ export async function speak(text: string, cb: SpeakCallbacks = {}): Promise<void
   Speech.speak(text, {
     voice,
     language: 'en-US',
-    onStart: cb.onStart,
+    onStart: () => {
+      if (__DEV__) console.log('[tts] speaking:', text);
+      cb.onStart?.();
+    },
     onBoundary: cb.onBoundary ? (ev: { charIndex: number }) => cb.onBoundary!(ev.charIndex) : undefined,
-    onDone: cb.onDone,
-    onError: cb.onError,
+    onDone: () => {
+      if (__DEV__) console.log('[tts] done');
+      cb.onDone?.();
+    },
+    onError: (e) => {
+      if (__DEV__) console.log('[tts] error:', e);
+      cb.onError?.(e);
+    },
     onStopped: cb.onDone,
   });
 }
