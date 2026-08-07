@@ -59,6 +59,7 @@ export function FaceScreen() {
     // Eva messages that didn't answer a pending ask: transcript only, never
     // spoken — the alert surfacing rules are Phase 4.
     onUnsolicited: (ev) => log(`eva · ${speakableFromMrkdwn(ev.text ?? '')}`),
+    onIssue: log,
   });
 
   const echo = useEcho({
@@ -76,15 +77,22 @@ export function FaceScreen() {
     },
   });
 
-  // Connection breadcrumbs on transitions only — retries stay quiet.
-  const prevSlackStatus = useRef<SlackStatus | null>(null);
+  // Connection breadcrumbs: one line per up/down edge. Retry cycles bounce
+  // between disconnected and connecting, so tracking the last *logged* edge —
+  // not the last status — keeps an outage from flooding the transcript.
+  const linkLogged = useRef<'up' | 'down' | null>(null);
   useEffect(() => {
-    const prev = prevSlackStatus.current;
-    prevSlackStatus.current = slack.status;
-    if (prev === null || slack.status === 'connecting') return;
-    if (slack.status === 'connected') log('slack · connected');
-    else if (slack.status === 'disconnected') log('slack · offline (retrying)');
-    else log('slack · unpaired');
+    const s: SlackStatus = slack.status;
+    if (s === 'connected' && linkLogged.current !== 'up') {
+      linkLogged.current = 'up';
+      log('slack · connected');
+    } else if (s === 'disconnected' && linkLogged.current !== 'down') {
+      linkLogged.current = 'down';
+      log('slack · offline (retrying)');
+    } else if (s === 'unpaired' && linkLogged.current !== null) {
+      linkLogged.current = null;
+      log('slack · unpaired');
+    }
   }, [slack.status, log]);
 
   // Wake watching. `echoBusy` bridges the gap between claiming a round (the

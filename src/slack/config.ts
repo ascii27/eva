@@ -22,6 +22,23 @@ export const DEFAULT_EVA_USER_ID = 'U0B7PD9CWSX';
 /** #eva-direct */
 export const DEFAULT_CHANNEL_ID = 'C0B7ZEBTVK6';
 
+export interface SlackTokensInput {
+  botToken: string;
+  appToken: string;
+  channelId: string;
+}
+
+/**
+ * Dev-time token source: EXPO_PUBLIC_SLACK_* vars from .env.local (gitignored,
+ * inlined into the bundle at Metro start). Present → wins over the pairing UI.
+ */
+export function envSlackInput(): SlackTokensInput | null {
+  const botToken = process.env.EXPO_PUBLIC_SLACK_BOT_TOKEN;
+  const appToken = process.env.EXPO_PUBLIC_SLACK_APP_TOKEN;
+  if (!botToken || !appToken) return null;
+  return { botToken, appToken, channelId: process.env.EXPO_PUBLIC_SLACK_CHANNEL_ID || DEFAULT_CHANNEL_ID };
+}
+
 export async function getSlackConfig(): Promise<SlackConfig | null> {
   try {
     const raw = await AsyncStorage.getItem(SLACK_CONFIG_KEY);

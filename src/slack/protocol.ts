@@ -62,13 +62,13 @@ export interface ReplyContext {
 }
 
 export function isEvaReply(ev: MessageEvent, ctx: ReplyContext): boolean {
-  return (
-    ev.channel === ctx.channelId &&
-    ev.user === ctx.evaUserId &&
-    !ev.subtype &&
-    // Slack ts values must compare as numbers, not strings.
-    (ev.thread_ts === ctx.askTs || parseFloat(ev.ts) > parseFloat(ctx.askTs))
-  );
+  if (ev.channel !== ctx.channelId || ev.user !== ctx.evaUserId || ev.subtype) return false;
+  // A threaded message answers exactly the message it hangs off.
+  if (ev.thread_ts) return ev.thread_ts === ctx.askTs;
+  // Channel-level: any Eva message after the ask. Inherently ambiguous if Eva
+  // posts something unrelated mid-round — the real fix is threading on her
+  // side. Slack ts values must compare as numbers, not strings.
+  return parseFloat(ev.ts) > parseFloat(ctx.askTs);
 }
 
 export function isSelf(ev: MessageEvent, botUserId: string): boolean {

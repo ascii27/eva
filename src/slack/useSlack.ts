@@ -4,7 +4,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { authTest, connectionsOpen, postMessage } from './api';
-import { clearSlackConfig, DEFAULT_EVA_USER_ID, getSlackConfig, setSlackConfig, SlackConfig } from './config';
+import {
+  clearSlackConfig,
+  DEFAULT_EVA_USER_ID,
+  envSlackInput,
+  getSlackConfig,
+  setSlackConfig,
+  SlackConfig,
+} from './config';
 import { isEvaReply, isSelf, type AskResult, type MessageEvent } from './protocol';
 import { speakableFromMrkdwn } from './sanitize';
 import { SlackSocket } from './socket';
@@ -22,6 +29,8 @@ export interface PairingInput {
 export interface UseSlackOptions {
   /** Channel/Eva message that didn't answer a pending ask — transcript only. */
   onUnsolicited?: (ev: MessageEvent) => void;
+  /** Human-readable failures (env pairing, token problems…). */
+  onIssue?: (message: string) => void;
 }
 
 interface PendingAsk {
@@ -31,14 +40,14 @@ interface PendingAsk {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export function useSlack({ onUnsolicited }: UseSlackOptions = {}) {
+export function useSlack({ onUnsolicited, onIssue }: UseSlackOptions = {}) {
   const [status, setStatus] = useState<SlackStatus>('unpaired');
   const statusRef = useRef<SlackStatus>('unpaired');
   const config = useRef<SlackConfig | null>(null);
   const socket = useRef<SlackSocket | null>(null);
   const pending = useRef<PendingAsk | null>(null);
-  const callbacks = useRef({ onUnsolicited });
-  callbacks.current = { onUnsolicited };
+  const callbacks = useRef({ onUnsolicited, onIssue });
+  callbacks.current = { onUnsolicited, onIssue };
 
   const publish = useCallback((s: SlackStatus) => {
     statusRef.current = s;
@@ -53,26 +62,41 @@ export function useSlack({ onUnsolicited }: UseSlackOptions = {}) {
     p.resolve(result);
   }, []);
 
+  // Channel events seen while an ask's chat.postMessage HTTP call is still in
+  // flight — a fast Eva reply can beat the post's response, so ask() replays
+  // this buffer once it knows its own ts.
+  const recentEvents = useRef<MessageEvent[]>([]);
+
+  const settleIfReply = useCallback(
+    (ev: MessageEvent): boolean => {
+      const cfg = config.current;
+      const p = pending.current;
+      if (!cfg || !p) return false;
+      if (!isEvaReply(ev, { channelId: cfg.channelId, evaUserId: cfg.evaUserId, askTs: p.askTs })) return false;
+      const raw = ev.text ?? '';
+      settlePending({
+        kind: 'reply',
+        raw,
+        speakable: speakableFromMrkdwn(raw),
+        postedAt: p.postedAt,
+        replyAt: Date.now(),
+      });
+      return true;
+    },
+    [settlePending],
+  );
+
   const handleEvent = useCallback(
     (ev: MessageEvent) => {
       const cfg = config.current;
       if (!cfg || ev.channel !== cfg.channelId) return;
       if (isSelf(ev, cfg.botUserId)) return;
-      const p = pending.current;
-      if (p && isEvaReply(ev, { channelId: cfg.channelId, evaUserId: cfg.evaUserId, askTs: p.askTs })) {
-        const raw = ev.text ?? '';
-        settlePending({
-          kind: 'reply',
-          raw,
-          speakable: speakableFromMrkdwn(raw),
-          postedAt: p.postedAt,
-          replyAt: Date.now(),
-        });
-        return;
-      }
-      if (ev.text && !ev.subtype) callbacks.current.onUnsolicited?.(ev);
+      recentEvents.current = [...recentEvents.current.slice(-9), ev];
+      if (settleIfReply(ev)) return;
+      // Only Eva's own words reach the transcript as hers.
+      if (ev.user === cfg.evaUserId && ev.text && !ev.subtype) callbacks.current.onUnsolicited?.(ev);
     },
-    [settlePending],
+    [settleIfReply],
   );
 
   const startSocket = useCallback(
@@ -88,13 +112,42 @@ export function useSlack({ onUnsolicited }: UseSlackOptions = {}) {
     [handleEvent, publish],
   );
 
+  /** Validate both tokens, persist, connect. Returns a human-readable error or null. */
+  const pair = useCallback(
+    async (input: PairingInput): Promise<string | null> => {
+      try {
+        const { botUserId } = await authTest(input.botToken);
+        // Exercise the app token too — the socket's retry loop swallows
+        // connectionsOpen failures, so a bad xapp must be caught right here.
+        await connectionsOpen(input.appToken);
+        const cfg: SlackConfig = { ...input, evaUserId: DEFAULT_EVA_USER_ID, botUserId };
+        await setSlackConfig(cfg);
+        config.current = cfg;
+        startSocket(cfg);
+        return null;
+      } catch (e) {
+        return e instanceof Error ? e.message : String(e);
+      }
+    },
+    [startSocket],
+  );
+
   useEffect(() => {
     let alive = true;
-    void getSlackConfig().then((cfg) => {
-      if (!alive || !cfg) return;
-      config.current = cfg;
-      startSocket(cfg);
-    });
+    // Token precedence: .env.local wins (the current dev workflow — editing
+    // tokens on a phone keyboard is miserable), stored pairing is the fallback.
+    const env = envSlackInput();
+    if (env) {
+      void pair(env).then((problem) => {
+        if (alive && problem) callbacks.current.onIssue?.(`Slack env pairing: ${problem}`);
+      });
+    } else {
+      void getSlackConfig().then((cfg) => {
+        if (!alive || !cfg) return;
+        config.current = cfg;
+        startSocket(cfg);
+      });
+    }
     return () => {
       alive = false;
       socket.current?.stop();
@@ -110,23 +163,6 @@ export function useSlack({ onUnsolicited }: UseSlackOptions = {}) {
     });
     return () => sub.remove();
   }, []);
-
-  /** Validate tokens, persist, connect. Returns a human-readable error or null. */
-  const pair = useCallback(
-    async (input: PairingInput): Promise<string | null> => {
-      try {
-        const { botUserId } = await authTest(input.botToken);
-        const cfg: SlackConfig = { ...input, evaUserId: DEFAULT_EVA_USER_ID, botUserId };
-        await setSlackConfig(cfg);
-        config.current = cfg;
-        startSocket(cfg);
-        return null;
-      } catch (e) {
-        return e instanceof Error ? e.message : String(e);
-      }
-    },
-    [startSocket],
-  );
 
   const unpair = useCallback(() => {
     settlePending({ kind: 'offline' });
@@ -148,7 +184,11 @@ export function useSlack({ onUnsolicited }: UseSlackOptions = {}) {
   const ask = useCallback(
     async (text: string): Promise<AskResult> => {
       const cfg = config.current;
-      if (!cfg || statusRef.current !== 'connected') return { kind: 'offline' };
+      // Posting rides HTTPS, not the socket, so a briefly-'connecting' link
+      // (Slack's routine graceful refreshes) must not drop the question.
+      if (!cfg || statusRef.current === 'unpaired' || statusRef.current === 'disconnected') {
+        return { kind: 'offline' };
+      }
       settlePending({ kind: 'error', message: 'superseded by a newer ask' });
       let askTs: string;
       try {
@@ -167,9 +207,13 @@ export function useSlack({ onUnsolicited }: UseSlackOptions = {}) {
             resolve({ kind: 'timeout', postedAt });
           }, ASK_TIMEOUT_MS),
         };
+        // A fast reply may have arrived while postMessage was in flight.
+        for (const ev of recentEvents.current) {
+          if (settleIfReply(ev)) break;
+        }
       });
     },
-    [settlePending],
+    [settleIfReply, settlePending],
   );
 
   return { status, ask, pair, unpair, reconnect };

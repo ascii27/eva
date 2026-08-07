@@ -10,7 +10,7 @@ const PLEASED_BEAT_MS = 600;
 const CONFUSED_BEAT_MS = 1200;
 const LOW_CONFIDENCE = 0.35;
 
-const TIMEOUT_LINE = "Sorry — Eva hasn't answered yet. I'll keep an eye out.";
+const TIMEOUT_LINE = "Sorry — Eva hasn't answered yet. Her reply will show up in the transcript.";
 const OFFLINE_LINE = "I can't reach Slack right now.";
 
 export interface EchoHandlers {
@@ -71,34 +71,43 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [after, setMode],
   );
 
-  const sayBack = useCallback(
-    (text: string) => {
-      setMode('thinking');
-      after(THINK_BEAT_MS, () => {
-        onSaid?.(text);
-        speak(text, {
-          onStart: () => setMode('speaking'),
-          onBoundary: () => onPulse?.(),
-          onDone: () => settle('pleased', PLEASED_BEAT_MS),
-          onError: () => settle('confused', CONFUSED_BEAT_MS),
-        });
-      });
-    },
-    [after, onPulse, onSaid, setMode, settle],
-  );
-
-  /** Speak a canned failure line, then settle through confused. */
-  const sayProblem = useCallback(
-    (text: string) => {
+  /**
+   * Speak with full face choreography, settling through `via` on completion.
+   * Every callback is bound to the current round: expo-speech reports a
+   * stopped utterance as done (tts.ts aliases onStopped → onDone), so without
+   * the guard a cancelled utterance would settle a *newer* round's face mode.
+   */
+  const deliver = useCallback(
+    (text: string, via: 'pleased' | 'confused', onStarted?: () => void) => {
+      const round = epoch.current;
+      const live = () => round === epoch.current;
       onSaid?.(text);
       speak(text, {
-        onStart: () => setMode('speaking'),
-        onBoundary: () => onPulse?.(),
-        onDone: () => settle('confused', CONFUSED_BEAT_MS),
-        onError: () => settle('confused', CONFUSED_BEAT_MS),
+        onStart: () => {
+          if (!live()) return;
+          setMode('speaking');
+          onStarted?.();
+        },
+        onBoundary: () => {
+          if (live()) onPulse?.();
+        },
+        onDone: () => {
+          if (live()) settle(via, via === 'pleased' ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+        },
+        onError: () => {
+          if (live()) settle('confused', CONFUSED_BEAT_MS);
+        },
       });
     },
     [onPulse, onSaid, setMode, settle],
+  );
+
+  const sayBack = useCallback(
+    (text: string) => {
+      setMode('thinking');
+      after(THINK_BEAT_MS, () => deliver(text, 'pleased'));
+    },
+    [after, deliver, setMode],
   );
 
   /** The Phase-3 round: post to Eva, hold thinking for the real wait, speak. */
@@ -119,26 +128,19 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       switch (result.kind) {
         case 'reply': {
           const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
-          onSaid?.(speakable);
-          speak(speakable, {
-            onStart: () => {
-              setMode('speaking');
-              handlers.current.onLatency?.(
-                formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
-              );
-            },
-            onBoundary: () => onPulse?.(),
-            onDone: () => settle('pleased', PLEASED_BEAT_MS),
-            onError: () => settle('confused', CONFUSED_BEAT_MS),
-          });
+          deliver(speakable, 'pleased', () =>
+            handlers.current.onLatency?.(
+              formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
+            ),
+          );
           break;
         }
         case 'timeout':
           handlers.current.onLatency?.(formatLatency({ ...marks, postedAt: result.postedAt }));
-          sayProblem(TIMEOUT_LINE);
+          deliver(TIMEOUT_LINE, 'confused');
           break;
         case 'offline':
-          sayProblem(OFFLINE_LINE);
+          deliver(OFFLINE_LINE, 'confused');
           break;
         case 'error':
           onIssue?.(`Slack: ${result.message}`);
@@ -146,7 +148,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
           break;
       }
     },
-    [clearTimer, onIssue, onPulse, onSaid, sayBack, sayProblem, setMode, settle],
+    [clearTimer, deliver, onIssue, sayBack, setMode, settle],
   );
 
   useEffect(() => {

@@ -52,6 +52,12 @@ interface DevControlsProps {
 export function DevControls(props: DevControlsProps) {
   const { eyeColor } = props;
   const [askText, setAskText] = useState('');
+  const submitAsk = () => {
+    const text = askText.trim();
+    if (!text) return;
+    setAskText('');
+    props.onAsk(text);
+  };
   const activeStyle = {
     borderColor: hexToRgba(eyeColor, 0.5),
     backgroundColor: hexToRgba(eyeColor, 0.12),
@@ -161,23 +167,10 @@ export function DevControls(props: DevControlsProps) {
               placeholder="type a question for Eva"
               placeholderTextColor="#4e5a54"
               autoCapitalize="none"
-              onSubmitEditing={() => {
-                const text = askText.trim();
-                if (!text) return;
-                setAskText('');
-                props.onAsk(text);
-              }}
+              onSubmitEditing={submitAsk}
               returnKeyType="send"
             />
-            <Btn
-              label="Ask"
-              onPress={() => {
-                const text = askText.trim();
-                if (!text) return;
-                setAskText('');
-                props.onAsk(text);
-              }}
-            />
+            <Btn label="Ask" onPress={submitAsk} />
           </View>
 
           <Text style={styles.sectionLabel}>WAKE WORD</Text>

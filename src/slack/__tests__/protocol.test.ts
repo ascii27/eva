@@ -69,6 +69,10 @@ describe('isEvaReply', () => {
     expect(isEvaReply(evaMsg({ thread_ts: ctx.askTs }), ctx)).toBe(true);
   });
 
+  it('rejects Eva replies threaded on some other message', () => {
+    expect(isEvaReply(evaMsg({ thread_ts: '1754400000.000500' }), ctx)).toBe(false);
+  });
+
   it('rejects messages in other channels', () => {
     expect(isEvaReply(evaMsg({ channel: 'C0OTHER' }), ctx)).toBe(false);
   });

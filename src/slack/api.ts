@@ -15,6 +15,7 @@ async function call<T extends { ok: boolean; error?: string }>(
     },
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (!res.ok) throw new Error(`${method}: http ${res.status}`);
   const data = (await res.json()) as T;
   if (!data.ok) throw new Error(`${method}: ${data.error ?? 'unknown_error'}`);
   return data;

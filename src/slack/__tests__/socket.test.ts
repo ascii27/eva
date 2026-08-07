@@ -60,6 +60,7 @@ describe('SlackSocket', () => {
         return ws;
       },
       staleMs: 5000,
+      connectTimeoutMs: 3000,
     });
   });
 
@@ -135,6 +136,49 @@ describe('SlackSocket', () => {
     await jest.advanceTimersByTimeAsync(60_000);
     expect(sockets).toHaveLength(1);
     expect(statuses[statuses.length - 1]).toBe('disconnected');
+  });
+
+  it('abandons a dial that never delivers a first frame', async () => {
+    await socket.start();
+    expect(sockets).toHaveLength(1); // ws created but hello never arrives
+    await jest.advanceTimersByTimeAsync(3000);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[0].closed).toBe(true);
+  });
+
+  it('does not leak the dead socket’s stale watchdog into the new link', async () => {
+    await socket.start();
+    sockets[0].message(HELLO); // arms the 5000ms stale watchdog
+    sockets[0].close(); // network drop at t≈0 → reconnect scheduled at 1000ms
+    await jest.advanceTimersByTimeAsync(1000);
+    expect(sockets).toHaveLength(2);
+    sockets[1].message(HELLO); // replacement link is healthy
+    await jest.advanceTimersByTimeAsync(4500); // past the dead watchdog's 5000ms mark
+    // A leaked watchdog from socket 0 would have dialed a third socket here,
+    // leaving two live ones racing each other.
+    expect(sockets).toHaveLength(2);
+    expect(sockets.filter((w) => !w.closed)).toHaveLength(1);
+  });
+
+  it('supersedes an in-flight dial instead of creating two sockets', async () => {
+    const resolvers: Array<(url: string) => void> = [];
+    const racing = new SlackSocket({
+      getUrl: () => new Promise<string>((res) => resolvers.push(res)),
+      onEvent: () => {},
+      makeWebSocket: (url) => {
+        const ws = new FakeWS(url);
+        sockets.push(ws);
+        return ws;
+      },
+    });
+    const started = racing.start();
+    const superseded = racing.reconnectNow();
+    resolvers[0]('wss://slack.test/stale');
+    resolvers[1]('wss://slack.test/fresh');
+    await Promise.all([started, superseded]);
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0].url).toContain('fresh');
+    racing.stop();
   });
 
   it('retries when fetching the url itself fails', async () => {
