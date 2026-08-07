@@ -86,14 +86,25 @@ export function addListeners(ev: SttEvents): () => void {
   return () => subs.forEach((s) => s.remove());
 }
 
-export function startListening(): void {
-  if (__DEV__) console.log('[stt] start');
+/**
+ * 'command' captures one utterance (the echo/Eva round); 'wake' is the
+ * always-on watcher: continuous session, no punctuation (the matcher strips
+ * it anyway), biased toward hearing "Eva". Both are strictly on-device.
+ */
+export type ListenProfile = 'command' | 'wake';
+
+export function startListening(profile: ListenProfile = 'command'): void {
+  if (__DEV__) console.log(`[stt] start (${profile})`);
+  const wake = profile === 'wake';
   getStt()?.ExpoSpeechRecognitionModule.start({
     lang: 'en-US',
     interimResults: true,
     requiresOnDeviceRecognition: true,
-    addsPunctuation: true,
-    continuous: false,
+    addsPunctuation: !wake,
+    continuous: wake,
+    contextualStrings: wake ? ['Eva', 'Hey Eva'] : undefined,
+    // If short-phrase pickup proves weak in the wake profile, try
+    // iosTaskHint: 'confirmation' (recommended upstream for short prompts).
     iosTaskHint: 'dictation',
     // The library's default session mode is 'measurement', which disables
     // system audio processing and is prone to activation interruptions right

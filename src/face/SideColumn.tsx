@@ -3,6 +3,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { hexToRgba } from './geometry';
 import type { FaceMode } from './types';
+import { hhmm } from '../util/time';
 
 /** Per-mode "Last said" placeholder, from the design; real utterances override. */
 export const SAID: Record<FaceMode, string> = {
@@ -27,15 +28,13 @@ interface SideColumnProps {
   width: number;
   lastSaid: string | null;
   entries: TranscriptEntry[];
+  /** Wake watching is live — shown while the face is otherwise idle. */
+  watching?: boolean;
 }
 
-function now(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries }: SideColumnProps) {
-  const connLabel = mode === 'alert' ? 'Eva · initiating' : 'Eva · connected';
+export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries, watching }: SideColumnProps) {
+  const connLabel =
+    mode === 'alert' ? 'Eva · initiating' : watching && mode === 'idle' ? 'Eva · watching' : 'Eva · connected';
   return (
     <View style={[styles.root, { width, padding: 24 * k, paddingVertical: 26 * k }]}>
       <LinearGradient
@@ -81,7 +80,7 @@ export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries }: Side
           </Text>
         ))}
         <Text style={[styles.logLine, { fontSize: 11 * k, lineHeight: 17.6 * k, color: eyeColor }]}>
-          {now()} · {mode}
+          {hhmm()} · {mode}
         </Text>
       </View>
     </View>
