@@ -180,6 +180,10 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     });
     return () => {
       unsubscribe();
+      // stopSpeaking reports the interrupted utterance as done synchronously;
+      // bump the epoch first (like cancel()) so deliver's callbacks see a dead
+      // round instead of re-arming timers on the unmounting tree.
+      epoch.current++;
       clearTimer();
       abortListening();
       stopSpeaking();

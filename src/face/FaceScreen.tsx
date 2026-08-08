@@ -14,6 +14,7 @@ import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../slack/sanitize';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
+import { initKokoro, type TtsEngineState } from '../speech/kokoro';
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
 import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
@@ -27,6 +28,30 @@ import { hhmm } from '../util/time';
 const TRIPLE_TAP_WINDOW_MS = 800;
 const SPEAK_TEST_LINE = 'The Q3 doc is filed under Platform Planning.';
 const WAKE_ENABLED_KEY = 'eva.wakeEnabled.v1';
+
+/**
+ * Single source for the Kokoro engine's user-facing wording: the transcript
+ * line (null = stay silent) and the dev-overlay engine label. Download
+ * progress is coarsened to 10% steps so the ~330MB fetch doesn't flood the
+ * transcript; the caller dedupes repeats.
+ */
+function describeTtsState(s: TtsEngineState): { line: string | null; label: string } {
+  switch (s.state) {
+    case 'downloading': {
+      const pct = Math.floor(s.progress * 10) * 10;
+      return { line: `tts · kokoro downloading ${pct}%`, label: `kokoro ${pct}%` };
+    }
+    case 'loading':
+      return { line: 'tts · kokoro loading', label: 'kokoro loading' };
+    case 'ready':
+      return { line: 'tts · kokoro ready', label: 'kokoro ready' };
+    case 'error':
+      return { line: 'tts · kokoro failed — using system voice', label: 'system voice' };
+    case 'unavailable':
+      // Expo Go / simulator without the dev build: silence, system voice covers it.
+      return { line: null, label: 'system voice' };
+  }
+}
 
 export function FaceScreen() {
   const [fontsLoaded] = useFonts({
@@ -76,6 +101,21 @@ export function FaceScreen() {
       console.log(`[latency] ${line}`);
     },
   });
+
+  // Kokoro engine bring-up: one-time model download (first run) + load, with
+  // transcript breadcrumbs.
+  const [ttsState, setTtsState] = useState<TtsEngineState>({ state: 'unavailable' });
+  const lastTtsLine = useRef<string | null>(null);
+  useEffect(() => {
+    void initKokoro((s) => {
+      setTtsState(s);
+      const { line } = describeTtsState(s);
+      if (line && line !== lastTtsLine.current) {
+        lastTtsLine.current = line;
+        log(line);
+      }
+    });
+  }, [log]);
 
   // Connection breadcrumbs: one line per up/down edge. Retry cycles bounce
   // between disconnected and connecting, so tracking the last *logged* edge —
@@ -168,7 +208,10 @@ export function FaceScreen() {
   React.useEffect(() => {
     if (!process.env.EXPO_PUBLIC_TTS_AUTOTEST || autoTested.current) return;
     autoTested.current = true;
-    const id = setTimeout(() => echo.say(SPEAK_TEST_LINE), 4000);
+    // "1" keeps the classic 4s; a larger value is a delay in ms (e.g. 12000 to
+    // let the Kokoro engine finish loading first and exercise that path).
+    const delay = Math.max(4000, Number(process.env.EXPO_PUBLIC_TTS_AUTOTEST) || 0);
+    const id = setTimeout(() => echo.say(SPEAK_TEST_LINE), delay);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -257,6 +300,7 @@ export function FaceScreen() {
             setFrozen(v);
             if (v) setOutput('mouth');
           }}
+          ttsEngine={describeTtsState(ttsState).label}
           onSpeakTest={() => {
             echo.cancel();
             startRound(() => echo.say(SPEAK_TEST_LINE));

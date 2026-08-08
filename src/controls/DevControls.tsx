@@ -36,6 +36,8 @@ interface DevControlsProps {
   onFreeze: (v: VisemeKey | null) => void;
   onSpeakTest: () => void;
   onListen: () => void;
+  /** One-line TTS engine status, e.g. "kokoro ready" or "system voice". */
+  ttsEngine: string;
   onClose: () => void;
   wakeEnabled: boolean;
   wakeStatus: WakeStatus;
@@ -148,7 +150,7 @@ export function DevControls(props: DevControlsProps) {
             ))}
           </View>
 
-          <Text style={styles.sectionLabel}>SPEECH</Text>
+          <Text style={styles.sectionLabel}>SPEECH · {props.ttsEngine}</Text>
           <View style={styles.row}>
             <Btn label="Speak test" onPress={props.onSpeakTest} />
             <Btn label="Listen" onPress={props.onListen} />
