@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { isToolEcho, speakableFromMrkdwn } from '../sanitize';
+import { isToolEcho, speakableFromMrkdwn, toolLabelFromEcho } from '../sanitize';
 
 describe('speakableFromMrkdwn', () => {
   it('passes plain conversational text through untouched', () => {
@@ -115,4 +115,30 @@ describe('isToolEcho', () => {
     expect(isToolEcho('Run this in your shell to fix the clock:\n```\nsudo sntp -sS time.apple.com\n```')).toBe(false);
   });
 
+});
+
+describe('toolLabelFromEcho', () => {
+  it('extracts the label after the emoji code', () => {
+    expect(toolLabelFromEcho(':computer: terminal\n```ls -la```')).toBe('terminal');
+  });
+
+  it('extracts underscored labels and drops the trailing colon', () => {
+    expect(toolLabelFromEcho(':books: skill_view: slack-search')).toBe('skill_view');
+  });
+
+  it('lowercases the label', () => {
+    expect(toolLabelFromEcho(':warning: Gateway restarting')).toBe('gateway');
+  });
+
+  it('tolerates leading whitespace', () => {
+    expect(toolLabelFromEcho('  :computer: terminal')).toBe('terminal');
+  });
+
+  it('returns null for plain prose', () => {
+    expect(toolLabelFromEcho('The Q3 doc is filed under Platform Planning.')).toBeNull();
+  });
+
+  it('returns null for an emoji code with nothing after it', () => {
+    expect(toolLabelFromEcho(':computer:')).toBeNull();
+  });
 });

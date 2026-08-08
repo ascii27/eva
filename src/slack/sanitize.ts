@@ -37,6 +37,21 @@ export function isToolEcho(raw: string): boolean {
   return speakable.length < 12 && raw.includes('```');
 }
 
+// First word after the tool-echo emoji prefix, e.g. ":computer: terminal …"
+// → "terminal", ":books: skill_view: …" → "skill_view".
+const TOOL_LABEL_RE = /^\s*:[a-z0-9_+\-]+:\s*([A-Za-z0-9_\-]+)/;
+
+/**
+ * The tool label of a tool-echo message (lowercased), or null when the text
+ * doesn't open with an emoji-code prefix. Callers narrating tool activity
+ * map this through their own phrase table — the label itself is an internal
+ * name (skill_view, terminal) and never spoken verbatim.
+ */
+export function toolLabelFromEcho(raw: string): string | null {
+  const m = TOOL_LABEL_RE.exec(raw);
+  return m ? m[1].toLowerCase() : null;
+}
+
 export function speakableFromMrkdwn(raw: string): string {
   let text = raw.replace(CODE_BLOCK_RE, '');
   // Unwrap twice so nested emphasis (`*_x_*`) fully unwraps.
