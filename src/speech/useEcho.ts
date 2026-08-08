@@ -98,7 +98,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       const live = () => round === epoch.current;
       speak(text, {
         onStart: () => {
-          if (live()) setMode('speaking');
+          if (live() && asideTimer.current) setMode('speaking');
         },
         onBoundary: () => {
           if (live()) onPulse?.();
@@ -231,33 +231,42 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
           if (d.say) speakAside(d.say);
         }, 1_000);
       }
-      const result = await doAsk(text);
-      if (round !== epoch.current) return; // cancelled or superseded mid-flight; owner already cleared our asides
-      clearAsides(); // before deliver(), so a settling aside can't flip the mode back
-      if (result.kind !== 'reply') {
-        convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
-      }
-      switch (result.kind) {
-        case 'reply': {
-          const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
-          deliver(speakable, 'pleased', () =>
-            handlers.current.onLatency?.(
-              formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
-            ),
-          );
-          break;
+      try {
+        const result = await doAsk(text);
+        if (round !== epoch.current) return; // cancelled or superseded mid-flight; owner already cleared our asides
+        clearAsides(); // before deliver(), so a settling aside can't flip the mode back
+        if (result.kind !== 'reply') {
+          convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
         }
-        case 'timeout':
-          handlers.current.onLatency?.(formatLatency({ ...marks, postedAt: result.postedAt }));
-          deliver(TIMEOUT_LINE, 'confused');
-          break;
-        case 'offline':
-          deliver(OFFLINE_LINE, 'confused');
-          break;
-        case 'error':
-          onIssue?.(`Slack: ${result.message}`);
-          settle('confused', CONFUSED_BEAT_MS);
-          break;
+        switch (result.kind) {
+          case 'reply': {
+            const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
+            deliver(speakable, 'pleased', () =>
+              handlers.current.onLatency?.(
+                formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
+              ),
+            );
+            break;
+          }
+          case 'timeout':
+            handlers.current.onLatency?.(formatLatency({ ...marks, postedAt: result.postedAt }));
+            deliver(TIMEOUT_LINE, 'confused');
+            break;
+          case 'offline':
+            deliver(OFFLINE_LINE, 'confused');
+            break;
+          case 'error':
+            stopSpeaking(); // a lingering or queued aside must not talk over (or hijack) the confused face
+            onIssue?.(`Slack: ${result.message}`);
+            settle('confused', CONFUSED_BEAT_MS);
+            break;
+        }
+      } finally {
+        // Safety net: an ask handler that rejects instead of resolving would
+        // otherwise leak the interval and narrate fillers forever. Idempotent
+        // with the explicit clearAsides() above; the round guard preserves
+        // the invariant that a superseded round never clears a newer one's timer.
+        if (round === epoch.current) clearAsides();
       }
     },
     [clearAsides, clearTimer, deliver, onIssue, sayBack, setMode, settle, speakAside],
