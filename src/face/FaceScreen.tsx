@@ -29,6 +29,7 @@ const TRIPLE_TAP_WINDOW_MS = 800;
 const SPEAK_TEST_LINE = 'The Q3 doc is filed under Platform Planning.';
 const WAKE_ENABLED_KEY = 'eva.wakeEnabled.v1';
 const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
+const ASIDES_ENABLED_KEY = 'eva.asidesEnabled.v1';
 
 /**
  * Single source for the Kokoro engine's user-facing wording: the transcript
@@ -81,11 +82,15 @@ export function FaceScreen() {
     setEntries((prev) => [...prev.slice(-19), { time: hhmm(), text }]);
   }, []);
 
+  // useSlack mounts before useEcho; the ref bridges tool activity to it.
+  const noteToolRef = useRef<(label: string) => void>(() => {});
+
   const slack = useSlack({
     // Eva messages that didn't answer a pending ask: transcript only, never
     // spoken — the alert surfacing rules are Phase 4.
     onUnsolicited: (ev) => log(`eva · ${speakableFromMrkdwn(ev.text ?? '')}`),
     onIssue: log,
+    onToolActivity: (label) => noteToolRef.current(label),
   });
 
   // Continuous conversation: after a reply, keep listening for follow-ups
@@ -105,6 +110,23 @@ export function FaceScreen() {
     });
   }, []);
 
+  // Thinking asides: spoken fillers + tool narration during Eva's wait.
+  // Persisted, default on.
+  const [asidesEnabled, setAsidesEnabled] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem(ASIDES_ENABLED_KEY).then((v) => {
+      if (v === '0') setAsidesEnabled(false);
+    });
+  }, []);
+
+  const toggleAsides = useCallback(() => {
+    setAsidesEnabled((v) => {
+      void AsyncStorage.setItem(ASIDES_ENABLED_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -119,7 +141,10 @@ export function FaceScreen() {
       console.log(`[latency] ${line}`);
     },
     conversation: convEnabled,
+    asides: asidesEnabled,
   });
+
+  noteToolRef.current = echo.noteToolActivity;
 
   // Kokoro engine bring-up: one-time model download (first run) + load, with
   // transcript breadcrumbs.
@@ -330,6 +355,8 @@ export function FaceScreen() {
           }}
           convEnabled={convEnabled}
           onToggleConv={toggleConv}
+          asidesEnabled={asidesEnabled}
+          onToggleAsides={toggleAsides}
           onClose={() => setDevVisible(false)}
           wakeEnabled={wakeEnabled}
           wakeStatus={wake.status}
