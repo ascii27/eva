@@ -1,14 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
+import { getTtsStatus, initKokoro, speakWithKokoro, stopKokoro } from './kokoro';
 
 // v2: v1 wrongly persisted auto-picks; bumping the key discards those.
 const VOICE_KEY = 'eva.voiceId.v2';
 
 /**
- * One system voice is canonically Eva's. An explicitly chosen voice (setVoice)
- * is persisted and wins; otherwise re-rank on every call so that downloading
- * an Enhanced voice later (a one-time step in iOS Settings) upgrades Eva
- * automatically instead of being shadowed by an earlier auto-pick.
+ * One system voice is canonically Eva's fallback (the Kokoro engine, when
+ * ready, speaks with its own baked-in voice). An explicitly chosen voice
+ * (setVoice) is persisted and wins; otherwise re-rank on every call so that
+ * downloading an Enhanced voice later (a one-time step in iOS Settings)
+ * upgrades Eva automatically instead of being shadowed by an earlier auto-pick.
  */
 export async function resolveVoice(): Promise<string | undefined> {
   const voices = await Speech.getAvailableVoicesAsync();
@@ -40,35 +42,94 @@ export async function setVoice(identifier: string): Promise<void> {
 
 export interface SpeakCallbacks {
   onStart?: () => void;
-  /** Word-boundary events from AVSpeechSynthesizer — real timing for the face. */
+  /** Word-boundary events — system (AVSpeechSynthesizer) engine only; the Kokoro path never fires it. */
   onBoundary?: (charIndex: number) => void;
   onDone?: () => void;
   onError?: (error: unknown) => void;
 }
 
+interface Utterance {
+  id: number;
+  text: string;
+  cb: SpeakCallbacks;
+  settled: boolean;
+}
+
+let seq = 0;
+let active: Utterance | null = null;
+
+const isCurrent = (u: Utterance) => active !== null && active.id === u.id;
+
+/**
+ * Terminate an utterance exactly once. Callers (useEcho) rely on every
+ * utterance — including interrupted ones — reporting done or error a single
+ * time; their epoch guard handles the rest.
+ */
+function settleUtterance(u: Utterance, fire: () => void): void {
+  if (u.settled) return;
+  u.settled = true;
+  if (isCurrent(u)) active = null;
+  fire();
+}
+
+function speakSystem(u: Utterance): Promise<void> {
+  return resolveVoice()
+    .then((voice) => {
+      if (u.settled || !isCurrent(u)) return; // superseded while resolving the voice
+      Speech.speak(u.text, {
+        voice,
+        language: 'en-US',
+        onStart: () => {
+          if (__DEV__) console.log('[tts] speaking (system):', u.text);
+          if (isCurrent(u)) u.cb.onStart?.();
+        },
+        onBoundary: u.cb.onBoundary ? (ev: { charIndex: number }) => u.cb.onBoundary!(ev.charIndex) : undefined,
+        onDone: () => settleUtterance(u, () => u.cb.onDone?.()),
+        onStopped: () => settleUtterance(u, () => u.cb.onDone?.()),
+        onError: (e) => settleUtterance(u, () => u.cb.onError?.(e)),
+      });
+    })
+    .catch((e) => settleUtterance(u, () => u.cb.onError?.(e)));
+}
+
 export async function speak(text: string, cb: SpeakCallbacks = {}): Promise<void> {
-  const voice = await resolveVoice();
-  Speech.stop();
-  Speech.speak(text, {
-    voice,
-    language: 'en-US',
-    onStart: () => {
-      if (__DEV__) console.log('[tts] speaking:', text);
-      cb.onStart?.();
-    },
-    onBoundary: cb.onBoundary ? (ev: { charIndex: number }) => cb.onBoundary!(ev.charIndex) : undefined,
-    onDone: () => {
-      if (__DEV__) console.log('[tts] done');
-      cb.onDone?.();
-    },
-    onError: (e) => {
-      if (__DEV__) console.log('[tts] error:', e);
-      cb.onError?.(e);
-    },
-    onStopped: cb.onDone,
-  });
+  stopSpeaking();
+  const u: Utterance = { id: ++seq, text, cb, settled: false };
+  active = u;
+  const status = getTtsStatus();
+  // A failed first-run download would otherwise demote the appliance to the
+  // system voice until relaunch; retrying on each spoken reply gives a natural
+  // backoff and picks Kokoro back up as soon as connectivity returns.
+  if (status.state === 'error') void initKokoro();
+  if (status.state === 'ready') {
+    if (__DEV__) console.log('[tts] speaking (kokoro):', text);
+    speakWithKokoro(text, {
+      onStart: () => {
+        if (isCurrent(u)) cb.onStart?.();
+      },
+      onDone: () => settleUtterance(u, () => cb.onDone?.()),
+      onError: (e, audioStarted) => {
+        if (u.settled) return;
+        if (audioStarted) {
+          settleUtterance(u, () => cb.onError?.(e));
+          return;
+        }
+        // Nothing audible yet — retry the same utterance on the system voice.
+        if (__DEV__) console.log('[tts] kokoro failed pre-audio, falling back:', e);
+        void speakSystem(u);
+      },
+    });
+    return;
+  }
+  await speakSystem(u);
 }
 
 export function stopSpeaking(): void {
+  const u = active;
+  active = null;
+  stopKokoro();
   Speech.stop();
+  // The system engine reports its own stop via onStopped; settling here first
+  // keeps one code path for both engines, and the settled flag dedupes.
+  if (u) settleUtterance(u, () => u.cb.onDone?.());
 }

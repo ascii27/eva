@@ -26,6 +26,16 @@
           "microphonePermission": "Eva listens for your voice so you can talk to her hands-free.",
           "speechRecognitionPermission": "Eva transcribes your speech on-device; audio never leaves this iPhone."
         }
+      ],
+      "expo-asset",
+      "react-native-audio-api",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.0"
+          }
+        }
       ]
     ],
     "extra": {
