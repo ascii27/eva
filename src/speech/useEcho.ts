@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { FaceMode } from '../face/types';
 import { formatLatency } from '../slack/latency';
 import type { AskResult } from '../slack/protocol';
+import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { speak, stopSpeaking } from './tts';
 
@@ -30,13 +31,18 @@ export interface EchoHandlers {
   ask?: (text: string) => Promise<AskResult>;
   /** Formatted round-latency line, emitted as the reply starts speaking. */
   onLatency?: (line: string) => void;
+  /**
+   * Continuous conversation: after a spoken reply on a mic-originated round,
+   * keep re-opening the mic for follow-ups until the window lapses silently.
+   */
+  conversation?: boolean;
 }
 
 /**
  * The speech round choreographer: listen on demand, then either echo the
  * transcript back (Phase 1, no `ask`) or ask Eva and speak her reply.
  */
-export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLatency }: EchoHandlers) {
+export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLatency, conversation }: EchoHandlers) {
   const active = useRef(false);
   const transcript = useRef('');
   const confidence = useRef(-1);
@@ -46,9 +52,13 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   // reply can never grab the speaker.
   const epoch = useRef(0);
   const wokeAt = useRef<number | undefined>(undefined);
+  // Follow-up window deadline (null = closed) and whether the current round
+  // originated from the mic — dev Speak/Ask rounds must never hot-mic after.
+  const convWindow = useRef<ConvWindow>(null);
+  const voiceRound = useRef(false);
   // Live handler refs for the mount-once native event subscription.
-  const handlers = useRef({ ask, onLatency });
-  handlers.current = { ask, onLatency };
+  const handlers = useRef({ ask, onLatency, conversation });
+  handlers.current = { ask, onLatency, conversation };
 
   const clearTimer = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -69,6 +79,34 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       after(ms, () => setMode('idle'));
     },
     [after, setMode],
+  );
+
+  /** Open the mic for one command session; wokeAtMs stamps wake-to-audio latency. */
+  const openMic = useCallback(
+    async (wokeAtMs?: number) => {
+      const round = ++epoch.current;
+      wokeAt.current = wokeAtMs;
+      const blocker = await ensureReady();
+      if (round !== epoch.current) return;
+      if (blocker) {
+        convWindow.current = null;
+        onIssue?.(blocker);
+        settle('confused', CONFUSED_BEAT_MS);
+        return;
+      }
+      // Give the TTS audio session time to fully deactivate — starting the
+      // recognizer mid-teardown surfaces as an "interrupted" error on iOS.
+      stopSpeaking();
+      await new Promise((r) => setTimeout(r, 300));
+      if (round !== epoch.current) return;
+      transcript.current = '';
+      confidence.current = -1;
+      active.current = true;
+      clearTimer();
+      setMode('listening');
+      startListening();
+    },
+    [clearTimer, onIssue, setMode, settle],
   );
 
   /**
@@ -92,14 +130,23 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
           if (live()) onPulse?.();
         },
         onDone: () => {
-          if (live()) settle(via, via === 'pleased' ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+          if (!live()) return;
+          if (via === 'pleased' && voiceRound.current && handlers.current.conversation) {
+            // Follow-up window: pleased beat doubles as the "your turn" cue,
+            // then re-open the mic instead of settling to idle.
+            convWindow.current = decideNext('reply-delivered', Date.now(), convWindow.current).window;
+            setMode('pleased');
+            after(PLEASED_BEAT_MS, () => void openMic());
+          } else {
+            settle(via, via === 'pleased' ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+          }
         },
         onError: () => {
           if (live()) settle('confused', CONFUSED_BEAT_MS);
         },
       });
     },
-    [onPulse, onSaid, setMode, settle],
+    [after, onPulse, onSaid, openMic, setMode, settle],
   );
 
   const sayBack = useCallback(
@@ -125,6 +172,9 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       setMode('thinking'); // held by the real round trip, not a cosmetic beat
       const result = await doAsk(text);
       if (round !== epoch.current) return; // cancelled or superseded mid-flight
+      if (result.kind !== 'reply') {
+        convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
+      }
       switch (result.kind) {
         case 'reply': {
           const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
@@ -151,6 +201,22 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [clearTimer, deliver, onIssue, sayBack, setMode, settle],
   );
 
+  /**
+   * A listen session ended with nothing usable (silence or low confidence).
+   * Inside an open follow-up window: silently re-listen or quietly drop to
+   * idle at expiry — no confused flash for ambient chatter. The confused beat
+   * stays exclusive to the wake-gated first listen, where the user explicitly
+   * addressed Eva and deserves failure feedback.
+   */
+  const onNoSpeech = useCallback(() => {
+    const inWindow = handlers.current.conversation && convWindow.current !== null;
+    const d = decideNext('empty-listen', Date.now(), inWindow ? convWindow.current : null);
+    convWindow.current = d.window;
+    if (d.next === 'listen-again') void openMic();
+    else if (inWindow) setMode('idle');
+    else settle('confused', CONFUSED_BEAT_MS);
+  }, [openMic, setMode, settle]);
+
   useEffect(() => {
     const unsubscribe = addListeners({
       onResult: (r) => {
@@ -161,7 +227,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       onError: (code, message) => {
         if (!active.current) return;
         active.current = false;
-        if (code !== 'no-speech' && code !== 'aborted') onIssue?.(`STT ${code}: ${message}`);
+        // iOS often reports a fully-silent command session as no-speech
+        // before end, so the follow-up window branch must exist here too.
+        if (code === 'no-speech') {
+          onNoSpeech();
+          return;
+        }
+        convWindow.current = null;
+        if (code !== 'aborted') onIssue?.(`STT ${code}: ${message}`);
         settle('confused', CONFUSED_BEAT_MS);
       },
       onEnd: () => {
@@ -170,7 +243,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         const text = transcript.current.trim();
         const lowConf = confidence.current >= 0 && confidence.current < LOW_CONFIDENCE;
         if (!text || lowConf) {
-          settle('confused', CONFUSED_BEAT_MS);
+          onNoSpeech();
         } else {
           onHeard?.(text);
           if (handlers.current.ask) void askEva(text);
@@ -184,6 +257,8 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       // bump the epoch first (like cancel()) so deliver's callbacks see a dead
       // round instead of re-arming timers on the unmounting tree.
       epoch.current++;
+      convWindow.current = null;
+      voiceRound.current = false;
       clearTimer();
       abortListening();
       stopSpeaking();
@@ -191,39 +266,31 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Start a listen round; wokeAtMs stamps wake-to-audio latency when set. */
+  /** Start a voice round; wokeAtMs stamps wake-to-audio latency when set. */
   const listen = useCallback(
     async (wokeAtMs?: number) => {
-      const round = ++epoch.current;
-      wokeAt.current = wokeAtMs;
-      const blocker = await ensureReady();
-      if (round !== epoch.current) return;
-      if (blocker) {
-        onIssue?.(blocker);
-        settle('confused', CONFUSED_BEAT_MS);
-        return;
-      }
-      // Give the TTS audio session time to fully deactivate — starting the
-      // recognizer mid-teardown surfaces as an "interrupted" error on iOS.
-      stopSpeaking();
-      await new Promise((r) => setTimeout(r, 300));
-      if (round !== epoch.current) return;
-      transcript.current = '';
-      confidence.current = -1;
-      active.current = true;
-      clearTimer();
-      setMode('listening');
-      startListening();
+      voiceRound.current = true;
+      convWindow.current = null;
+      await openMic(wokeAtMs);
     },
-    [clearTimer, onIssue, setMode, settle],
+    [openMic],
   );
 
   /** Speak arbitrary text with full state choreography (dev "Speak test"). */
-  const say = useCallback((text: string) => sayBack(text), [sayBack]);
+  const say = useCallback(
+    (text: string) => {
+      voiceRound.current = false;
+      convWindow.current = null;
+      sayBack(text);
+    },
+    [sayBack],
+  );
 
   /** Typed question straight to Eva — the dev/simulator round path. */
   const askDirect = useCallback(
     (text: string) => {
+      voiceRound.current = false;
+      convWindow.current = null;
       wokeAt.current = undefined;
       void askEva(text);
     },
@@ -234,6 +301,8 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   const cancel = useCallback(() => {
     epoch.current++;
     active.current = false;
+    convWindow.current = null;
+    voiceRound.current = false;
     clearTimer();
     abortListening();
     stopSpeaking();

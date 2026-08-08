@@ -28,6 +28,7 @@ import { hhmm } from '../util/time';
 const TRIPLE_TAP_WINDOW_MS = 800;
 const SPEAK_TEST_LINE = 'The Q3 doc is filed under Platform Planning.';
 const WAKE_ENABLED_KEY = 'eva.wakeEnabled.v1';
+const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
 
 /**
  * Single source for the Kokoro engine's user-facing wording: the transcript
@@ -87,6 +88,23 @@ export function FaceScreen() {
     onIssue: log,
   });
 
+  // Continuous conversation: after a reply, keep listening for follow-ups
+  // until the window lapses silently. Persisted, default on.
+  const [convEnabled, setConvEnabled] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem(CONV_ENABLED_KEY).then((v) => {
+      if (v === '0') setConvEnabled(false);
+    });
+  }, []);
+
+  const toggleConv = useCallback(() => {
+    setConvEnabled((v) => {
+      void AsyncStorage.setItem(CONV_ENABLED_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -100,6 +118,7 @@ export function FaceScreen() {
       log(line);
       console.log(`[latency] ${line}`);
     },
+    conversation: convEnabled,
   });
 
   // Kokoro engine bring-up: one-time model download (first run) + load, with
@@ -309,6 +328,8 @@ export function FaceScreen() {
             echo.cancel();
             startRound(() => void echo.listen());
           }}
+          convEnabled={convEnabled}
+          onToggleConv={toggleConv}
           onClose={() => setDevVisible(false)}
           wakeEnabled={wakeEnabled}
           wakeStatus={wake.status}
