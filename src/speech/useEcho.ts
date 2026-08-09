@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { FaceMode } from '../face/types';
 import { formatLatency } from '../slack/latency';
 import type { AskResult } from '../slack/protocol';
+import { decideAside, noteTool, openAside, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { speak, stopSpeaking } from './tts';
@@ -36,13 +37,15 @@ export interface EchoHandlers {
    * keep re-opening the mic for follow-ups until the window lapses silently.
    */
   conversation?: boolean;
+  /** Spoken asides (opener, fillers, tool narration) during the ask wait. */
+  asides?: boolean;
 }
 
 /**
  * The speech round choreographer: listen on demand, then either echo the
  * transcript back (Phase 1, no `ask`) or ask Eva and speak her reply.
  */
-export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLatency, conversation }: EchoHandlers) {
+export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLatency, conversation, asides }: EchoHandlers) {
   const active = useRef(false);
   const transcript = useRef('');
   const confidence = useRef(-1);
@@ -56,9 +59,13 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   // originated from the mic — dev Speak/Ask rounds must never hot-mic after.
   const convWindow = useRef<ConvWindow>(null);
   const voiceRound = useRef(false);
+  // Aside machinery: pure decision state + the coarse tick driving it.
+  // Non-null timer doubles as "this round still owns the thinking wait".
+  const asideState = useRef<AsideState | null>(null);
+  const asideTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   // Live handler refs for the mount-once native event subscription.
-  const handlers = useRef({ ask, onLatency, conversation });
-  handlers.current = { ask, onLatency, conversation };
+  const handlers = useRef({ ask, onLatency, conversation, asides });
+  handlers.current = { ask, onLatency, conversation, asides };
 
   const clearTimer = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -73,6 +80,45 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [clearTimer],
   );
 
+  const clearAsides = useCallback(() => {
+    if (asideTimer.current) clearInterval(asideTimer.current);
+    asideTimer.current = null;
+    asideState.current = null;
+  }, []);
+
+  /**
+   * Speak a short aside without round consequences: face flips to speaking
+   * for the utterance, then back to thinking — but only while the aside
+   * timer is still armed, so an aside interrupted by the real reply (speak()
+   * stops it, which reports done) can't stomp the reply's choreography.
+   */
+  const speakAside = useCallback(
+    (text: string) => {
+      const round = epoch.current;
+      const live = () => round === epoch.current;
+      speak(text, {
+        onStart: () => {
+          if (live() && asideTimer.current) setMode('speaking');
+        },
+        onBoundary: () => {
+          if (live()) onPulse?.();
+        },
+        onDone: () => {
+          if (live() && asideTimer.current) setMode('thinking');
+        },
+        onError: () => {
+          if (live() && asideTimer.current) setMode('thinking');
+        },
+      });
+    },
+    [onPulse, setMode],
+  );
+
+  /** Tool-echo activity from Slack; the next due aside narrates it. */
+  const noteToolActivity = useCallback((label: string) => {
+    if (asideState.current) asideState.current = noteTool(asideState.current, label);
+  }, []);
+
   const settle = useCallback(
     (via: FaceMode, ms: number) => {
       setMode(via);
@@ -85,6 +131,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   const openMic = useCallback(
     async (wokeAtMs?: number) => {
       const round = ++epoch.current;
+      clearAsides();
       wokeAt.current = wokeAtMs;
       const blocker = await ensureReady();
       if (round !== epoch.current) return;
@@ -106,7 +153,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       setMode('listening');
       startListening();
     },
-    [clearTimer, onIssue, setMode, settle],
+    [clearAsides, clearTimer, onIssue, setMode, settle],
   );
 
   /**
@@ -166,39 +213,63 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         return;
       }
       const round = ++epoch.current;
+      clearAsides();
       const heardAt = Date.now();
       const marks = { wokeAt: wokeAt.current, heardAt };
       clearTimer();
       setMode('thinking'); // held by the real round trip, not a cosmetic beat
-      const result = await doAsk(text);
-      if (round !== epoch.current) return; // cancelled or superseded mid-flight
-      if (result.kind !== 'reply') {
-        convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
+      if (handlers.current.asides) {
+        const opened = openAside(Date.now(), Math.random());
+        asideState.current = opened.state;
+        speakAside(opened.say);
+        // Coarse 1s tick; decideAside owns the real cadence. The interval
+        // (not a chained timeout) keeps ticking across long Kokoro syntheses.
+        asideTimer.current = setInterval(() => {
+          if (!asideState.current) return;
+          const d = decideAside(Date.now(), asideState.current, Math.random());
+          asideState.current = d.state;
+          if (d.say) speakAside(d.say);
+        }, 1_000);
       }
-      switch (result.kind) {
-        case 'reply': {
-          const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
-          deliver(speakable, 'pleased', () =>
-            handlers.current.onLatency?.(
-              formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
-            ),
-          );
-          break;
+      try {
+        const result = await doAsk(text);
+        if (round !== epoch.current) return; // cancelled or superseded mid-flight; owner already cleared our asides
+        clearAsides(); // before deliver(), so a settling aside can't flip the mode back
+        if (result.kind !== 'reply') {
+          convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
         }
-        case 'timeout':
-          handlers.current.onLatency?.(formatLatency({ ...marks, postedAt: result.postedAt }));
-          deliver(TIMEOUT_LINE, 'confused');
-          break;
-        case 'offline':
-          deliver(OFFLINE_LINE, 'confused');
-          break;
-        case 'error':
-          onIssue?.(`Slack: ${result.message}`);
-          settle('confused', CONFUSED_BEAT_MS);
-          break;
+        switch (result.kind) {
+          case 'reply': {
+            const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
+            deliver(speakable, 'pleased', () =>
+              handlers.current.onLatency?.(
+                formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
+              ),
+            );
+            break;
+          }
+          case 'timeout':
+            handlers.current.onLatency?.(formatLatency({ ...marks, postedAt: result.postedAt }));
+            deliver(TIMEOUT_LINE, 'confused');
+            break;
+          case 'offline':
+            deliver(OFFLINE_LINE, 'confused');
+            break;
+          case 'error':
+            stopSpeaking(); // a lingering or queued aside must not talk over (or hijack) the confused face
+            onIssue?.(`Slack: ${result.message}`);
+            settle('confused', CONFUSED_BEAT_MS);
+            break;
+        }
+      } finally {
+        // Safety net: an ask handler that rejects instead of resolving would
+        // otherwise leak the interval and narrate fillers forever. Idempotent
+        // with the explicit clearAsides() above; the round guard preserves
+        // the invariant that a superseded round never clears a newer one's timer.
+        if (round === epoch.current) clearAsides();
       }
     },
-    [clearTimer, deliver, onIssue, sayBack, setMode, settle],
+    [clearAsides, clearTimer, deliver, onIssue, sayBack, setMode, settle, speakAside],
   );
 
   /**
@@ -257,6 +328,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       // bump the epoch first (like cancel()) so deliver's callbacks see a dead
       // round instead of re-arming timers on the unmounting tree.
       epoch.current++;
+      clearAsides();
       convWindow.current = null;
       voiceRound.current = false;
       clearTimer();
@@ -300,13 +372,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   /** Abandon any in-flight listen/ask/speak and return control to the caller. */
   const cancel = useCallback(() => {
     epoch.current++;
+    clearAsides();
     active.current = false;
     convWindow.current = null;
     voiceRound.current = false;
     clearTimer();
     abortListening();
     stopSpeaking();
-  }, [clearTimer]);
+  }, [clearAsides, clearTimer]);
 
-  return { listen, say, ask: askDirect, cancel };
+  return { listen, say, ask: askDirect, cancel, noteToolActivity };
 }

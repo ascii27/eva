@@ -13,7 +13,7 @@ import {
   SlackConfig,
 } from './config';
 import { isEvaReply, isSelf, type AskResult, type MessageEvent } from './protocol';
-import { isToolEcho, speakableFromMrkdwn } from './sanitize';
+import { isToolEcho, speakableFromMrkdwn, toolLabelFromEcho } from './sanitize';
 import { SlackSocket } from './socket';
 
 // Sized to Eva's observed real-world latency (50s+ when cold) — retune down
@@ -33,6 +33,8 @@ export interface UseSlackOptions {
   onUnsolicited?: (ev: MessageEvent) => void;
   /** Human-readable failures (env pairing, token problems…). */
   onIssue?: (message: string) => void;
+  /** Tool-echo activity seen while an ask is pending (label from toolLabelFromEcho). */
+  onToolActivity?: (label: string) => void;
 }
 
 interface PendingAsk {
@@ -42,14 +44,14 @@ interface PendingAsk {
   timer: ReturnType<typeof setTimeout>;
 }
 
-export function useSlack({ onUnsolicited, onIssue }: UseSlackOptions = {}) {
+export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOptions = {}) {
   const [status, setStatus] = useState<SlackStatus>('unpaired');
   const statusRef = useRef<SlackStatus>('unpaired');
   const config = useRef<SlackConfig | null>(null);
   const socket = useRef<SlackSocket | null>(null);
   const pending = useRef<PendingAsk | null>(null);
-  const callbacks = useRef({ onUnsolicited, onIssue });
-  callbacks.current = { onUnsolicited, onIssue };
+  const callbacks = useRef({ onUnsolicited, onIssue, onToolActivity });
+  callbacks.current = { onUnsolicited, onIssue, onToolActivity };
 
   const publish = useCallback((s: SlackStatus) => {
     statusRef.current = s;
@@ -77,8 +79,12 @@ export function useSlack({ onUnsolicited, onIssue }: UseSlackOptions = {}) {
       if (!isEvaReply(ev, { channelId: cfg.channelId, evaUserId: cfg.evaUserId, askTs: p.askTs })) return false;
       const raw = ev.text ?? '';
       // Terminal echoes and other tool noise precede Eva's real answer —
-      // let them fall through to the transcript and keep waiting.
-      if (isToolEcho(raw)) return false;
+      // surface them as activity, let them fall through to the transcript,
+      // and keep waiting.
+      if (isToolEcho(raw)) {
+        callbacks.current.onToolActivity?.(toolLabelFromEcho(raw) ?? 'tool');
+        return false;
+      }
       settlePending({
         kind: 'reply',
         raw,
