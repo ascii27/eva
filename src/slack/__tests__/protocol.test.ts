@@ -95,6 +95,29 @@ describe('isEvaReply', () => {
     // numeric comparison of the fractional part as a whole float.
     expect(isEvaReply(evaMsg({ ts: '1754500000.20' }), { ...ctx, askTs: '1754500000.000100' })).toBe(true);
   });
+
+  describe('threaded ask (answering one of Eva’s proactive messages)', () => {
+    // We posted into thread ROOT, so our own ts is neither the root nor what
+    // Eva's reply hangs off — only askThreadTs can match it.
+    const ROOT = '1754400000.000900';
+    const threaded = { ...ctx, askThreadTs: ROOT };
+
+    it('accepts her reply in the same thread, after ours', () => {
+      expect(isEvaReply(evaMsg({ thread_ts: ROOT }), threaded)).toBe(true);
+    });
+
+    it('rejects an earlier message in the same thread', () => {
+      expect(isEvaReply(evaMsg({ thread_ts: ROOT, ts: '1754499999.000100' }), threaded)).toBe(false);
+    });
+
+    it('rejects replies in a different thread', () => {
+      expect(isEvaReply(evaMsg({ thread_ts: '1754400000.000111' }), threaded)).toBe(false);
+    });
+
+    it('rejects channel-level messages while the ask is threaded', () => {
+      expect(isEvaReply(evaMsg(), threaded)).toBe(false);
+    });
+  });
 });
 
 describe('isSelf', () => {

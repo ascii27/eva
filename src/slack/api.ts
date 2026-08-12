@@ -30,10 +30,17 @@ export async function connectionsOpen(appToken: string): Promise<string> {
   return data.url;
 }
 
-export async function postMessage(botToken: string, channel: string, text: string): Promise<{ ts: string }> {
+/** `threadTs` (a thread root) keeps the exchange inside a thread Eva started. */
+export async function postMessage(
+  botToken: string,
+  channel: string,
+  text: string,
+  threadTs?: string,
+): Promise<{ ts: string }> {
   const data = await call<{ ok: boolean; error?: string; ts: string }>('chat.postMessage', botToken, {
     channel,
     text,
+    ...(threadTs ? { thread_ts: threadTs } : {}),
   });
   return { ts: data.ts };
 }
