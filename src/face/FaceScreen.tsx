@@ -117,7 +117,8 @@ export function FaceScreen() {
 
   const slack = useSlack({
     onEvaMessage: (ev, settledAnAsk) => {
-      log(`eva · ${speakableFromMrkdwn(ev.text ?? '')}`);
+      // An answer already reaches the transcript as `said ·` when it's spoken.
+      if (!settledAnAsk) log(`eva · ${speakableFromMrkdwn(ev.text ?? '')}`);
       const bot = botUserIdRef.current;
       if (!bot) return;
       // Fold every message, settled or not: an adopted thread's clock has to
