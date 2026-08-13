@@ -59,10 +59,19 @@ export interface ReplyContext {
   channelId: string;
   evaUserId: string;
   askTs: string;
+  /**
+   * Thread root the ask was posted into, when it was threaded (an answer to
+   * one of Eva's proactive messages). Her reply then carries the *root's* ts,
+   * not ours, so the plain threaded rule below can never match it.
+   */
+  askThreadTs?: string;
 }
 
 export function isEvaReply(ev: MessageEvent, ctx: ReplyContext): boolean {
   if (ev.channel !== ctx.channelId || ev.user !== ctx.evaUserId || ev.subtype) return false;
+  // Threaded ask: her answer must be in the same thread and land after ours.
+  // Anything she says elsewhere in the channel is unrelated to this round.
+  if (ctx.askThreadTs) return ev.thread_ts === ctx.askThreadTs && parseFloat(ev.ts) > parseFloat(ctx.askTs);
   // A threaded message answers exactly the message it hangs off.
   if (ev.thread_ts) return ev.thread_ts === ctx.askTs;
   // Channel-level: any Eva message after the ask. Inherently ambiguous if Eva

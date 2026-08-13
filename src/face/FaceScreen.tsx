@@ -15,6 +15,17 @@ import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../slack/sanitize';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { initKokoro, type TtsEngineState } from '../speech/kokoro';
+import { FOLLOWUP_WINDOW_MS } from '../speech/conversation';
+import {
+  dequeue,
+  dropTs,
+  enqueue,
+  receive,
+  threadRoot,
+  type Adoptions,
+  type LiveExchange,
+  type ProactiveItem,
+} from '../speech/proactive';
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
 import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
@@ -27,9 +38,11 @@ import { hhmm } from '../util/time';
 
 const TRIPLE_TAP_WINDOW_MS = 800;
 const SPEAK_TEST_LINE = 'The Q3 doc is filed under Platform Planning.';
+const PROACTIVE_TEST_LINE = 'The two o’clock moved to one thirty.';
 const WAKE_ENABLED_KEY = 'eva.wakeEnabled.v1';
 const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
 const ASIDES_ENABLED_KEY = 'eva.asidesEnabled.v1';
+const PROACTIVE_ENABLED_KEY = 'eva.proactiveEnabled.v1';
 
 /**
  * Single source for the Kokoro engine's user-facing wording: the transcript
@@ -85,13 +98,58 @@ export function FaceScreen() {
   // useSlack mounts before useEcho; the ref bridges tool activity to it.
   const noteToolRef = useRef<(label: string) => void>(() => {});
 
+  // Proactive push. Eva @-mentions us to adopt a thread; her posts in it are
+  // then spoken once the face is quiet. All refs — the drain is driven by
+  // proactiveNonce instead, so a message arriving while Eva is *already* idle
+  // still wakes the effect (nothing else about the render would change).
+  const botUserIdRef = useRef<string | null>(null);
+  const adoptions = useRef<Adoptions>({});
+  const backlog = useRef<ProactiveItem[]>([]);
+  const activeThread = useRef<string | null>(null);
+  // The thread being talked through right now. Held open (until: null) for as
+  // long as the face is busy, then given a grace period once it settles.
+  const exchange = useRef<LiveExchange | null>(null);
+  const [proactiveNonce, setProactiveNonce] = useState(0);
+
+  const holdExchange = useCallback((threadTs: string) => {
+    exchange.current = { threadTs, until: null };
+  }, []);
+
+  const pushProactive = useCallback(
+    (item: ProactiveItem) => {
+      const q = enqueue(backlog.current, item);
+      backlog.current = q.queue;
+      if (q.dropped) log('eva · dropped an older update (backlog full)');
+      setProactiveNonce((n) => n + 1);
+    },
+    [log],
+  );
+
   const slack = useSlack({
-    // Eva messages that didn't answer a pending ask: transcript only, never
-    // spoken — the alert surfacing rules are Phase 4.
-    onUnsolicited: (ev) => log(`eva · ${speakableFromMrkdwn(ev.text ?? '')}`),
+    onEvaMessage: (ev, settledAnAsk) => {
+      // An answer already reaches the transcript as `said ·` when it's spoken.
+      if (!settledAnAsk) log(`eva · ${speakableFromMrkdwn(ev.text ?? '')}`);
+      const bot = botUserIdRef.current;
+      if (!bot) return;
+      // Fold every message, settled or not: an adopted thread's clock has to
+      // stay fresh through ask replies and tool noise we'll never speak.
+      const r = receive(ev, Date.now(), bot, adoptions.current, exchange.current);
+      adoptions.current = r.adoptions;
+      // A reply can reach us before its own ask registers, so this message may
+      // already be queued as proactive — useEcho is about to speak it as the
+      // round's answer, and it must not be spoken again.
+      if (settledAnAsk) {
+        backlog.current = dropTs(backlog.current, ev.ts);
+        // Her answer is about to be spoken, so the thread is live from here.
+        holdExchange(threadRoot(ev));
+        return;
+      }
+      if (r.item) pushProactive(r.item);
+    },
     onIssue: log,
     onToolActivity: (label) => noteToolRef.current(label),
   });
+  botUserIdRef.current = slack.botUserId;
 
   // Continuous conversation: after a reply, keep listening for follow-ups
   // until the window lapses silently. Persisted, default on.
@@ -127,6 +185,23 @@ export function FaceScreen() {
     });
   }, []);
 
+  // Proactive push: speak Eva's unprompted messages. Off leaves them in the
+  // transcript, as before. Persisted, default on.
+  const [proactiveEnabled, setProactiveEnabled] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem(PROACTIVE_ENABLED_KEY).then((v) => {
+      if (v === '0') setProactiveEnabled(false);
+    });
+  }, []);
+
+  const toggleProactive = useCallback(() => {
+    setProactiveEnabled((v) => {
+      void AsyncStorage.setItem(PROACTIVE_ENABLED_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -135,7 +210,10 @@ export function FaceScreen() {
       log(`said · ${text}`);
     },
     onIssue: (message) => log(message),
-    ask: slack.status === 'unpaired' ? undefined : slack.ask,
+    // Answers to a proactive message go back into its thread; anything the
+    // user starts posts at channel level, as before.
+    ask:
+      slack.status === 'unpaired' ? undefined : (text: string) => slack.ask(text, activeThread.current ?? undefined),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -195,7 +273,12 @@ export function FaceScreen() {
   }, []);
 
   useEffect(() => {
-    if (mode === 'idle') setEchoBusy(false);
+    if (mode !== 'idle') return;
+    setEchoBusy(false);
+    // The exchange is off screen; give it a grace period covering the
+    // follow-up window before its thread counts as quiet again.
+    const live = exchange.current;
+    if (live && live.until === null) exchange.current = { ...live, until: Date.now() + FOLLOWUP_WINDOW_MS };
   }, [mode]);
 
   const echoRef = useRef(echo);
@@ -210,15 +293,44 @@ export function FaceScreen() {
     begin();
   }, []);
 
+  /** Round starters the user drove: their questions belong at channel level. */
+  const startUserRound = useCallback(
+    (begin: () => void) => {
+      activeThread.current = null;
+      startRound(begin);
+    },
+    [startRound],
+  );
+
+  // Drain one backlogged message per genuinely quiet moment. Going through
+  // startRound is what stands the wake watcher down before Eva speaks; the
+  // face is still 'idle' at this point, so nothing else has claimed the mic.
+  useEffect(() => {
+    // Switched off, Eva's messages are transcript-only and nothing piles up —
+    // switching it back on must not unleash everything said in the meantime.
+    if (!proactiveEnabled) {
+      backlog.current = [];
+      return;
+    }
+    if (mode !== 'idle' || echoBusy) return;
+    const d = dequeue(backlog.current);
+    if (!d.item) return;
+    backlog.current = d.queue;
+    activeThread.current = d.item.threadTs;
+    holdExchange(d.item.threadTs);
+    const { text } = d.item;
+    startRound(() => echoRef.current.announce(text));
+  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound]);
+
   const onWake = useCallback(
     (snippet: string) => {
       log(`wake · ${snippet}`);
-      startRound(() => void echoRef.current.listen(Date.now()));
+      startUserRound(() => void echoRef.current.listen(Date.now()));
       // Count refresh is cosmetic; skip the storage read unless the overlay
       // is showing (it re-reads on every open anyway).
       if (devVisibleRef.current) void getWakeEvents().then(setWakeEvents);
     },
-    [log, startRound],
+    [log, startUserRound],
   );
 
   const wake = useWakeWord({
@@ -269,7 +381,7 @@ export function FaceScreen() {
     askTested.current = true;
     const id = setTimeout(() => {
       log(`asked · ${question}`);
-      startRound(() => echoRef.current.ask(question));
+      startUserRound(() => echoRef.current.ask(question));
     }, 8000);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -347,16 +459,23 @@ export function FaceScreen() {
           ttsEngine={describeTtsState(ttsState).label}
           onSpeakTest={() => {
             echo.cancel();
-            startRound(() => echo.say(SPEAK_TEST_LINE));
+            startUserRound(() => echo.say(SPEAK_TEST_LINE));
           }}
           onListen={() => {
             echo.cancel();
-            startRound(() => void echo.listen());
+            startUserRound(() => void echo.listen());
           }}
           convEnabled={convEnabled}
           onToggleConv={toggleConv}
           asidesEnabled={asidesEnabled}
           onToggleAsides={toggleAsides}
+          proactiveEnabled={proactiveEnabled}
+          onToggleProactive={toggleProactive}
+          onProactiveTest={() => {
+            const at = Date.now();
+            log(`eva · ${PROACTIVE_TEST_LINE}`);
+            pushProactive({ ts: `test.${at}`, threadTs: `test.${at}`, text: PROACTIVE_TEST_LINE, at });
+          }}
           onClose={() => setDevVisible(false)}
           wakeEnabled={wakeEnabled}
           wakeStatus={wake.status}
@@ -371,7 +490,7 @@ export function FaceScreen() {
           onAsk={(text) => {
             echo.cancel();
             log(`asked · ${text}`);
-            startRound(() => echo.ask(text));
+            startUserRound(() => echo.ask(text));
           }}
         />
       )}

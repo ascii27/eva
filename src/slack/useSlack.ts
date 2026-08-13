@@ -29,8 +29,12 @@ export interface PairingInput {
 }
 
 export interface UseSlackOptions {
-  /** Channel/Eva message that didn't answer a pending ask — transcript only. */
-  onUnsolicited?: (ev: MessageEvent) => void;
+  /**
+   * Every message Eva posts in the channel, with whether it settled a pending
+   * ask. Fired either way: proactive thread adoption has to see her replies
+   * too, or a live back-and-forth would look like thread silence.
+   */
+  onEvaMessage?: (ev: MessageEvent, settledAnAsk: boolean) => void;
   /** Human-readable failures (env pairing, token problems…). */
   onIssue?: (message: string) => void;
   /** Tool-echo activity seen while an ask is pending (label from toolLabelFromEcho). */
@@ -39,19 +43,21 @@ export interface UseSlackOptions {
 
 interface PendingAsk {
   askTs: string;
+  askThreadTs?: string;
   postedAt: number;
   resolve: (r: AskResult) => void;
   timer: ReturnType<typeof setTimeout>;
 }
 
-export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOptions = {}) {
+export function useSlack({ onEvaMessage, onIssue, onToolActivity }: UseSlackOptions = {}) {
   const [status, setStatus] = useState<SlackStatus>('unpaired');
+  const [botUserId, setBotUserId] = useState<string | null>(null);
   const statusRef = useRef<SlackStatus>('unpaired');
   const config = useRef<SlackConfig | null>(null);
   const socket = useRef<SlackSocket | null>(null);
   const pending = useRef<PendingAsk | null>(null);
-  const callbacks = useRef({ onUnsolicited, onIssue, onToolActivity });
-  callbacks.current = { onUnsolicited, onIssue, onToolActivity };
+  const callbacks = useRef({ onEvaMessage, onIssue, onToolActivity });
+  callbacks.current = { onEvaMessage, onIssue, onToolActivity };
 
   const publish = useCallback((s: SlackStatus) => {
     statusRef.current = s;
@@ -76,7 +82,13 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
       const cfg = config.current;
       const p = pending.current;
       if (!cfg || !p) return false;
-      if (!isEvaReply(ev, { channelId: cfg.channelId, evaUserId: cfg.evaUserId, askTs: p.askTs })) return false;
+      const ctx = {
+        channelId: cfg.channelId,
+        evaUserId: cfg.evaUserId,
+        askTs: p.askTs,
+        askThreadTs: p.askThreadTs,
+      };
+      if (!isEvaReply(ev, ctx)) return false;
       const raw = ev.text ?? '';
       // Terminal echoes and other tool noise precede Eva's real answer —
       // surface them as activity, let them fall through to the transcript,
@@ -103,9 +115,9 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
       if (!cfg || ev.channel !== cfg.channelId) return;
       if (isSelf(ev, cfg.botUserId)) return;
       recentEvents.current = [...recentEvents.current.slice(-9), ev];
-      if (settleIfReply(ev)) return;
+      const settled = settleIfReply(ev);
       // Only Eva's own words reach the transcript as hers.
-      if (ev.user === cfg.evaUserId && ev.text && !ev.subtype) callbacks.current.onUnsolicited?.(ev);
+      if (ev.user === cfg.evaUserId && ev.text && !ev.subtype) callbacks.current.onEvaMessage?.(ev, settled);
     },
     [settleIfReply],
   );
@@ -134,6 +146,7 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
         const cfg: SlackConfig = { ...input, evaUserId: DEFAULT_EVA_USER_ID, botUserId };
         await setSlackConfig(cfg);
         config.current = cfg;
+        setBotUserId(botUserId);
         startSocket(cfg);
         return null;
       } catch (e) {
@@ -156,6 +169,7 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
       void getSlackConfig().then((cfg) => {
         if (!alive || !cfg) return;
         config.current = cfg;
+        setBotUserId(cfg.botUserId);
         startSocket(cfg);
       });
     }
@@ -180,6 +194,7 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
     socket.current?.stop();
     socket.current = null;
     config.current = null;
+    setBotUserId(null);
     void clearSlackConfig();
     publish('unpaired');
   }, [publish, settlePending]);
@@ -191,9 +206,10 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
   /**
    * Post the utterance to Eva and wait for her next message in the channel.
    * Resolves with exactly one outcome; a newer ask supersedes an older one.
+   * `threadTs` answers inside a thread Eva started, instead of at channel level.
    */
   const ask = useCallback(
-    async (text: string): Promise<AskResult> => {
+    async (text: string, threadTs?: string): Promise<AskResult> => {
       const cfg = config.current;
       // Posting rides HTTPS, not the socket, so a briefly-'connecting' link
       // (Slack's routine graceful refreshes) must not drop the question.
@@ -206,7 +222,7 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
       settlePending({ kind: 'error', message: 'superseded by a newer ask' });
       let askTs: string;
       try {
-        ({ ts: askTs } = await postMessage(cfg.botToken, cfg.channelId, `<@${cfg.evaUserId}> ${text}`));
+        ({ ts: askTs } = await postMessage(cfg.botToken, cfg.channelId, `<@${cfg.evaUserId}> ${text}`, threadTs));
       } catch (e) {
         return { kind: 'error', message: e instanceof Error ? e.message : String(e) };
       }
@@ -214,6 +230,7 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
       return new Promise<AskResult>((resolve) => {
         pending.current = {
           askTs,
+          askThreadTs: threadTs,
           postedAt,
           resolve,
           timer: setTimeout(() => {
@@ -221,14 +238,19 @@ export function useSlack({ onUnsolicited, onIssue, onToolActivity }: UseSlackOpt
             resolve({ kind: 'timeout', postedAt });
           }, ASK_TIMEOUT_MS),
         };
-        // A fast reply may have arrived while postMessage was in flight.
+        // A fast reply may have arrived while postMessage was in flight. It was
+        // announced as unsettled back then, so re-announce it as settled —
+        // otherwise a listener holding it (the proactive queue) speaks it twice.
         for (const ev of recentEvents.current) {
-          if (settleIfReply(ev)) break;
+          if (settleIfReply(ev)) {
+            callbacks.current.onEvaMessage?.(ev, true);
+            break;
+          }
         }
       });
     },
     [settleIfReply, settlePending],
   );
 
-  return { status, ask, pair, unpair, reconnect };
+  return { status, botUserId, ask, pair, unpair, reconnect };
 }

@@ -40,6 +40,10 @@ interface DevControlsProps {
   onToggleConv: () => void;
   asidesEnabled: boolean;
   onToggleAsides: () => void;
+  proactiveEnabled: boolean;
+  onToggleProactive: () => void;
+  /** Queue a canned Eva-initiated line — exercises the push path without Slack. */
+  onProactiveTest: () => void;
   /** One-line TTS engine status, e.g. "kokoro ready" or "system voice". */
   ttsEngine: string;
   onClose: () => void;
@@ -160,6 +164,13 @@ export function DevControls(props: DevControlsProps) {
             <Btn label="Listen" onPress={props.onListen} />
             <Btn label="Conversation" sub="follow-ups" active={props.convEnabled} onPress={props.onToggleConv} />
             <Btn label="Asides" sub="thinking" active={props.asidesEnabled} onPress={props.onToggleAsides} />
+            <Btn
+              label="Proactive"
+              sub="eva speaks first"
+              active={props.proactiveEnabled}
+              onPress={props.onToggleProactive}
+            />
+            <Btn label="Proactive test" onPress={props.onProactiveTest} />
           </View>
 
           <Text style={styles.sectionLabel}>SLACK</Text>

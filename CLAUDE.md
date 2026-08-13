@@ -30,7 +30,8 @@ Two layers, deliberately separated:
 Speech (`src/speech/`):
 - `stt.ts` lazy-requires `expo-speech-recognition` so Expo Go (no native module) still runs the face. **Privacy invariant: `requiresOnDeviceRecognition: true`, and refuse to listen rather than fall back to network recognition.** Note: the PRD's preferred `expo-speech-transcriber` was rejected — its realtime path never sets the on-device flag.
 - `tts.ts` picks and persists one Enhanced-quality English system voice (Eva's canonical voice).
-- `useEcho.ts` is the Phase-1 verification loop (listen → thinking → speak transcript back) with all face choreography; Phase 3 replaces the "speak it back" with Eva's real reply.
+- `useEcho.ts` is the round choreographer: listen → thinking → speak. Without a Slack `ask` handler it falls back to the Phase-1 echo (speak the transcript back); with one it posts to Eva and speaks her reply. `announce()` is the reverse direction — Eva speaking first.
+- Policy lives in pure, unit-tested modules with no React, and all timing/side effects stay in the hooks: `conversation.ts` (follow-up window), `asides.ts` (filler cadence), `proactive.ts` (thread adoption + backlog for Eva-initiated messages). Follow that split when adding behavior.
 
 ## Constraints
 
