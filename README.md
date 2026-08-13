@@ -28,6 +28,10 @@ and unmentioned top-level chatter never speaks at all.
  └─ Eva  Also, the appendix is still rendering.     ← spoken, no mention needed
 ```
 
+The Eva-side half of this contract — when to speak, and how to write for the ear — is in
+[`docs/eva-proactive-prompt.md`](docs/eva-proactive-prompt.md), ready to paste into her
+instructions.
+
 Messages queue until Eva is genuinely idle — a push never cuts off a listen, an ask in
 flight, or her own speech. She widens her eyes (`alert`) before speaking so you can tell she's
 initiating rather than answering, and with conversation mode on the mic opens afterwards so
