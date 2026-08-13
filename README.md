@@ -17,9 +17,10 @@ This repo is the **client**. Eva's reasoning, her Notion stewardship, and the Sl
 
 ### Proactive push — Eva speaking first
 
-Eva **@-mentions the companion** in the channel. That adopts the thread; from then on
-everything she posts in it is spoken, no further mention needed. Her tool echoes stay silent,
-and unmentioned top-level chatter never speaks at all.
+Eva **mentions the companion by member ID** in the channel. That adopts the thread; from then
+on everything she posts in it is spoken, no further mention needed. Her tool echoes stay
+silent, and unmentioned top-level chatter never speaks at all. (It must be the raw `<@U…>`
+token — the plain-text handle isn't recognised, and the message goes unspoken with no error.)
 
 ```
  Eva  @eva-companion The deck finished rendering.   ← adopts the thread, spoken

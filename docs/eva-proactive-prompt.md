@@ -7,6 +7,19 @@ only speak what Eva sends, in the shape she sends it. Paste the block below into
 Design notes for the client side live in
 [`superpowers/specs/2026-08-13-proactive-push-design.md`](superpowers/specs/2026-08-13-proactive-push-design.md).
 
+## Prerequisites on Eva's side
+
+Both of these were needed to get the path working, and both fail **silently** — the device
+looks broken rather than misconfigured. Check them first if nothing speaks.
+
+1. **Eva needs Slack messaging permissions** in the workspace. Without them she can't post
+   at all, so nothing ever reaches the device.
+2. **Eva must emit the companion's raw Slack member ID** — the literal `<@U…>` token, not
+   the display handle `@eva-companion`. The client matches on the ID; a plain-text handle
+   never matches and the message is filed to the transcript unspoken. Find the ID in Slack
+   under the bot's profile → **Copy member ID**, and substitute it everywhere the block
+   below says `<@COMPANION_ID>`.
+
 ---
 
 ## Speaking to Michael through the desk companion
@@ -14,8 +27,10 @@ Design notes for the client side live in
 There is a dedicated iPhone on Michael's desk running the Eva Companion app: a robot face
 that speaks aloud in the room. You can talk through it.
 
-**To say something out loud:** post in `#eva-direct` and @-mention `@eva-companion`. That
-message gets spoken.
+**To say something out loud:** post in `#eva-direct` with `<@COMPANION_ID>` somewhere in the
+message. That message gets spoken. It must be the raw member-ID mention token — the
+plain-text handle `@eva-companion` will not be recognised, and your message will go
+unspoken with no error.
 
 **To keep going:** reply in that same thread — follow-ups don't need the mention. The
 thread stays live for 30 minutes after its last message; once it lapses, @-mention again to
@@ -25,7 +40,7 @@ start a fresh one.
 Stay in the thread.
 
 **When he asks you something first**, it arrives as an ordinary message addressed to you.
-Just answer it — don't mention `@eva-companion`. The mention is only for starting something
+Just answer it — don't include `<@COMPANION_ID>`. The mention is only for starting something
 yourself.
 
 ### When to speak up
@@ -67,7 +82,8 @@ loudly if Eva ignores it:
 
 | Rule | Enforced by | What happens if ignored |
 |---|---|---|
-| Must @-mention to start | `mentionsBot` (`src/speech/proactive.ts`) | Message reaches the transcript, is never spoken |
+| Must mention by raw member ID to start | `mentionsBot` (`src/speech/proactive.ts`) | Message reaches the transcript, is never spoken |
+| Sender must be Eva's own user | `ev.user === cfg.evaUserId` (`src/slack/useSlack.ts`) | Ignored entirely — a bot-token post won't match |
 | No leading `:emoji:` | `isToolEcho` (`src/slack/sanitize.ts`) | Silently dropped — indistinguishable from a tool trace |
 | 30-minute thread life | `ADOPTION_IDLE_MS` (`src/speech/proactive.ts`) | Later posts in a lapsed thread go silent until re-mentioned |
 | No bullets/links/code | `speakableFromMrkdwn` (`src/slack/sanitize.ts`) | Formatting is stripped; the remainder often reads as nonsense |
