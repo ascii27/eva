@@ -8,6 +8,7 @@ import { abortListening, addListeners, ensureReady, startListening } from './stt
 import { speak, stopSpeaking } from './tts';
 
 const THINK_BEAT_MS = 300;
+const ALERT_BEAT_MS = 600;
 const PLEASED_BEAT_MS = 600;
 const CONFUSED_BEAT_MS = 1200;
 const LOW_CONFIDENCE = 0.35;
@@ -56,7 +57,8 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   const epoch = useRef(0);
   const wokeAt = useRef<number | undefined>(undefined);
   // Follow-up window deadline (null = closed) and whether the current round
-  // originated from the mic — dev Speak/Ask rounds must never hot-mic after.
+  // earns follow-ups — true for mic-originated rounds and for Eva's proactive
+  // announcements; dev Speak/Ask rounds must never hot-mic after.
   const convWindow = useRef<ConvWindow>(null);
   const voiceRound = useRef(false);
   // Aside machinery: pure decision state + the coarse tick driving it.
@@ -358,6 +360,31 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [sayBack],
   );
 
+  /**
+   * Eva speaking first: an alert beat to signal she's initiating rather than
+   * answering, then the line itself. Delivered as a `pleased` round so the
+   * follow-up mic opens after it — being addressed by Eva shouldn't force you
+   * to say "Hey Eva" to answer her.
+   */
+  const announce = useCallback(
+    (text: string) => {
+      const round = ++epoch.current;
+      clearAsides();
+      voiceRound.current = true;
+      convWindow.current = null;
+      wokeAt.current = undefined;
+      clearTimer();
+      setMode('alert');
+      after(ALERT_BEAT_MS, () => {
+        // openMic bumps the epoch before its awaits but only clears the timer
+        // after them, so this beat can still fire into a superseded round.
+        if (round !== epoch.current) return;
+        deliver(text, 'pleased');
+      });
+    },
+    [after, clearAsides, clearTimer, deliver, setMode],
+  );
+
   /** Typed question straight to Eva — the dev/simulator round path. */
   const askDirect = useCallback(
     (text: string) => {
@@ -381,5 +408,5 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     stopSpeaking();
   }, [clearAsides, clearTimer]);
 
-  return { listen, say, ask: askDirect, cancel, noteToolActivity };
+  return { listen, say, ask: askDirect, announce, cancel, noteToolActivity };
 }
