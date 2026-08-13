@@ -15,12 +15,15 @@ import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../slack/sanitize';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { initKokoro, type TtsEngineState } from '../speech/kokoro';
+import { FOLLOWUP_WINDOW_MS } from '../speech/conversation';
 import {
   dequeue,
   dropTs,
   enqueue,
   receive,
+  threadRoot,
   type Adoptions,
+  type LiveExchange,
   type ProactiveItem,
 } from '../speech/proactive';
 import { useEcho } from '../speech/useEcho';
@@ -103,7 +106,14 @@ export function FaceScreen() {
   const adoptions = useRef<Adoptions>({});
   const backlog = useRef<ProactiveItem[]>([]);
   const activeThread = useRef<string | null>(null);
+  // The thread being talked through right now. Held open (until: null) for as
+  // long as the face is busy, then given a grace period once it settles.
+  const exchange = useRef<LiveExchange | null>(null);
   const [proactiveNonce, setProactiveNonce] = useState(0);
+
+  const holdExchange = useCallback((threadTs: string) => {
+    exchange.current = { threadTs, until: null };
+  }, []);
 
   const pushProactive = useCallback(
     (item: ProactiveItem) => {
@@ -123,13 +133,15 @@ export function FaceScreen() {
       if (!bot) return;
       // Fold every message, settled or not: an adopted thread's clock has to
       // stay fresh through ask replies and tool noise we'll never speak.
-      const r = receive(ev, Date.now(), bot, adoptions.current);
+      const r = receive(ev, Date.now(), bot, adoptions.current, exchange.current);
       adoptions.current = r.adoptions;
       // A reply can reach us before its own ask registers, so this message may
       // already be queued as proactive — useEcho is about to speak it as the
       // round's answer, and it must not be spoken again.
       if (settledAnAsk) {
         backlog.current = dropTs(backlog.current, ev.ts);
+        // Her answer is about to be spoken, so the thread is live from here.
+        holdExchange(threadRoot(ev));
         return;
       }
       if (r.item) pushProactive(r.item);
@@ -261,7 +273,12 @@ export function FaceScreen() {
   }, []);
 
   useEffect(() => {
-    if (mode === 'idle') setEchoBusy(false);
+    if (mode !== 'idle') return;
+    setEchoBusy(false);
+    // The exchange is off screen; give it a grace period covering the
+    // follow-up window before its thread counts as quiet again.
+    const live = exchange.current;
+    if (live && live.until === null) exchange.current = { ...live, until: Date.now() + FOLLOWUP_WINDOW_MS };
   }, [mode]);
 
   const echoRef = useRef(echo);
@@ -300,9 +317,10 @@ export function FaceScreen() {
     if (!d.item) return;
     backlog.current = d.queue;
     activeThread.current = d.item.threadTs;
+    holdExchange(d.item.threadTs);
     const { text } = d.item;
     startRound(() => echoRef.current.announce(text));
-  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, startRound]);
+  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound]);
 
   const onWake = useCallback(
     (snippet: string) => {

@@ -147,6 +147,69 @@ describe('receive', () => {
     expect(Object.keys(r.adoptions)).toEqual(['100.1']);
   });
 
+  describe('live exchange', () => {
+    // Eva routinely posts a trailing restatement seconds after the message that
+    // answered a round. Those belong to the exchange that just happened, not to
+    // a new announcement, and must not be spoken a second time.
+    const adopted: Adoptions = { '100.1': NOW };
+
+    it('stays silent for a trailing message while the exchange is still on screen', () => {
+      const r = receive(
+        msg({ ts: '300.3', thread_ts: '100.1', text: 'Perfect — that confirms it.' }),
+        NOW + 6_000,
+        BOT,
+        adopted,
+        { threadTs: '100.1', until: null },
+      );
+      expect(r.item).toBeNull();
+    });
+
+    it('keeps the thread adopted while suppressing it', () => {
+      const r = receive(
+        msg({ ts: '300.3', thread_ts: '100.1', text: 'Perfect — that confirms it.' }),
+        NOW + 6_000,
+        BOT,
+        adopted,
+        { threadTs: '100.1', until: null },
+      );
+      expect(r.adoptions['100.1']).toBe(NOW + 6_000);
+    });
+
+    it('speaks again once the exchange has lapsed', () => {
+      const r = receive(
+        msg({ ts: '300.3', thread_ts: '100.1', text: 'One more thing.' }),
+        NOW + 30_000,
+        BOT,
+        adopted,
+        { threadTs: '100.1', until: NOW + 20_000 },
+      );
+      expect(r.item?.text).toBe('One more thing.');
+    });
+
+    it('does not suppress a different thread', () => {
+      const r = receive(
+        msg({ ts: '300.3', thread_ts: '100.1', text: 'unrelated workstream' }),
+        NOW + 6_000,
+        BOT,
+        adopted,
+        { threadTs: '999.9', until: null },
+      );
+      expect(r.item?.text).toBe('unrelated workstream');
+    });
+
+    it('suppresses even a fresh @-mention inside the live thread', () => {
+      // Re-mentioning mid-exchange is still Eva talking within it.
+      const r = receive(
+        msg({ ts: '300.3', thread_ts: '100.1', text: `<@${BOT}> and one more thought` }),
+        NOW + 6_000,
+        BOT,
+        adopted,
+        { threadTs: '100.1', until: null },
+      );
+      expect(r.item).toBeNull();
+    });
+  });
+
   it('caps tracked threads, keeping the most recent', () => {
     const adoptions: Adoptions = {};
     for (let i = 0; i < ADOPTION_MAX; i++) adoptions[`old${i}`] = NOW + i;

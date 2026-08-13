@@ -114,6 +114,14 @@ with all timing and side effects driven from the hooks.
   reply can beat `chat.postMessage`'s own HTTP response. Such an event already fired
   `onEvaMessage(ev, false)` and may sit in the queue, then settles the ask and gets spoken as
   the reply. Handled by `dropTs` plus firing `onEvaMessage(ev, true)` from the replay loop.
+- **Trailing restatements** (found on device, 2026-08-13). An ask settles on Eva's *first*
+  substantive message, but adoption says *every* message in the thread is spoken — so the
+  confirmation she habitually posts a few seconds later was announced a second time, alert
+  beat and all. `LiveExchange` closes the gap: while the thread being talked through is
+  still on screen (`until: null`) and for a `FOLLOWUP_WINDOW_MS` grace period after it
+  settles, her messages in it land in the transcript instead. Adoption is still refreshed —
+  a suppressed message is activity, and letting the thread lapse mid-conversation is worse.
+  Genuinely later updates in the same thread speak normally once the grace period passes.
 - **Wake-watcher churn.** A round ending clears `echoBusy`, the watcher un-suspends, and the
   drain effect re-suspends it in the next commit — one extra abort/restart per queued
   message. `useWakeWord`'s `recycling` state and `RESUME_SETTLE_MS` absorb it; watch on device.

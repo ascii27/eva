@@ -32,6 +32,23 @@ export interface ProactiveItem {
 /** Adopted thread root → last-activity epoch ms. */
 export type Adoptions = Record<string, number>;
 
+/**
+ * A thread whose exchange is still going. Eva settles a round with her first
+ * substantive message but often posts a trailing restatement seconds later;
+ * that belongs to the exchange that just happened, not to a new announcement,
+ * and speaking it again is the same answer twice with its own alert beat.
+ */
+export interface LiveExchange {
+  threadTs: string;
+  /** Epoch ms the exchange stops being live; null while it's still on screen. */
+  until: number | null;
+}
+
+function isLive(live: LiveExchange | null, root: string, now: number): boolean {
+  if (!live || live.threadTs !== root) return false;
+  return live.until === null || now < live.until;
+}
+
 /** The thread a message belongs to; a root message is its own thread. */
 export function threadRoot(ev: MessageEvent): string {
   return ev.thread_ts ?? ev.ts;
@@ -75,18 +92,25 @@ function cap(adoptions: Adoptions): Adoptions {
  * The thread's clock is refreshed by anything we see in it — tool echoes and
  * replies that settle an ask are activity too, and a live back-and-forth must
  * not be allowed to lapse. Only the *speaking* decision filters them out.
+ *
+ * `exchange` names the thread currently being talked through, if any; messages
+ * arriving in it are part of that conversation rather than new announcements.
  */
 export function receive(
   ev: MessageEvent,
   now: number,
   botUserId: string,
   adoptions: Adoptions,
+  exchange: LiveExchange | null = null,
 ): { adoptions: Adoptions; item: ProactiveItem | null } {
   const raw = ev.text ?? '';
   const root = threadRoot(ev);
-  const live = prune(adoptions, now);
-  if (!mentionsBot(raw, botUserId) && live[root] === undefined) return { adoptions: live, item: null };
-  const next = cap({ ...live, [root]: now });
+  const kept = prune(adoptions, now);
+  if (!mentionsBot(raw, botUserId) && kept[root] === undefined) return { adoptions: kept, item: null };
+  const next = cap({ ...kept, [root]: now });
+  // Adoption is refreshed above either way — a suppressed message is still
+  // activity, and letting the thread lapse mid-conversation would be worse.
+  if (isLive(exchange, root, now)) return { adoptions: next, item: null };
   const text = announceable(raw);
   return { adoptions: next, item: text === null ? null : { ts: ev.ts, threadTs: root, text, at: now } };
 }

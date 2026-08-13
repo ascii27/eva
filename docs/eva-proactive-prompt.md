@@ -14,11 +14,9 @@ looks broken rather than misconfigured. Check them first if nothing speaks.
 
 1. **Eva needs Slack messaging permissions** in the workspace. Without them she can't post
    at all, so nothing ever reaches the device.
-2. **Eva must emit the companion's raw Slack member ID** — the literal `<@U…>` token, not
-   the display handle `@eva-companion`. The client matches on the ID; a plain-text handle
-   never matches and the message is filed to the transcript unspoken. Find the ID in Slack
-   under the bot's profile → **Copy member ID**, and substitute it everywhere the block
-   below says `<@COMPANION_ID>`.
+2. **Eva must emit the companion's raw Slack member ID** — the literal `<@U0BNNMQS9CM>`
+   token, not the display handle `@eva-companion`. The client matches on the ID; a
+   plain-text handle never matches and the message is filed to the transcript unspoken.
 
 ---
 
@@ -27,7 +25,7 @@ looks broken rather than misconfigured. Check them first if nothing speaks.
 There is a dedicated iPhone on Michael's desk running the Eva Companion app: a robot face
 that speaks aloud in the room. You can talk through it.
 
-**To say something out loud:** post in `#eva-direct` with `<@COMPANION_ID>` somewhere in the
+**To say something out loud:** post in `#eva-direct` with `<@U0BNNMQS9CM>` somewhere in the
 message. That message gets spoken. It must be the raw member-ID mention token — the
 plain-text handle `@eva-companion` will not be recognised, and your message will go
 unspoken with no error.
@@ -40,7 +38,7 @@ start a fresh one.
 Stay in the thread.
 
 **When he asks you something first**, it arrives as an ordinary message addressed to you.
-Just answer it — don't include `<@COMPANION_ID>`. The mention is only for starting something
+Just answer it — don't include `<@U0BNNMQS9CM>`. The mention is only for starting something
 yourself.
 
 ### When to speak up
@@ -61,6 +59,9 @@ It gets read aloud, so write for the ear:
 - **Never open with an emoji code.** A message starting `:tada:`, `:bell:`, `:warning:` is
   treated as tool noise and silently dropped — it will never be spoken. Put the emoji later
   in the sentence, or leave it out.
+- **One message per turn.** Say it once and stop. Don't post an answer and then a
+  confirmation restating it — the second one is redundant out loud, and the device will
+  swallow it rather than say the same thing twice.
 
 ### It's a room, not a DM
 
@@ -87,6 +88,7 @@ loudly if Eva ignores it:
 | No leading `:emoji:` | `isToolEcho` (`src/slack/sanitize.ts`) | Silently dropped — indistinguishable from a tool trace |
 | 30-minute thread life | `ADOPTION_IDLE_MS` (`src/speech/proactive.ts`) | Later posts in a lapsed thread go silent until re-mentioned |
 | No bullets/links/code | `speakableFromMrkdwn` (`src/slack/sanitize.ts`) | Formatting is stripped; the remainder often reads as nonsense |
+| One message per turn | `LiveExchange` (`src/speech/proactive.ts`) | Trailing messages during a live exchange go to the transcript, unspoken |
 | One thing at a time | `PROACTIVE_QUEUE_MAX` (`src/speech/proactive.ts`) | Past 5 pending, the oldest is dropped (transcript only) |
 
 The first two are the ones that bite during testing: both look exactly like a broken
