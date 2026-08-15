@@ -244,7 +244,12 @@ async function runStream(
     } catch {
       // stopping an idle stream is harmless
     }
-    s.sink?.stop();
+    try {
+      s.sink?.stop();
+    } catch {
+      // Best-effort teardown: a throw here would reject streamTail and mute
+      // every future utterance, which is far worse than a leaked node.
+    }
     handlers.onError(error, s.audioStarted);
   }
 }
