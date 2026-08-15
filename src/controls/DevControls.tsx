@@ -194,9 +194,14 @@ export function DevControls(props: DevControlsProps) {
               onPress={props.onToggleBrain}
             />
             <Btn label="End session" sub="→ memory" onPress={props.onEndSession} />
+          </View>
+          {/* Its own row: styles.row does not wrap and the panel is a fixed
+              300px, so a third button here is squeezed to nothing. Being apart
+              from the buttons you press casually also suits a wipe. */}
+          <View style={styles.row}>
             <Btn
-              label={forgetArmed ? 'Sure?' : 'Forget all'}
-              sub={forgetArmed ? 'tap to confirm' : 'wipe memory'}
+              label={forgetArmed ? 'Wipe everything?' : 'Forget all'}
+              sub={forgetArmed ? 'tap again' : 'session + memory'}
               active={forgetArmed}
               onPress={() => {
                 if (!forgetArmed) {
