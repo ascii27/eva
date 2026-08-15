@@ -32,6 +32,33 @@ export function emptySentences(): SentenceState {
   return { pending: '' };
 }
 
+/** Markdown delimiters that must be balanced before a cut is safe. */
+const SPAN_DELIMS = ['*', '_', '~', '`'];
+
+/**
+ * True when `text` ends with a markdown construct still open, so flattening it
+ * now would leak literal delimiters into the audio.
+ *
+ * Counts maximal *runs*, not characters: `**bold**` is four asterisks but two
+ * runs, and a cut inside it leaves exactly one — whereas a character count would
+ * read as balanced and wave the cut through.
+ */
+function spanOpen(text: string): boolean {
+  for (const delim of SPAN_DELIMS) {
+    let runs = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] !== delim) continue;
+      runs++;
+      while (i + 1 < text.length && text[i + 1] === delim) i++;
+    }
+    if (runs % 2 === 1) return true;
+  }
+  // A link's label and target must both be present for the flattener to reduce
+  // it to the label alone.
+  const opens = (ch: string) => text.split(ch).length - 1;
+  return opens('[') !== opens(']') || opens('(') !== opens(')');
+}
+
 /**
  * Index just past the first sentence terminator that is followed by
  * whitespace, or -1. Requiring following whitespace is what keeps decimals
@@ -41,7 +68,11 @@ export function emptySentences(): SentenceState {
 function splitIndex(text: string): number {
   for (let i = 0; i < text.length - 1; i++) {
     if (!SENTENCE_END.includes(text[i])) continue;
-    if (/\s/.test(text[i + 1])) return i + 1;
+    if (!/\s/.test(text[i + 1])) continue;
+    // A terminator inside an open span is not a usable boundary — cutting there
+    // would hand the flattener half a construct.
+    if (spanOpen(text.slice(0, i + 1))) continue;
+    return i + 1;
   }
   return -1;
 }
@@ -54,6 +85,9 @@ export function pushText(state: SentenceState, text: string): { state: SentenceS
     let cut = splitIndex(pending);
     if (cut < 0) {
       if (pending.length <= MAX_PENDING_CHARS) break;
+      // Deliberately not span-aware: a stray unmatched delimiter would hold a
+      // span open forever, and stalling the audio is worse than one spoken
+      // asterisk.
       cut = pending.lastIndexOf(' ', MAX_PENDING_CHARS);
       if (cut <= 0) break; // one unbroken token; a mid-word fragment is worse
     }
