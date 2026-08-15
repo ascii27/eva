@@ -33,6 +33,15 @@ yarn-error.*
 # local env files
 .env*.local
 
+# editor swap/backup files. Not housekeeping: `.env*.local` above does not match
+# `.env.local.swp`, so a vim session on the secrets file left a swap file that a
+# `git add -A` happily committed — API keys and Slack tokens in plaintext, into
+# a public repo. Caught before any push; these rules are why it cannot recur.
+*.swp
+*.swo
+*~
+.*.sw[a-p]
+
 # typescript
 *.tsbuildinfo
 
