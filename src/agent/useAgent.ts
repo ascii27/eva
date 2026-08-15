@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AskOptions, AskResult } from '../round/ask';
 import { speakableFromMrkdwn } from '../round/speakable';
-import { type AgentConfig, envAgentInput, getAgentConfig } from './config';
+import { type AgentConfig, envAgentInput, envTavilyKey, getAgentConfig } from './config';
 import {
   appendTurn,
   applyCompaction,
@@ -20,9 +20,10 @@ import {
   planCompaction,
   type Session,
 } from './history';
-import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage, type ToolCall, type ToolMessage, type ToolSpec } from './openai';
+import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage } from './openai';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
 import { archiveSession, loadSession, recentMemories, saveSession } from './store';
+import { buildToolKit, type ToolKit } from './tools';
 
 /**
  * A local round should feel immediate; anything this slow has gone wrong rather
@@ -31,26 +32,29 @@ import { archiveSession, loadSession, recentMemories, saveSession } from './stor
  */
 export const ASK_TIMEOUT_MS = 30_000;
 
-/** Guard on the tool loop. No tools are defined yet, so today it never spins. */
-const MAX_STEPS = 4;
-
-/** Tool specs go here when there are any; omitted from the request while empty. */
-const TOOLS: ToolSpec[] = [];
-
 /**
- * Dispatch one tool call. Unreachable while TOOLS is empty — the model is never
- * offered a tool, so it cannot ask for one — but correctly shaped, so adding a
- * tool means adding a case here and an entry above, not restructuring the loop.
+ * Guard on the tool loop. Four laps is a preamble, a tool, a second tool if the
+ * first one wasn't enough, and an answer — past that she is going in circles on
+ * someone's time.
  */
-async function runTool(call: ToolCall): Promise<ToolMessage> {
-  return { role: 'tool', tool_call_id: call.id, content: `Error: no tool named ${call.name}.` };
-}
+const MAX_STEPS = 4;
 
 /** Keeps replies short enough to be listenable, and caps the cost of a runaway. */
 const MAX_REPLY_TOKENS = 300;
 
 /** Summaries are cheap and shouldn't wander. */
 const MAX_SUMMARY_TOKENS = 300;
+
+/** Running total across a round's laps. Either side may be absent. */
+function addUsage(a: ChatUsage | null, b: ChatUsage | null): ChatUsage | null {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    promptTokens: a.promptTokens + b.promptTokens,
+    cachedTokens: a.cachedTokens + b.cachedTokens,
+    completionTokens: a.completionTokens + b.completionTokens,
+  };
+}
 
 export type AgentStatus = 'unconfigured' | 'ready';
 
@@ -65,6 +69,9 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
   const [status, setStatus] = useState<AgentStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<AgentConfig | null>(null);
+  // Built once at bring-up, never per turn: the specs are part of OpenAI's
+  // cached prefix, so a list that moved between turns would cost the discount.
+  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey() }));
   // The live session and the memory block. Refs, not state: ask() reads them
   // synchronously and nothing about the face changes when they move.
   const session = useRef<Session | null>(null);
@@ -213,42 +220,42 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
         const messages: RequestMessage[] = buildRequest(PERSONA, memories.current, asked);
         let raw = '';
 
-        // Streaming cannot reassemble fragmented tool_call arguments, so a
-        // request that offers tools must use the non-streaming loop. Guarding
-        // on TOOLS means defining one can't silently break streaming.
-        if (opts?.onDelta && TOOLS.length === 0) {
+        // Every lap streams. Content deltas go straight to the speaker, which
+        // is also how the preamble ("let me look that up") is delivered: the
+        // model emits it as ordinary content on the same response as the tool
+        // call, so it is already being spoken by the time the tool runs.
+        for (let step = 0; step < MAX_STEPS; step++) {
           const res = await chatStream({
             apiKey: cfg.apiKey,
             model: cfg.model,
             messages,
+            tools: tools.current.specs,
             signal: controller.signal,
             maxTokens: MAX_REPLY_TOKENS,
             onDelta: (delta) => {
               streamed += delta;
-              opts.onDelta?.(delta);
+              opts?.onDelta?.(delta);
             },
           });
-          usage = res.usage;
-          raw = res.text;
-        } else {
-          for (let step = 0; step < MAX_STEPS; step++) {
-            const res = await chat({
-              apiKey: cfg.apiKey,
-              model: cfg.model,
-              messages,
-              tools: TOOLS,
-              signal: controller.signal,
-              maxTokens: MAX_REPLY_TOKENS,
-            });
-            // Usage is per-call; the last one is the round's headline number.
-            usage = res.usage ?? usage;
-            if (!res.toolCalls.length) {
-              raw = res.text;
-              break;
-            }
-            messages.push(res.message);
-            for (const call of res.toolCalls) messages.push(await runTool(call));
+          // Usage is per-lap, and a tool round has several. Summing is the only
+          // honest headline number; the last lap alone hides the tool traffic.
+          usage = addUsage(usage, res.usage);
+
+          if (!res.toolCalls.length) {
+            raw = res.text;
+            break;
           }
+
+          // Tell the speaker the reply is about to pause. Everything spoken so
+          // far was the preamble; what comes back after this is the answer.
+          opts?.onToolStart?.(res.toolCalls.map((c) => c.name));
+          messages.push(res.message);
+          for (const call of res.toolCalls) {
+            messages.push(await tools.current.run(call, controller.signal));
+          }
+          // The preamble was spoken, not answered with — it belongs to the
+          // tool lap we are about to discard, so it must not become history.
+          streamed = '';
         }
 
         const replyAt = Date.now();

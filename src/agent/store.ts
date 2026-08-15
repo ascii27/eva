@@ -108,6 +108,16 @@ export async function archiveSession(session: Session, summary: string | null, e
   }
 }
 
+/** The archive files, oldest first. Chronological by construction of the name. */
+function memoryFiles(): File[] {
+  const dir = memoryDir();
+  if (!dir.exists) return [];
+  return dir
+    .list()
+    .filter((entry): entry is File => entry instanceof File && entry.name.endsWith('.json'))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * The `limit` most recent session summaries, oldest first — chronological order
  * reads naturally in the prompt, and keeping it stable across turns is what lets
@@ -115,16 +125,8 @@ export async function archiveSession(session: Session, summary: string | null, e
  */
 export async function recentMemories(limit: number): Promise<string[]> {
   try {
-    const dir = memoryDir();
-    if (!dir.exists) return [];
-    const files = dir
-      .list()
-      .filter((entry): entry is File => entry instanceof File && entry.name.endsWith('.json'))
-      .sort((a, b) => a.name.localeCompare(b.name)) // chronological, by construction
-      .slice(-limit);
-
     const summaries: string[] = [];
-    for (const file of files) {
+    for (const file of memoryFiles().slice(-limit)) {
       try {
         const parsed = JSON.parse(await file.text());
         if (parsed && typeof parsed.summary === 'string' && parsed.summary) summaries.push(parsed.summary);
@@ -133,6 +135,41 @@ export async function recentMemories(limit: number): Promise<string[]> {
       }
     }
     return summaries;
+  } catch {
+    return [];
+  }
+}
+
+/** What a memory search needs from an archived session: enough to rank it and date it. */
+export interface MemoryEntry {
+  id: string;
+  endedAt: number;
+  summary: string;
+}
+
+/**
+ * Every archived session, oldest first. Unlike `recentMemories` this is not
+ * capped: the whole point of the memory tool is to reach conversations older
+ * than the handful already carried in the prompt. The corpus is a few dozen
+ * short summaries on one phone, so reading all of them is cheap.
+ */
+export async function allMemories(): Promise<MemoryEntry[]> {
+  try {
+    const entries: MemoryEntry[] = [];
+    for (const file of memoryFiles()) {
+      try {
+        const parsed = JSON.parse(await file.text());
+        if (!parsed || typeof parsed.summary !== 'string' || !parsed.summary) continue;
+        entries.push({
+          id: typeof parsed.id === 'string' ? parsed.id : file.name.replace(/\.json$/, ''),
+          endedAt: typeof parsed.endedAt === 'number' ? parsed.endedAt : 0,
+          summary: parsed.summary,
+        });
+      } catch {
+        // Skip one unreadable record rather than losing the whole archive.
+      }
+    }
+    return entries;
   } catch {
     return [];
   }

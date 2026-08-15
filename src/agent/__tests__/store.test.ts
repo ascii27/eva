@@ -90,7 +90,7 @@ jest.mock('expo-file-system', () => {
 
 import * as FileSystem from 'expo-file-system';
 import { newSession, type Session } from '../history';
-import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from '../store';
+import { allMemories, archiveSession, clearAll, loadSession, recentMemories, saveSession } from '../store';
 
 const fake = (FileSystem as unknown as { __fake: { files: Map<string, string>; reset: () => void } }).__fake;
 
@@ -225,6 +225,48 @@ describe('recentMemories', () => {
     const [first] = [...fake.files.keys()].filter((k) => k.includes('/memory/')).sort();
     fake.files.set(first, JSON.stringify({ id: 'x', summary: '' }));
     expect(await recentMemories(5)).toEqual(['summary 1']);
+  });
+});
+
+describe('allMemories', () => {
+  const hoursApart = (n: number) => NOW + n * 3_600_000;
+
+  async function archiveMany(count: number): Promise<void> {
+    for (let i = 0; i < count; i++) {
+      const at = hoursApart(i);
+      await archiveSession(withTurns(at, ['x']), `summary ${i}`, at + 60_000);
+    }
+  }
+
+  it('is empty on a virgin device', async () => {
+    expect(await allMemories()).toEqual([]);
+  });
+
+  it('returns every archive, not just the recent ones the prompt already carries', async () => {
+    await archiveMany(8);
+    expect(await allMemories()).toHaveLength(8);
+  });
+
+  it('carries the id and end time the search needs to rank and date a hit', async () => {
+    await archiveMany(1);
+    const [only] = await allMemories();
+    expect(only.summary).toBe('summary 0');
+    expect(only.endedAt).toBe(hoursApart(0) + 60_000);
+    expect(only.id).toEqual(expect.any(String));
+  });
+
+  it('skips one unreadable record rather than losing the whole archive', async () => {
+    await archiveMany(3);
+    const [middle] = [...fake.files.keys()].filter((k) => k.includes('/memory/')).sort().slice(1);
+    fake.files.set(middle, 'not json at all');
+    expect((await allMemories()).map((m) => m.summary)).toEqual(['summary 0', 'summary 2']);
+  });
+
+  it('ignores archives whose summary is missing or empty', async () => {
+    await archiveMany(2);
+    const [first] = [...fake.files.keys()].filter((k) => k.includes('/memory/')).sort();
+    fake.files.set(first, JSON.stringify({ id: 'x', summary: '' }));
+    expect((await allMemories()).map((m) => m.summary)).toEqual(['summary 1']);
   });
 });
 

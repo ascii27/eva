@@ -38,6 +38,12 @@ export type AskResult =
 export interface AskOptions {
   /** Called with each fragment of the reply as it arrives, in order. */
   onDelta?: (text: string) => void;
+  /**
+   * A tool is about to run, so the reply will pause here. Anything streamed
+   * before this was the preamble Eva speaks to say what she is doing; the
+   * answer itself arrives after. Transports without tools never call it.
+   */
+  onToolStart?: (names: string[]) => void;
 }
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;

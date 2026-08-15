@@ -31,6 +31,15 @@ export function envAgentInput(): AgentConfig | null {
   return { apiKey, model: process.env.EXPO_PUBLIC_OPENAI_MODEL || DEFAULT_MODEL };
 }
 
+/**
+ * Tavily key for the web-search tool, from .env.local. Env-only on purpose:
+ * there is no pairing screen for it, and its absence is a supported state —
+ * the tool is simply not offered (see src/agent/tools/index.ts).
+ */
+export function envTavilyKey(): string | null {
+  return process.env.EXPO_PUBLIC_TAVILY_API_KEY || null;
+}
+
 export async function getAgentConfig(): Promise<AgentConfig | null> {
   try {
     const raw = await AsyncStorage.getItem(AGENT_CONFIG_KEY);
