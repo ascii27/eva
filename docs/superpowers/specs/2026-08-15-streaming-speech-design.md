@@ -1,6 +1,6 @@
 # Streaming speech — design
 
-Status: approved, not yet implemented.
+Status: implemented. Device verification still open — see the checklist at the end.
 
 Follows [2026-08-15-local-agent-loop-design.md](2026-08-15-local-agent-loop-design.md),
 which named this as the largest remaining latency win.

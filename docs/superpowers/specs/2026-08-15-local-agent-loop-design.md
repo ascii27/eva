@@ -165,10 +165,10 @@ Not covered by tests, and deliberately: the hook's timing (no
 ## Deliberately out of scope
 
 - **Tools.** The loop is shaped for them; none are defined.
-- **Sentence-streaming TTS.** The largest remaining latency win — speak the first
-  sentence while the rest generates. Needs a queue in `tts.ts` (whose `speak()`
-  pre-empts as its first statement) and a first-audio/drained split in
-  `deliver()`. The layers below already stream.
+- **Sentence-streaming TTS** — done, see
+  [2026-08-15-streaming-speech-design.md](2026-08-15-streaming-speech-design.md).
+  It needed no queue in the end: Kokoro partitions its own input natively, so one
+  long-lived stream fed incrementally does the job.
 - **exe.dev sync.** The file layout anticipates it; there is no sync code.
 - **Local proactive push.** Still Slack-driven; `proactive.ts` untouched.
 - **Retrieval over memory.** Recent-N injection only; no embeddings, no search.
