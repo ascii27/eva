@@ -71,6 +71,10 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
   const memories = useRef<string[]>([]);
   // Non-null while a compaction is in flight, so a second round can't start one.
   const compacting = useRef(false);
+  /** Bumped per ask; a resolved round whose generation has moved on must not
+   *  touch history — its answer belongs to a question already superseded. */
+  const askGen = useRef(0);
+  const inFlight = useRef<AbortController | null>(null);
   const callbacks = useRef({ onIssue, onUsage });
   callbacks.current = { onIssue, onUsage };
 
@@ -178,19 +182,27 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
 
   /**
    * Send the utterance to the model and resolve with its reply. Resolves with
-   * exactly one outcome; the round's own epoch guard in useEcho handles a
-   * superseded answer, so this doesn't need to.
+   * exactly one outcome. `useEcho`'s epoch guard protects the *speaker* — it
+   * stops a superseded round's deltas and callbacks reaching the face — but
+   * durable state needs its own guard, since nothing outside this hook holds
+   * the abandoned request's controller: that's what `askGen` is for.
    */
   const ask = useCallback(
     async (text: string, opts?: AskOptions): Promise<AskResult> => {
       const cfg = config.current;
       if (!cfg) return { kind: 'offline', message: "I don't have a brain configured right now." };
 
+      const gen = ++askGen.current;
+      // A new round supersedes the old one: stop the previous request streaming
+      // (and being billed), and stop its deltas arriving.
+      inFlight.current?.abort();
+
       const postedAt = Date.now();
       const asked = appendTurn(session.current ?? newSession(postedAt), { role: 'user', content: text }, postedAt);
       session.current = asked;
 
       const controller = new AbortController();
+      inFlight.current = controller;
       const timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
       let usage: ChatUsage | null = null;
       // Text handed to the speaker so far. On a mid-stream failure this is
@@ -243,6 +255,11 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
         if (usage) callbacks.current.onUsage?.(`agent · ${formatUsage(usage)}`);
         if (!raw) return { kind: 'error', message: 'agent · empty reply' };
 
+        // The user turn stays: Michael really did say it. The assistant turn does
+        // not, because a newer round is already the live conversation and
+        // appending here would place this answer after the newer question.
+        if (gen !== askGen.current) return { kind: 'error', message: 'agent · superseded' };
+
         session.current = appendTurn(session.current ?? asked, { role: 'assistant', content: raw }, replyAt);
         await saveSession(session.current);
         // After the answer is on its way to the speaker, never before it.
@@ -251,6 +268,7 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
         return { kind: 'reply', raw, speakable: speakableFromMrkdwn(raw), postedAt, replyAt };
       } catch (e) {
         if (streamed) {
+          if (gen !== askGen.current) return { kind: 'error', message: 'agent · superseded' };
           // Part of the reply is already audible. Record what was said so the
           // conversation stays coherent, and let the spoken part stand.
           session.current = appendTurn(session.current ?? asked, { role: 'assistant', content: streamed }, Date.now());
@@ -261,6 +279,7 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
         return { kind: 'error', message: `agent · ${e instanceof Error ? e.message : String(e)}` };
       } finally {
         clearTimeout(timer);
+        if (inFlight.current === controller) inFlight.current = null;
       }
     },
     [compact],

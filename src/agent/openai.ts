@@ -190,7 +190,13 @@ export function chatStream({
       if (r.chunk.usage) usage = r.chunk.usage;
       for (const delta of r.chunk.deltas) {
         text += delta;
-        onDelta(delta);
+        try {
+          onDelta(delta);
+        } catch {
+          // A delta the speaker cannot take must not abandon the request: this
+          // runs inside an XHR handler, and a throw here escapes before finish()
+          // and leaves the promise permanently unsettled.
+        }
       }
     };
 
@@ -216,7 +222,11 @@ export function chatStream({
     // afterwards and the whole response arrives in one lump.
     xhr.onprogress = read;
     xhr.onload = () => {
-      read();
+      try {
+        read();
+      } catch {
+        // Settle on what we have rather than never settling at all.
+      }
       cleanup();
       if (xhr.status < 200 || xhr.status >= 300) {
         finish(() => reject(new Error(streamErrorMessage(xhr.responseText, xhr.status))));

@@ -11,6 +11,14 @@ import { AudioContext, AudioManager } from 'react-native-audio-api';
 const KOKORO_SAMPLE_RATE = 24000;
 
 /**
+ * How long to wait for the *first* chunk before declaring the synthesis dead.
+ * Generous: a cold first synthesis is legitimately slow. The point is only that
+ * this window is covered at all — without it, a generator that hangs before
+ * yielding anything settles nothing, and the face never leaves 'thinking'.
+ */
+const FIRST_AUDIO_TIMEOUT_S = 20;
+
+/**
  * Mirror stt.ts's audio session exactly (playAndRecord, defaultToSpeaker +
  * Bluetooth HFP, mode 'default'): with both engines asking for the same
  * configuration the session never churns between Eva speaking and listening —
@@ -66,17 +74,22 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   // every playback event with the remaining scheduled audio plus slack.
   const chunkSeconds: number[] = [];
   let remainingSeconds = 0;
+  // remainingSeconds only means anything once real audio has been scheduled
+  // (enqueue maintains it incrementally from there); before that, this flag
+  // routes the watchdog to the dedicated pre-audio window instead.
+  let awaitingFirstAudio = true;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
 
   const rearmWatchdog = () => {
     if (watchdog) clearTimeout(watchdog);
     if (finished) return;
+    const seconds = awaitingFirstAudio ? FIRST_AUDIO_TIMEOUT_S : remainingSeconds + 5;
     watchdog = setTimeout(
       () => {
         if (__DEV__) console.log('[audioOut] watchdog: playback stalled, forcing done');
         finish(true);
       },
-      (remainingSeconds + 5) * 1000,
+      seconds * 1000,
     );
   };
 
@@ -104,9 +117,16 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     rearmWatchdog();
   };
 
+  // Cover the pre-playback window too: every other rearm site needs a chunk or a
+  // finishInput to have happened first.
+  rearmWatchdog();
+
   return {
     enqueue: (chunk) => {
       if (finished || chunk.length === 0) return;
+      // A real chunk is being scheduled: remainingSeconds is meaningful from
+      // here on, so hand the watchdog back to it.
+      awaitingFirstAudio = false;
       const buffer = context.createBuffer(1, chunk.length, KOKORO_SAMPLE_RATE);
       buffer.copyToChannel(chunk as Float32Array<ArrayBuffer>, 0);
       pending += 1;

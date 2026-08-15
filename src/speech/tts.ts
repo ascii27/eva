@@ -159,7 +159,13 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
     let ended = false;
     return {
       push: (text) => {
-        if (!ended) u.text += text;
+        // trim(): callers may hand a leading/trailing space of their own (or
+        // not, per useEcho's already-trimmed sentences) — either way the join
+        // below is the single source of the separator, so it must not double up.
+        if (!ended) {
+          const t = text.trim();
+          u.text = u.text ? `${u.text} ${t}` : t;
+        }
       },
       end: () => {
         if (ended) return;
@@ -194,7 +200,11 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
   return {
     push: (text) => {
       if (ended) return;
-      u.text += text;
+      // See the other speakOrSettle-adjacent push() above: trim() so the join
+      // below is the only place a separator gets added, regardless of what
+      // whitespace the caller included.
+      const t = text.trim();
+      u.text = u.text ? `${u.text} ${t}` : t;
       if (!fellBack) stream.push(text);
     },
     end: () => {

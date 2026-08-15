@@ -137,10 +137,15 @@ export function speakStreamWithKokoro(handlers: KokoroSpeakHandlers): KokoroStre
   const queued: string[] = [];
 
   const insert = (text: string) => {
-    // Kokoro partitions on terminal punctuation; callers send whole sentences,
-    // but a tail without one would otherwise sit in the buffer until the
-    // partitioner's skip fallback, so terminate it here.
-    e.streamInsert('.?!;…'.includes(text.slice(-1)) ? text : `${text}.`);
+    try {
+      // Kokoro partitions on terminal punctuation; callers send whole sentences,
+      // but a tail without one would otherwise sit in the buffer until the
+      // partitioner's skip fallback, so terminate it here.
+      e.streamInsert('.?!;…'.includes(text.slice(-1)) ? text : `${text}.`);
+    } catch {
+      // Best-effort, like every other native call here. A throw would propagate
+      // out through the transport's delta loop.
+    }
   };
 
   const prev = streamTail;
