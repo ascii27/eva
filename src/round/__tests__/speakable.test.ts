@@ -111,4 +111,12 @@ describe('speakableFromMrkdwn — plain markdown from the local agent', () => {
     const input = '**Tomorrow:**\n- 9am standup\n- 11am 1:1\n\nDetails in [your calendar](https://example.com/cal).';
     expect(speakableFromMrkdwn(input)).toBe('Tomorrow: 9am standup. 11am 1:1. Details in your calendar.');
   });
+
+  it('fully unwraps emphasis nested one level deeper than a fixed pass count', () => {
+    expect(speakableFromMrkdwn('**bold _italic._** more.')).toBe('bold italic. more.');
+  });
+
+  it('leaves no stray emphasis delimiters in deeply nested spans', () => {
+    expect(speakableFromMrkdwn('***triple*** and **_mixed_** done.')).not.toMatch(/[*_]/);
+  });
 });

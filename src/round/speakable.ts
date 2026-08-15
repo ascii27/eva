@@ -38,8 +38,16 @@ function replaceAngleToken(body: string): string {
 export function speakableFromMrkdwn(raw: string): string {
   let text = raw.replace(CODE_BLOCK_RE, '');
   text = text.replace(MD_LINK_RE, '$1');
-  // Unwrap twice so nested emphasis (`*_x_*`) fully unwraps.
-  text = text.replace(INLINE_RE, '$2').replace(INLINE_RE, '$2');
+  // Unwrap repeatedly: each pass can expose a nested span (`**bold _italic._**`
+  // needs three), and a fixed pass count silently leaks delimiters into speech
+  // once nesting is one level deeper than the count. Bounded because a
+  // guaranteed-terminating loop matters more here than unwrapping the
+  // pathological case — this runs on every spoken sentence.
+  for (let pass = 0; pass < 6; pass++) {
+    const next = text.replace(INLINE_RE, '$2');
+    if (next === text) break;
+    text = next;
+  }
   text = text.replace(ANGLE_TOKEN_RE, (_, body: string) => replaceAngleToken(body));
   text = text.replace(BARE_URL_RE, '');
   text = text.replace(EMOJI_RE, '');
