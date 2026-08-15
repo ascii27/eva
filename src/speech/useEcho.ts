@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { FaceMode } from '../face/types';
-import { type AskResult, formatLatency } from '../round/ask';
+import { type AskOptions, type AskResult, formatLatency } from '../round/ask';
 import { beginAside, decideAside, noteTool, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
@@ -29,10 +29,10 @@ export interface EchoHandlers {
   /** Human-readable failures (permissions, no on-device support, …). */
   onIssue?: (message: string) => void;
   /**
-   * Phase 3: route captured speech to Eva and speak her reply. When absent
-   * (unpaired device, Expo Go), rounds fall back to the Phase-1 echo.
+   * Route captured speech to Eva and speak her reply. When absent (unpaired
+   * device, no API key, Expo Go), rounds fall back to the Phase-1 echo.
    */
-  ask?: (text: string) => Promise<AskResult>;
+  ask?: (text: string, opts?: AskOptions) => Promise<AskResult>;
   /** Formatted round-latency line, emitted as the reply starts speaking. */
   onLatency?: (line: string) => void;
   /**

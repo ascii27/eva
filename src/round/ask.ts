@@ -30,6 +30,16 @@ export type AskResult =
   | { kind: 'offline'; message?: string }
   | { kind: 'error'; message: string };
 
+/**
+ * Per-round options a transport may honour. A transport that cannot stream
+ * simply never calls `onDelta`, which is what lets useEcho decide how to
+ * deliver the reply without asking the transport what it supports.
+ */
+export interface AskOptions {
+  /** Called with each fragment of the reply as it arrives, in order. */
+  onDelta?: (text: string) => void;
+}
+
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
 export function formatLatency(marks: RoundMarks): string {

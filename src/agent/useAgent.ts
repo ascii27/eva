@@ -7,7 +7,7 @@
 // conversation state is ours to keep (see history.ts).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AskResult } from '../round/ask';
+import type { AskOptions, AskResult } from '../round/ask';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { type AgentConfig, envAgentInput, getAgentConfig } from './config';
 import {
@@ -20,7 +20,7 @@ import {
   planCompaction,
   type Session,
 } from './history';
-import { chat, type ChatUsage, formatUsage, type RequestMessage, type ToolCall, type ToolMessage, type ToolSpec } from './openai';
+import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage, type ToolCall, type ToolMessage, type ToolSpec } from './openai';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
 import { archiveSession, loadSession, recentMemories, saveSession } from './store';
 
@@ -182,7 +182,7 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
    * superseded answer, so this doesn't need to.
    */
   const ask = useCallback(
-    async (text: string): Promise<AskResult> => {
+    async (text: string, opts?: AskOptions): Promise<AskResult> => {
       const cfg = config.current;
       if (!cfg) return { kind: 'offline', message: "I don't have a brain configured right now." };
 
@@ -193,26 +193,50 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
       let usage: ChatUsage | null = null;
+      // Text handed to the speaker so far. On a mid-stream failure this is
+      // what Eva actually said, so it is what goes into history.
+      let streamed = '';
+
       try {
         const messages: RequestMessage[] = buildRequest(PERSONA, memories.current, asked);
         let raw = '';
-        for (let step = 0; step < MAX_STEPS; step++) {
-          const res = await chat({
+
+        // Streaming cannot reassemble fragmented tool_call arguments, so a
+        // request that offers tools must use the non-streaming loop. Guarding
+        // on TOOLS means defining one can't silently break streaming.
+        if (opts?.onDelta && TOOLS.length === 0) {
+          const res = await chatStream({
             apiKey: cfg.apiKey,
             model: cfg.model,
             messages,
-            tools: TOOLS,
             signal: controller.signal,
             maxTokens: MAX_REPLY_TOKENS,
+            onDelta: (delta) => {
+              streamed += delta;
+              opts.onDelta?.(delta);
+            },
           });
-          // Usage is per-call; the last one is the round's headline number.
-          usage = res.usage ?? usage;
-          if (!res.toolCalls.length) {
-            raw = res.text;
-            break;
+          usage = res.usage;
+          raw = res.text;
+        } else {
+          for (let step = 0; step < MAX_STEPS; step++) {
+            const res = await chat({
+              apiKey: cfg.apiKey,
+              model: cfg.model,
+              messages,
+              tools: TOOLS,
+              signal: controller.signal,
+              maxTokens: MAX_REPLY_TOKENS,
+            });
+            // Usage is per-call; the last one is the round's headline number.
+            usage = res.usage ?? usage;
+            if (!res.toolCalls.length) {
+              raw = res.text;
+              break;
+            }
+            messages.push(res.message);
+            for (const call of res.toolCalls) messages.push(await runTool(call));
           }
-          messages.push(res.message);
-          for (const call of res.toolCalls) messages.push(await runTool(call));
         }
 
         const replyAt = Date.now();
@@ -226,6 +250,13 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
 
         return { kind: 'reply', raw, speakable: speakableFromMrkdwn(raw), postedAt, replyAt };
       } catch (e) {
+        if (streamed) {
+          // Part of the reply is already audible. Record what was said so the
+          // conversation stays coherent, and let the spoken part stand.
+          session.current = appendTurn(session.current ?? asked, { role: 'assistant', content: streamed }, Date.now());
+          await saveSession(session.current);
+          return { kind: 'error', message: 'agent · stream failed mid-reply' };
+        }
         if (controller.signal.aborted) return { kind: 'timeout', postedAt };
         return { kind: 'error', message: `agent · ${e instanceof Error ? e.message : String(e)}` };
       } finally {
