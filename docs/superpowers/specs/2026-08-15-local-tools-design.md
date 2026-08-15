@@ -21,6 +21,24 @@ unnecessary: `useAgent` already drives the lap loop, so it fires `onToolStart`
 itself when a lap resolves with tool calls, a few milliseconds later and with
 one less API surface.
 
+The search digest changed shape once it met the real API (`npm run
+probe:tavily`). The design said the synthesized answer would lead with snippets
+behind it "for when it is thin or wrong". In practice the snippets behind a good
+answer were SEO filler and tourism copy — about 900 characters of it, tripling
+the payload for a reply that is one or two spoken sentences — and Tavily writes
+the answer *from* those snippets, so sending both pays for the same information
+twice and buries it. The answer now wins outright and the snippets are a
+fallback for when there is none: two sample queries went from 1,177 and 1,283
+characters to 93 and 232. The tradeoff is that a thin answer leaves Eva nothing
+to fall back on within the round; saying she is unsure is a better failure than
+reading marketing copy aloud.
+
+Measured search latency on that probe was 0.2s warm and 2.3s cold, which
+narrows — but does not remove — the window the `hold()` fix guards. A typical
+search plus the next lap's time-to-first-token lands around three seconds,
+inside the old five-second watchdog. It crosses on a slow network, a cold
+query, or a round that calls two tools.
+
 Follows [2026-08-15-streaming-speech-design.md](2026-08-15-streaming-speech-design.md),
 whose closing note named this as the next round — and named the fork it starts
 with.

@@ -40,21 +40,29 @@ function snippet(result: TavilyResult): string | null {
 }
 
 /**
- * A Tavily response as a short digest for the model to answer from. The
- * synthesized answer leads, because it is usually the whole reply; the
- * snippets behind it are there for when it is thin or wrong.
+ * A Tavily response as a short digest for the model to answer from.
+ *
+ * The synthesized answer wins outright when there is one, and the snippets are
+ * a fallback rather than support. That is measured, not assumed: against the
+ * live API the snippets behind a good answer were SEO filler and marketing
+ * copy, ~900 characters of it, for a reply that is one or two spoken
+ * sentences. Tavily writes the answer *from* those snippets, so sending both
+ * pays for the same information twice and buries it.
+ *
+ * The tradeoff is real — a thin or wrong answer leaves Eva nothing to fall
+ * back on within the round. She can still say she is unsure, which is a better
+ * failure than reading tourism copy aloud.
  */
 export function formatResults(raw: TavilyResponse): string {
   const answer = (raw.answer ?? '').trim();
+  if (answer) return answer;
+
   const snippets = (raw.results ?? [])
     .map(snippet)
     .filter((s): s is string => s !== null)
     .slice(0, MAX_SNIPPETS);
 
-  if (!answer && snippets.length === 0) return NOTHING;
-  if (!answer) return snippets.join('\n\n');
-  if (snippets.length === 0) return answer;
-  return `${answer}\n\n${snippets.join('\n\n')}`;
+  return snippets.length ? snippets.join('\n\n') : NOTHING;
 }
 
 /**

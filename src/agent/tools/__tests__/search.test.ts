@@ -37,12 +37,16 @@ describe('formatResults', () => {
     expect(formatResults(FIXTURE).startsWith(FIXTURE.answer)).toBe(true);
   });
 
-  it('includes supporting snippets behind the answer', () => {
-    expect(formatResults(FIXTURE)).toContain('MetLife Stadium');
+  it('sends the answer alone, without the snippets it was summarized from', () => {
+    // Measured against the live API: the snippets behind a good answer are SEO
+    // filler and marketing copy, and tripled the payload for a reply that is
+    // one or two spoken sentences. Tavily writes the answer *from* them, so
+    // keeping both means paying for the same information twice, noisily.
+    expect(formatResults(FIXTURE)).toBe(FIXTURE.answer);
   });
 
-  it('caps the snippets, because the whole thing is read aloud', () => {
-    expect(formatResults(FIXTURE)).not.toContain('Unrelated administrative notice');
+  it('caps the snippets when it does fall back to them', () => {
+    expect(formatResults({ results: FIXTURE.results })).not.toContain('Unrelated administrative notice');
   });
 
   it('omits URLs, which are unlistenable', () => {
