@@ -42,6 +42,8 @@ const mockKokoro = {
   },
   speakWithKokoro: jest.fn(),
   stopKokoro: jest.fn(),
+  streamPushes: [] as string[],
+  streamEnded: false,
 };
 
 jest.mock('../kokoro', () => ({
@@ -51,13 +53,22 @@ jest.mock('../kokoro', () => ({
     mockKokoro.handlers = handlers as typeof mockKokoro.handlers;
     mockKokoro.speakWithKokoro(text, handlers);
   },
+  speakStreamWithKokoro: (handlers: unknown) => {
+    mockKokoro.handlers = handlers as typeof mockKokoro.handlers;
+    return {
+      push: (text: string) => mockKokoro.streamPushes.push(text),
+      end: () => {
+        mockKokoro.streamEnded = true;
+      },
+    };
+  },
   stopKokoro: () => {
     mockKokoro.handlers = null;
     mockKokoro.stopKokoro();
   },
 }));
 
-import { speak, stopSpeaking } from '../tts';
+import { speak, speakStream, stopSpeaking } from '../tts';
 
 beforeEach(() => {
   stopSpeaking(); // clear any active utterance left by a prior test
@@ -170,6 +181,80 @@ describe('kokoro engine routing (ready)', () => {
     await Promise.resolve();
     expect(cb.onError).toHaveBeenCalledTimes(1);
     expect(cb.onDone).not.toHaveBeenCalled();
+    expect(mockSpeech.speak).not.toHaveBeenCalled();
+  });
+});
+
+describe('speakStream', () => {
+  beforeEach(() => {
+    mockKokoro.streamPushes = [];
+    mockKokoro.streamEnded = false;
+    mockKokoro.handlers = null;
+    mockKokoro.state = 'ready';
+    mockSpeech.speak.mockClear();
+    mockSpeech.current = null;
+  });
+
+  it('forwards each push to the Kokoro stream', () => {
+    const stream = speakStream();
+    stream.push('Hello there.');
+    stream.push('How are you?');
+    expect(mockKokoro.streamPushes).toEqual(['Hello there.', 'How are you?']);
+  });
+
+  it('closes the Kokoro stream on end', () => {
+    speakStream().end();
+    expect(mockKokoro.streamEnded).toBe(true);
+  });
+
+  it('reports start on first audio and done on drain', () => {
+    const onStart = jest.fn();
+    const onDone = jest.fn();
+    const stream = speakStream({ onStart, onDone });
+    stream.push('Hi.');
+    mockKokoro.handlers?.onStart();
+    expect(onStart).toHaveBeenCalledTimes(1);
+    mockKokoro.handlers?.onDone();
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports done exactly once even if drain is reported twice', () => {
+    const onDone = jest.fn();
+    speakStream({ onDone }).push('Hi.');
+    mockKokoro.handlers?.onDone();
+    mockKokoro.handlers?.onDone();
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('speaks nothing until end when Kokoro is unavailable', async () => {
+    mockKokoro.state = 'unavailable';
+    const stream = speakStream();
+    stream.push('Hello there.');
+    stream.push(' How are you?');
+    expect(mockSpeech.speak).not.toHaveBeenCalled();
+    stream.end();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockSpeech.speak).toHaveBeenCalledTimes(1);
+    expect(mockSpeech.speak.mock.calls[0][0]).toBe('Hello there. How are you?');
+  });
+
+  it('replays the whole text on the system voice when Kokoro fails before any audio', async () => {
+    const stream = speakStream();
+    stream.push('Hello there.');
+    mockKokoro.handlers?.onError(new Error('nope'), false);
+    stream.push(' And more.');
+    stream.end();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mockSpeech.speak).toHaveBeenCalledTimes(1);
+    expect(mockSpeech.speak.mock.calls[0][0]).toBe('Hello there. And more.');
+  });
+
+  it('reports an error rather than falling back once audio has started', () => {
+    const onError = jest.fn();
+    const stream = speakStream({ onError });
+    stream.push('Hello.');
+    mockKokoro.handlers?.onError(new Error('mid-audio'), true);
+    expect(onError).toHaveBeenCalledTimes(1);
     expect(mockSpeech.speak).not.toHaveBeenCalled();
   });
 });

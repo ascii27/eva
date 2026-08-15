@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
-import { getTtsStatus, initKokoro, speakWithKokoro, stopKokoro } from './kokoro';
+import { getTtsStatus, initKokoro, speakStreamWithKokoro, speakWithKokoro, stopKokoro } from './kokoro';
 
 // v2: v1 wrongly persisted auto-picks; bumping the key discards those.
 const VOICE_KEY = 'eva.voiceId.v2';
@@ -122,6 +122,78 @@ export async function speak(text: string, cb: SpeakCallbacks = {}): Promise<void
     return;
   }
   await speakSystem(u);
+}
+
+export interface SpeechStream {
+  /** Append text to speak. Safe to call repeatedly as a reply arrives. */
+  push(text: string): void;
+  /** No more text coming. */
+  end(): void;
+}
+
+/**
+ * Speak text that is still arriving. Kokoro streams it as one continuous
+ * utterance; the system voice, which has no streaming API, accumulates and
+ * speaks the whole thing on end() — exactly today's behavior and latency.
+ */
+export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
+  stopSpeaking();
+  const u: Utterance = { id: ++seq, text: '', cb, settled: false };
+  active = u;
+  const status = getTtsStatus();
+  // A failed first-run download would otherwise demote the appliance to the
+  // system voice until relaunch; retrying here gives a natural backoff.
+  if (status.state === 'error') void initKokoro();
+
+  if (status.state !== 'ready') {
+    let ended = false;
+    return {
+      push: (text) => {
+        if (!ended) u.text += text;
+      },
+      end: () => {
+        if (ended) return;
+        ended = true;
+        void speakSystem(u);
+      },
+    };
+  }
+
+  if (__DEV__) console.log('[tts] streaming (kokoro)');
+  let fellBack = false;
+  let ended = false;
+  const stream = speakStreamWithKokoro({
+    onStart: () => {
+      if (isCurrent(u)) cb.onStart?.();
+    },
+    onDone: () => settleUtterance(u, () => cb.onDone?.()),
+    onError: (e, audioStarted) => {
+      if (u.settled) return;
+      if (audioStarted) {
+        settleUtterance(u, () => cb.onError?.(e));
+        return;
+      }
+      // Nothing audible yet — the system voice can still speak the whole
+      // reply. u.text has been accumulating for exactly this case.
+      if (__DEV__) console.log('[tts] kokoro failed pre-audio, falling back:', e);
+      fellBack = true;
+      if (ended) void speakSystem(u);
+    },
+  });
+
+  return {
+    push: (text) => {
+      if (ended) return;
+      u.text += text;
+      if (!fellBack) stream.push(text);
+    },
+    end: () => {
+      if (ended) return;
+      ended = true;
+      if (fellBack) void speakSystem(u);
+      else stream.end();
+    },
+  };
 }
 
 export function stopSpeaking(): void {
