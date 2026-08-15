@@ -257,7 +257,16 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
           opts?.onToolStart?.(res.toolCalls.map((c) => c.name));
           messages.push(res.message);
           for (const call of res.toolCalls) {
-            messages.push(await tools.current.run(call, controller.signal));
+            const startedAt = Date.now();
+            const answered = await tools.current.run(call, controller.signal);
+            if (__DEV__) {
+              // The gap this prints is the one the speech hold has to cover.
+              const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
+              console.log(
+                `[agent] tool ${call.name}(${call.arguments}) → ${secs}s, ${answered.content.length} chars: ${answered.content.slice(0, 90)}`,
+              );
+            }
+            messages.push(answered);
           }
           // The preamble was spoken, not answered with — it belongs to the
           // tool lap we are about to discard, so it must not become history.

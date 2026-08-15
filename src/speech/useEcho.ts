@@ -313,6 +313,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
        */
       const onToolStart = (names: string[]) => {
         if (round !== epoch.current) return;
+        if (__DEV__) {
+          // Whether a stream is open here is exactly whether the model obeyed
+          // the preamble rule — the one thing about this that cannot be
+          // checked off the device.
+          console.log(
+            `[echo] tool gap: ${names.join(', ')} — ${speech.current ? 'holding the stream' : 'NO PREAMBLE, asides cover it'}`,
+          );
+        }
         if (speech.current) {
           const tail = flushPending(sentences.current);
           if (tail) {
