@@ -57,6 +57,13 @@ interface DevControlsProps {
   onSlackReconnect: () => void;
   /** Typed question → full Eva round trip (the simulator path — no STT needed). */
   onAsk: (text: string) => void;
+  /** Which brain answers: the local agent loop, or the remote Eva over Slack. */
+  brainLocal: boolean;
+  onToggleBrain: () => void;
+  /** Active local model id, or why there isn't one. */
+  agentModel: string;
+  /** Close the conversation out to memory now, instead of after the 30min gap. */
+  onEndSession: () => void;
 }
 
 export function DevControls(props: DevControlsProps) {
@@ -173,10 +180,15 @@ export function DevControls(props: DevControlsProps) {
             <Btn label="Proactive test" onPress={props.onProactiveTest} />
           </View>
 
-          <Text style={styles.sectionLabel}>SLACK</Text>
+          <Text style={styles.sectionLabel}>BRAIN · {props.brainLocal ? props.agentModel : 'slack'}</Text>
           <View style={styles.row}>
-            <Btn label="Pair" sub={props.slackStatus} onPress={props.onSlackPair} />
-            <Btn label="Reconnect" onPress={props.onSlackReconnect} />
+            <Btn
+              label={props.brainLocal ? 'Local' : 'Slack'}
+              sub="tap to switch"
+              active={props.brainLocal}
+              onPress={props.onToggleBrain}
+            />
+            <Btn label="End session" sub="→ memory" onPress={props.onEndSession} />
           </View>
           <View style={styles.row}>
             <TextInput
@@ -190,6 +202,12 @@ export function DevControls(props: DevControlsProps) {
               returnKeyType="send"
             />
             <Btn label="Ask" onPress={submitAsk} />
+          </View>
+
+          <Text style={styles.sectionLabel}>SLACK</Text>
+          <View style={styles.row}>
+            <Btn label="Pair" sub={props.slackStatus} onPress={props.onSlackPair} />
+            <Btn label="Reconnect" onPress={props.onSlackReconnect} />
           </View>
 
           <Text style={styles.sectionLabel}>WAKE WORD</Text>

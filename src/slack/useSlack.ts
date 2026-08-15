@@ -219,14 +219,14 @@ export function useSlack({ onEvaMessage, onIssue, onToolActivity }: UseSlackOpti
         // Being spoken to is the strongest liveness signal there is — skip
         // whatever backoff is pending and dial right now.
         if (statusRef.current === 'disconnected') void socket.current?.reconnectNow();
-        return { kind: 'offline' };
+        return { kind: 'offline', message: "I can't reach Slack right now." };
       }
-      settlePending({ kind: 'error', message: 'superseded by a newer ask' });
+      settlePending({ kind: 'error', message: 'slack · superseded by a newer ask' });
       let askTs: string;
       try {
         ({ ts: askTs } = await postMessage(cfg.botToken, cfg.channelId, `<@${cfg.evaUserId}> ${text}`, threadTs));
       } catch (e) {
-        return { kind: 'error', message: e instanceof Error ? e.message : String(e) };
+        return { kind: 'error', message: `slack · ${e instanceof Error ? e.message : String(e)}` };
       }
       const postedAt = Date.now();
       return new Promise<AskResult>((resolve) => {
@@ -237,7 +237,13 @@ export function useSlack({ onEvaMessage, onIssue, onToolActivity }: UseSlackOpti
           resolve,
           timer: setTimeout(() => {
             pending.current = null;
-            resolve({ kind: 'timeout', postedAt });
+            // Her answer may still land later, and it reaches the transcript
+            // when it does — worth saying, since it's an async channel.
+            resolve({
+              kind: 'timeout',
+              postedAt,
+              message: "Sorry — Eva hasn't answered yet. Her reply will show up in the transcript.",
+            });
           }, ASK_TIMEOUT_MS),
         };
         // A fast reply may have arrived while postMessage was in flight. It was

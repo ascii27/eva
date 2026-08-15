@@ -87,7 +87,7 @@ loudly if Eva ignores it:
 | Sender must be Eva's own user | `ev.user === cfg.evaUserId` (`src/slack/useSlack.ts`) | Ignored entirely — a bot-token post won't match |
 | No leading `:emoji:` | `isToolEcho` (`src/slack/sanitize.ts`) | Silently dropped — indistinguishable from a tool trace |
 | 30-minute thread life | `ADOPTION_IDLE_MS` (`src/speech/proactive.ts`) | Later posts in a lapsed thread go silent until re-mentioned |
-| No bullets/links/code | `speakableFromMrkdwn` (`src/slack/sanitize.ts`) | Formatting is stripped; the remainder often reads as nonsense |
+| No bullets/links/code | `speakableFromMrkdwn` (`src/round/speakable.ts`) | Formatting is stripped; the remainder often reads as nonsense |
 | One message per turn | `LiveExchange` (`src/speech/proactive.ts`) | Trailing messages during a live exchange go to the transcript, unspoken |
 | One thing at a time | `PROACTIVE_QUEUE_MAX` (`src/speech/proactive.ts`) | Past 5 pending, the oldest is dropped (transcript only) |
 

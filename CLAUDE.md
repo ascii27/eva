@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Eva Companion: a React Native + Expo app for a **single dedicated iPhone** sitting on a desk in **landscape** — an always-on robot face for Eva (a Slack-reachable chief-of-staff agent), with on-device speech both directions. Not for the App Store; iOS only; one device. The PRD phases: 1 device foundation (done), 2 wake word, 3 live Eva over Slack, 4 appliance hardening.
+Eva Companion: a React Native + Expo app for a **single dedicated iPhone** sitting on a desk in **landscape** — an always-on robot face for Eva (a chief-of-staff agent), with on-device speech both directions. Not for the App Store; iOS only; one device. The PRD phases: 1 device foundation (done), 2 wake word, 3 live Eva over Slack (done), 4 appliance hardening.
+
+Beyond the PRD: Eva now also runs as a **local agent loop** (`src/agent/`) talking straight to the OpenAI chat API, which is the default brain. Slack remains switchable from the dev overlay — it is still the only route to the real hermes-agent's tools, and the only source of proactive pushes.
 
 ## Commands
 
@@ -27,10 +29,18 @@ Two layers, deliberately separated:
 
 `src/face/FaceScreen.tsx` owns all state (mode, mouth output, color, side column, transcript) and wires the echo loop + dev controls. The dev overlay opens on **triple-tap top-left**.
 
+The round contract (`src/round/`) is what keeps the two brains interchangeable: `ask(text) => Promise<AskResult>` plus `formatLatency`, and `speakableFromMrkdwn` (flattens both Slack mrkdwn and plain markdown for the ear). `useEcho` switches on `AskResult` and cannot tell which brain answered. Don't reach back into `src/slack/` for these.
+
+Local agent (`src/agent/`) — same pure/effectful split as everything else:
+- `history.ts` is the policy and holds the interesting decisions: session-gap detection, token-budget compaction (`planCompaction` never splits a user/assistant pair; `applyCompaction` drops by *count* so turns arriving mid-summarization survive), and `buildRequest`'s message layout. That layout is load-bearing for cost: persona + remembered summaries go in one leading system message that stays byte-identical for the whole session, so a compaction rewriting the running-summary message doesn't invalidate the cached prefix. Prompt caching needs ≥1024 prefix tokens, so it starts paying a few turns in, not on turn one.
+- `store.ts` deliberately uses expo-file-system rather than AsyncStorage: one JSON file per archived session under `<documents>/eva/memory/`, named by `sessionId()` so listing sorts chronologically. That's the unit a future exe.dev sync would push.
+- `useAgent.ts` owns all timing: the mount-time gap archive, the 30s abort, and compaction fired *after* a reply is on its way to the speaker, never in the round's critical path.
+- `persona.ts` is Eva's local system prompt. It has no tools, so it's told to say so rather than imply it acted. Voice rules are shared with `docs/eva-proactive-prompt.md` — change both together.
+
 Speech (`src/speech/`):
 - `stt.ts` lazy-requires `expo-speech-recognition` so Expo Go (no native module) still runs the face. **Privacy invariant: `requiresOnDeviceRecognition: true`, and refuse to listen rather than fall back to network recognition.** Note: the PRD's preferred `expo-speech-transcriber` was rejected — its realtime path never sets the on-device flag.
 - `tts.ts` picks and persists one Enhanced-quality English system voice (Eva's canonical voice).
-- `useEcho.ts` is the round choreographer: listen → thinking → speak. Without a Slack `ask` handler it falls back to the Phase-1 echo (speak the transcript back); with one it posts to Eva and speaks her reply. `announce()` is the reverse direction — Eva speaking first.
+- `useEcho.ts` is the round choreographer: listen → thinking → speak. Without an `ask` handler it falls back to the Phase-1 echo (speak the transcript back); with one it asks whichever brain is selected and speaks the reply. `announce()` is the reverse direction — Eva speaking first.
 - Policy lives in pure, unit-tested modules with no React, and all timing/side effects stay in the hooks: `conversation.ts` (follow-up window), `asides.ts` (filler cadence), `proactive.ts` (thread adoption + backlog for Eva-initiated messages). Follow that split when adding behavior.
 
 ## Constraints
