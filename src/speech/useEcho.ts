@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { FaceMode } from '../face/types';
 import { type AskOptions, type AskResult, formatLatency } from '../round/ask';
+import { emptySentences, flushPending, pushText, type SentenceState } from '../round/sentences';
 import { beginAside, decideAside, noteTool, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
-import { speak, stopSpeaking } from './tts';
+import { speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
 
 const THINK_BEAT_MS = 300;
 const ALERT_BEAT_MS = 600;
@@ -67,6 +68,13 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   // Non-null timer doubles as "this round still owns the thinking wait".
   const asideState = useRef<AsideState | null>(null);
   const asideTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Streaming delivery. Non-null once the first delta of a round has arrived,
+  // which is also the signal that this round is being spoken incrementally
+  // rather than as one finished utterance.
+  const speech = useRef<SpeechStream | null>(null);
+  const sentences = useRef<SentenceState>(emptySentences());
+  /** Text actually handed to the speaker, for onSaid on a failed stream. */
+  const spoken = useRef('');
   // Live handler refs for the mount-once native event subscription.
   const handlers = useRef({ ask, onLatency, conversation, asides });
   handlers.current = { ask, onLatency, conversation, asides };
@@ -84,10 +92,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [clearTimer],
   );
 
-  const clearAsides = useCallback(() => {
+  /** Drop both cosmetic asides and any open streaming utterance. */
+  const clearRoundSpeech = useCallback(() => {
     if (asideTimer.current) clearInterval(asideTimer.current);
     asideTimer.current = null;
     asideState.current = null;
+    speech.current = null;
+    sentences.current = emptySentences();
+    spoken.current = '';
   }, []);
 
   /**
@@ -135,7 +147,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   const openMic = useCallback(
     async (wokeAtMs?: number) => {
       const round = ++epoch.current;
-      clearAsides();
+      clearRoundSpeech();
       wokeAt.current = wokeAtMs;
       const blocker = await ensureReady();
       if (round !== epoch.current) return;
@@ -157,7 +169,27 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       setMode('listening');
       startListening();
     },
-    [clearAsides, clearTimer, onIssue, setMode, settle],
+    [clearRoundSpeech, clearTimer, onIssue, setMode, settle],
+  );
+
+  /**
+   * A reply finished playing. Either open the follow-up window and re-arm the
+   * mic, or settle the face. Shared by the whole-utterance and streaming paths.
+   */
+  const finishSpoken = useCallback(
+    (round: number, via: 'pleased' | 'confused') => {
+      if (round !== epoch.current) return;
+      if (via === 'pleased' && voiceRound.current && handlers.current.conversation) {
+        // Follow-up window: pleased beat doubles as the "your turn" cue,
+        // then re-open the mic instead of settling to idle.
+        convWindow.current = decideNext('reply-delivered', Date.now(), convWindow.current).window;
+        setMode('pleased');
+        after(PLEASED_BEAT_MS, () => void openMic());
+      } else {
+        settle(via, via === 'pleased' ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+      }
+    },
+    [after, openMic, setMode, settle],
   );
 
   /**
@@ -180,24 +212,13 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         onBoundary: () => {
           if (live()) onPulse?.();
         },
-        onDone: () => {
-          if (!live()) return;
-          if (via === 'pleased' && voiceRound.current && handlers.current.conversation) {
-            // Follow-up window: pleased beat doubles as the "your turn" cue,
-            // then re-open the mic instead of settling to idle.
-            convWindow.current = decideNext('reply-delivered', Date.now(), convWindow.current).window;
-            setMode('pleased');
-            after(PLEASED_BEAT_MS, () => void openMic());
-          } else {
-            settle(via, via === 'pleased' ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
-          }
-        },
+        onDone: () => finishSpoken(round, via),
         onError: () => {
           if (live()) settle('confused', CONFUSED_BEAT_MS);
         },
       });
     },
-    [after, onPulse, onSaid, openMic, setMode, settle],
+    [finishSpoken, onPulse, onSaid, settle],
   );
 
   const sayBack = useCallback(
@@ -217,17 +238,18 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         return;
       }
       const round = ++epoch.current;
-      clearAsides();
+      clearRoundSpeech();
       const heardAt = Date.now();
       const marks = { wokeAt: wokeAt.current, heardAt };
       clearTimer();
       setMode('thinking'); // held by the real round trip, not a cosmetic beat
+      const postedAt = Date.now();
+      let firstDeltaAt: number | undefined;
+
       if (handlers.current.asides) {
-        asideState.current = beginAside(Date.now());
+        asideState.current = beginAside(postedAt);
         // Coarse 1s tick; decideAside owns the real cadence, including whether
-        // the wait has lasted long enough to deserve an opener at all. The
-        // interval (not a chained timeout) keeps ticking across long Kokoro
-        // syntheses.
+        // the wait has lasted long enough to deserve an opener at all.
         asideTimer.current = setInterval(() => {
           if (!asideState.current) return;
           const d = decideAside(Date.now(), asideState.current, Math.random());
@@ -235,13 +257,70 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
           if (d.say) speakAside(d.say);
         }, 1_000);
       }
+
+      /** First delta of the round: stop narrating and start speaking for real. */
+      const openSpeech = () => {
+        if (speech.current) return;
+        firstDeltaAt = Date.now();
+        // An aside must not talk over the reply, and its settling onDone must
+        // not flip the mode back to thinking mid-answer.
+        if (asideTimer.current) clearInterval(asideTimer.current);
+        asideTimer.current = null;
+        asideState.current = null;
+        stopSpeaking();
+        speech.current = speakStream({
+          onStart: () => {
+            if (round !== epoch.current) return;
+            setMode('speaking');
+            handlers.current.onLatency?.(
+              formatLatency({ ...marks, postedAt, replyAt: firstDeltaAt, spokeAt: Date.now() }),
+            );
+          },
+          onBoundary: () => {
+            if (round === epoch.current) onPulse?.();
+          },
+          onDone: () => finishSpoken(round, 'pleased'),
+          onError: () => finishSpoken(round, 'confused'),
+        });
+      };
+
+      const onDelta = (delta: string) => {
+        if (round !== epoch.current) return;
+        openSpeech();
+        const r = pushText(sentences.current, delta);
+        sentences.current = r.state;
+        for (const sentence of r.sentences) {
+          spoken.current = spoken.current ? `${spoken.current} ${sentence}` : sentence;
+          speech.current?.push(sentence);
+        }
+      };
+
       try {
-        const result = await doAsk(text);
-        if (round !== epoch.current) return; // cancelled or superseded mid-flight; owner already cleared our asides
-        clearAsides(); // before deliver(), so a settling aside can't flip the mode back
+        const result = await doAsk(text, { onDelta });
+        if (round !== epoch.current) return; // cancelled or superseded mid-flight
         if (result.kind !== 'reply') {
           convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
         }
+
+        // Streaming path: the reply is already playing. Flush the tail, close
+        // the stream, and let its drain callback settle the round.
+        if (speech.current) {
+          const tail = flushPending(sentences.current);
+          if (tail) {
+            spoken.current = spoken.current ? `${spoken.current} ${tail}` : tail;
+            speech.current.push(tail);
+          }
+          speech.current.end();
+          speech.current = null;
+          onSaid?.(result.kind === 'reply' ? result.speakable : spoken.current);
+          // A failure after audio started is a transcript line, never a spoken
+          // apology over the top of a half-delivered answer.
+          if (result.kind === 'error') onIssue?.(result.message);
+          return;
+        }
+
+        // Nothing streamed (Slack, or a transport that resolved without deltas).
+        clearRoundSpeech();
         switch (result.kind) {
           case 'reply': {
             const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
@@ -260,20 +339,21 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
             deliver(result.message ?? OFFLINE_LINE, 'confused');
             break;
           case 'error':
-            stopSpeaking(); // a lingering or queued aside must not talk over (or hijack) the confused face
+            stopSpeaking(); // a lingering or queued aside must not talk over the confused face
             onIssue?.(result.message); // transports prefix their own source
             settle('confused', CONFUSED_BEAT_MS);
             break;
         }
       } finally {
         // Safety net: an ask handler that rejects instead of resolving would
-        // otherwise leak the interval and narrate fillers forever. Idempotent
-        // with the explicit clearAsides() above; the round guard preserves
-        // the invariant that a superseded round never clears a newer one's timer.
-        if (round === epoch.current) clearAsides();
+        // otherwise leak the interval and narrate fillers forever. The round
+        // guard preserves the invariant that a superseded round never clears a
+        // newer round's state. An open stream is left alone — its drain callback
+        // still owes this round a settle.
+        if (round === epoch.current && !speech.current) clearRoundSpeech();
       }
     },
-    [clearAsides, clearTimer, deliver, onIssue, sayBack, setMode, settle, speakAside],
+    [clearRoundSpeech, clearTimer, deliver, finishSpoken, onIssue, onPulse, onSaid, sayBack, setMode, settle, speakAside],
   );
 
   /**
@@ -332,7 +412,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       // bump the epoch first (like cancel()) so deliver's callbacks see a dead
       // round instead of re-arming timers on the unmounting tree.
       epoch.current++;
-      clearAsides();
+      clearRoundSpeech();
       convWindow.current = null;
       voiceRound.current = false;
       clearTimer();
@@ -371,7 +451,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   const announce = useCallback(
     (text: string) => {
       const round = ++epoch.current;
-      clearAsides();
+      clearRoundSpeech();
       voiceRound.current = true;
       convWindow.current = null;
       wokeAt.current = undefined;
@@ -384,7 +464,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         deliver(text, 'pleased');
       });
     },
-    [after, clearAsides, clearTimer, deliver, setMode],
+    [after, clearRoundSpeech, clearTimer, deliver, setMode],
   );
 
   /** Typed question straight to Eva — the dev/simulator round path. */
@@ -401,14 +481,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   /** Abandon any in-flight listen/ask/speak and return control to the caller. */
   const cancel = useCallback(() => {
     epoch.current++;
-    clearAsides();
+    clearRoundSpeech();
     active.current = false;
     convWindow.current = null;
     voiceRound.current = false;
     clearTimer();
     abortListening();
     stopSpeaking();
-  }, [clearAsides, clearTimer]);
+  }, [clearRoundSpeech, clearTimer]);
 
   return { listen, say, ask: askDirect, announce, cancel, noteToolActivity };
 }
