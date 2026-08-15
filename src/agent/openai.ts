@@ -2,6 +2,7 @@
 // in the same shape as src/slack/api.ts.
 
 import type { ChatMessage } from './history';
+import { emptySse, parseSse } from './sse';
 
 const BASE = 'https://api.openai.com/v1';
 
@@ -139,4 +140,120 @@ export async function chat({
 export function formatUsage(usage: ChatUsage): string {
   const cached = usage.cachedTokens > 0 ? ` (${usage.cachedTokens} cached)` : '';
   return `${usage.promptTokens} in${cached} · ${usage.completionTokens} out`;
+}
+
+export interface ChatStreamOptions extends ChatOptions {
+  /** Called with each content delta as it arrives, in order. */
+  onDelta: (text: string) => void;
+}
+
+/**
+ * Streaming counterpart to `chat`, on XMLHttpRequest rather than fetch —
+ * React Native's fetch cannot stream a response body.
+ *
+ * Tool calls are NOT supported here: their arguments arrive fragmented across
+ * frames and would need reassembly. `toolCalls` is always empty, and the caller
+ * is responsible for using non-streaming `chat` whenever tools are offered
+ * (see the guard in useAgent).
+ */
+export function chatStream({
+  apiKey,
+  model,
+  messages,
+  signal,
+  maxTokens,
+  temperature,
+  onDelta,
+}: ChatStreamOptions): Promise<ChatReply> {
+  return new Promise<ChatReply>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let sse = emptySse();
+    let consumed = 0;
+    let text = '';
+    let usage: ChatUsage | null = null;
+    let settled = false;
+
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      fn();
+    };
+
+    // responseText accumulates, so only ever read the new tail.
+    const read = () => {
+      const whole = xhr.responseText;
+      if (whole.length <= consumed) return;
+      const incoming = whole.slice(consumed);
+      consumed = whole.length;
+      const r = parseSse(sse, incoming);
+      sse = r.state;
+      if (r.chunk.usage) usage = r.chunk.usage;
+      for (const delta of r.chunk.deltas) {
+        text += delta;
+        onDelta(delta);
+      }
+    };
+
+    const onAbort = () => xhr.abort();
+    signal?.addEventListener('abort', onAbort);
+    const cleanup = () => signal?.removeEventListener('abort', onAbort);
+
+    xhr.open('POST', `${BASE}/chat/completions`);
+    xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
+    xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+    xhr.setRequestHeader('Accept', 'text/event-stream');
+
+    // MUST be assigned before send(): RN decides whether to deliver the body
+    // incrementally by checking whether onprogress is already set. Assign it
+    // afterwards and the whole response arrives in one lump.
+    xhr.onprogress = read;
+    xhr.onload = () => {
+      read();
+      cleanup();
+      if (xhr.status < 200 || xhr.status >= 300) {
+        finish(() => reject(new Error(streamErrorMessage(xhr.responseText, xhr.status))));
+        return;
+      }
+      finish(() =>
+        resolve({
+          text: text.trim(),
+          toolCalls: [],
+          usage,
+          message: { role: 'assistant', content: text },
+        }),
+      );
+    };
+    xhr.onerror = () => {
+      cleanup();
+      finish(() => reject(new Error('network error')));
+    };
+    xhr.onabort = () => {
+      cleanup();
+      finish(() => reject(new Error('aborted')));
+    };
+
+    xhr.send(
+      JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        // Without this a streamed response carries no usage at all, and the
+        // per-round token line silently goes blank.
+        stream_options: { include_usage: true },
+        ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+        ...(temperature !== undefined ? { temperature } : {}),
+      }),
+    );
+  });
+}
+
+/** An error body on the streaming path is ordinary JSON, not an SSE frame. */
+function streamErrorMessage(body: string, status: number): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: string } };
+    if (parsed?.error?.message) return `${parsed.error.message} (http ${status})`;
+  } catch {
+    // fall through to the bare status
+  }
+  return `http ${status}`;
 }
