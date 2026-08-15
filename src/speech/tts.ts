@@ -131,6 +131,16 @@ export interface SpeechStream {
   end(): void;
 }
 
+const speakOrSettle = (u: Utterance) => {
+  // An empty utterance must still report done, or the round never settles.
+  // Speech.speak('') is not documented to fire its callbacks.
+  if (!u.text.trim()) {
+    settleUtterance(u, () => u.cb.onDone?.());
+    return;
+  }
+  void speakSystem(u);
+};
+
 /**
  * Speak text that is still arriving. Kokoro streams it as one continuous
  * utterance; the system voice, which has no streaming API, accumulates and
@@ -154,7 +164,7 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
       end: () => {
         if (ended) return;
         ended = true;
-        void speakSystem(u);
+        speakOrSettle(u);
       },
     };
   }
@@ -177,7 +187,7 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
       // reply. u.text has been accumulating for exactly this case.
       if (__DEV__) console.log('[tts] kokoro failed pre-audio, falling back:', e);
       fellBack = true;
-      if (ended) void speakSystem(u);
+      if (ended) speakOrSettle(u);
     },
   });
 
@@ -190,7 +200,7 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
     end: () => {
       if (ended) return;
       ended = true;
-      if (fellBack) void speakSystem(u);
+      if (fellBack) speakOrSettle(u);
       else stream.end();
     },
   };

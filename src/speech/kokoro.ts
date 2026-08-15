@@ -250,7 +250,12 @@ async function runStream(
       // Best-effort teardown: a throw here would reject streamTail and mute
       // every future utterance, which is far worse than a leaked node.
     }
-    handlers.onError(error, s.audioStarted);
+    try {
+      handlers.onError(error, s.audioStarted);
+    } catch {
+      // A handler throw must not reject streamTail: that would mute every later
+      // utterance, not just this one.
+    }
   }
 }
 
@@ -265,5 +270,9 @@ export function stopKokoro(): void {
   } catch {
     // stopping an idle stream is harmless
   }
-  s.sink?.stop();
+  try {
+    s.sink?.stop();
+  } catch {
+    // Same reasoning as runStream's catch: teardown is best-effort.
+  }
 }

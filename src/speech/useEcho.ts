@@ -249,7 +249,9 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       if (handlers.current.asides) {
         asideState.current = beginAside(postedAt);
         // Coarse 1s tick; decideAside owns the real cadence, including whether
-        // the wait has lasted long enough to deserve an opener at all.
+        // the wait has lasted long enough to deserve an opener at all. The
+        // interval (not a chained timeout) keeps ticking across long Kokoro
+        // syntheses.
         asideTimer.current = setInterval(() => {
           if (!asideState.current) return;
           const d = decideAside(Date.now(), asideState.current, Math.random());
@@ -343,6 +345,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
             onIssue?.(result.message); // transports prefix their own source
             settle('confused', CONFUSED_BEAT_MS);
             break;
+        }
+      } catch {
+        // A stream already playing owes this round a settle, and end() is what
+        // makes its drain callback fire — on the system voice it is the only
+        // thing that speaks at all. A rejecting handler must not strand it.
+        if (round === epoch.current && speech.current) {
+          speech.current.end();
+          speech.current = null;
         }
       } finally {
         // Safety net: an ask handler that rejects instead of resolving would
