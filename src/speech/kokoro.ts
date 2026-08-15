@@ -102,18 +102,47 @@ let current: ActiveSpeech | null = null;
 /** Streams share one native engine; each new one waits for the previous to wind down. */
 let streamTail: Promise<void> = Promise.resolve();
 
-export function speakWithKokoro(text: string, handlers: KokoroSpeakHandlers): void {
+export interface KokoroStream {
+  /** Append text to synthesize. Ignored after end() or a stop. */
+  push(text: string): void;
+  /** No more text coming: drain the buffer and finish. */
+  end(): void;
+}
+
+/**
+ * Open a streaming utterance. Text pushed in arrives as one continuous piece
+ * of audio, so synthesis of later sentences overlaps playback of earlier
+ * ones.
+ *
+ * Whether the native loop stops on its own is decided inside runStream, at
+ * the moment the stream goes live, from whether all input has already
+ * arrived (see runStream for why it can't be decided any earlier). A stream
+ * still receiving pushes must survive the gaps between sentences; end()
+ * closes that case explicitly via streamStop(false).
+ */
+export function speakStreamWithKokoro(handlers: KokoroSpeakHandlers): KokoroStream {
   const e = engine;
   if (!e || status.state !== 'ready') {
     handlers.onError(new Error('kokoro engine is not ready'), false);
-    return;
+    return { push: () => {}, end: () => {} };
   }
-  if (!text.trim()) {
-    handlers.onDone();
-    return;
-  }
+
   const s: ActiveSpeech = { stopped: false, audioStarted: false, sink: null };
   current = s;
+
+  // Pushes can arrive before the previous stream has wound down (see the wait
+  // below); hold them until the native stream is actually live.
+  let live = false;
+  let ended = false;
+  const queued: string[] = [];
+
+  const insert = (text: string) => {
+    // Kokoro partitions on terminal punctuation; callers send whole sentences,
+    // but a tail without one would otherwise sit in the buffer until the
+    // partitioner's skip fallback, so terminate it here.
+    e.streamInsert('.?!;…'.includes(text.slice(-1)) ? text : `${text}.`);
+  };
+
   const prev = streamTail;
   streamTail = (async () => {
     // A barge-in stops the previous stream via streamStop(true), but the
@@ -123,15 +152,56 @@ export function speakWithKokoro(text: string, handlers: KokoroSpeakHandlers): vo
     // not take future utterances down with it.
     await Promise.race([prev, new Promise((r) => setTimeout(r, 2000))]);
     if (s.stopped) return;
-    await runStream(e, text.trim(), s, handlers);
+    await runStream(
+      e,
+      s,
+      handlers,
+      () => {
+        live = true;
+        for (const text of queued.splice(0)) insert(text);
+      },
+      () => ended,
+    );
   })();
+
+  return {
+    push: (text) => {
+      const trimmed = text.trim();
+      if (s.stopped || ended || !trimmed) return;
+      if (!live) {
+        queued.push(trimmed);
+        return;
+      }
+      insert(trimmed);
+    },
+    end: () => {
+      if (s.stopped || ended) return;
+      ended = true;
+      // Before the stream is live, runStream reads `ended` when it prepares
+      // and starts with stopAutomatically: true instead — there is nothing to
+      // stop yet.
+      if (live) e.streamStop(false);
+    },
+  };
+}
+
+/** One-shot speech, expressed as a stream of exactly one push. */
+export function speakWithKokoro(text: string, handlers: KokoroSpeakHandlers): void {
+  if (!text.trim()) {
+    handlers.onDone();
+    return;
+  }
+  const stream = speakStreamWithKokoro(handlers);
+  stream.push(text);
+  stream.end();
 }
 
 async function runStream(
   e: TextToSpeechModule,
-  text: string,
   s: ActiveSpeech,
   handlers: KokoroSpeakHandlers,
+  prepare: () => void,
+  inputFinished: () => boolean,
 ): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const audioOut = require('./audioOut') as typeof import('./audioOut');
@@ -149,10 +219,16 @@ async function runStream(
         handlers.onDone();
       },
     });
-    // Kokoro partitions the stream on terminal punctuation; an unterminated
-    // tail would never flush (same guard as the library's own hook).
-    e.streamInsert('.?!;'.includes(text.slice(-1)) ? text : `${text}.`);
-    for await (const chunk of e.stream({ speed: 1.0, phonemize: true, stopAutomatically: true })) {
+    prepare();
+    // Kokoro::stream() assigns stopOnEmptyBuffer_ from this parameter as it
+    // starts (Kokoro.cpp:175-176), clobbering any streamStop(false) issued
+    // beforehand. So the decision has to be made here, read in the same
+    // synchronous stretch as prepare() (no await between them, so end()
+    // cannot land in between): if every push already arrived, draining the
+    // buffer and exiting is exactly right; otherwise the loop must survive
+    // the gaps between sentences and end() closes it later via streamStop(false).
+    const stopAutomatically = inputFinished();
+    for await (const chunk of e.stream({ speed: 1.0, phonemize: true, stopAutomatically })) {
       if (s.stopped) return;
       s.sink.enqueue(chunk);
     }
