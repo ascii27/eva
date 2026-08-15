@@ -1,6 +1,11 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
+    "strict": true,
+    // Metro does the building; tsc is only ever a checker here.
+    "noEmit": true,
+    // scripts/ runs under node's native TypeScript stripping, which requires
+    // the real file extension in the import specifier.
+    "allowImportingTsExtensions": true
   }
 }

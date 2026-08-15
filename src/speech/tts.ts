@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
-import { getTtsStatus, initKokoro, speakWithKokoro, stopKokoro } from './kokoro';
+import { getTtsStatus, initKokoro, speakStreamWithKokoro, speakWithKokoro, stopKokoro } from './kokoro';
 
 // v2: v1 wrongly persisted auto-picks; bumping the key discards those.
 const VOICE_KEY = 'eva.voiceId.v2';
@@ -122,6 +122,112 @@ export async function speak(text: string, cb: SpeakCallbacks = {}): Promise<void
     return;
   }
   await speakSystem(u);
+}
+
+export interface SpeechStream {
+  /** Append text to speak. Safe to call repeatedly as a reply arrives. */
+  push(text: string): void;
+  /**
+   * More text is coming, but not for a while — a tool is running. Keeps the
+   * playback watchdog from reading the deliberate silence as a dead stream and
+   * settling the round mid-answer. A no-op on the system voice, which has no
+   * streaming playback to stall.
+   */
+  hold(on: boolean): void;
+  /** No more text coming. */
+  end(): void;
+}
+
+const speakOrSettle = (u: Utterance) => {
+  // An empty utterance must still report done, or the round never settles.
+  // Speech.speak('') is not documented to fire its callbacks.
+  if (!u.text.trim()) {
+    settleUtterance(u, () => u.cb.onDone?.());
+    return;
+  }
+  void speakSystem(u);
+};
+
+/**
+ * Speak text that is still arriving. Kokoro streams it as one continuous
+ * utterance; the system voice, which has no streaming API, accumulates and
+ * speaks the whole thing on end() — exactly today's behavior and latency.
+ */
+export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
+  stopSpeaking();
+  const u: Utterance = { id: ++seq, text: '', cb, settled: false };
+  active = u;
+  const status = getTtsStatus();
+  // A failed first-run download would otherwise demote the appliance to the
+  // system voice until relaunch; retrying here gives a natural backoff.
+  if (status.state === 'error') void initKokoro();
+
+  if (status.state !== 'ready') {
+    let ended = false;
+    return {
+      push: (text) => {
+        // trim(): callers may hand a leading/trailing space of their own (or
+        // not, per useEcho's already-trimmed sentences) — either way the join
+        // below is the single source of the separator, so it must not double up.
+        if (!ended) {
+          const t = text.trim();
+          u.text = u.text ? `${u.text} ${t}` : t;
+        }
+      },
+      // Nothing is playing yet — the system voice speaks the whole thing on
+      // end() — so there is no stall to guard against.
+      hold: () => {},
+      end: () => {
+        if (ended) return;
+        ended = true;
+        speakOrSettle(u);
+      },
+    };
+  }
+
+  if (__DEV__) console.log('[tts] streaming (kokoro)');
+  let fellBack = false;
+  let ended = false;
+  const stream = speakStreamWithKokoro({
+    onStart: () => {
+      if (isCurrent(u)) cb.onStart?.();
+    },
+    onDone: () => settleUtterance(u, () => cb.onDone?.()),
+    onError: (e, audioStarted) => {
+      if (u.settled) return;
+      if (audioStarted) {
+        settleUtterance(u, () => cb.onError?.(e));
+        return;
+      }
+      // Nothing audible yet — the system voice can still speak the whole
+      // reply. u.text has been accumulating for exactly this case.
+      if (__DEV__) console.log('[tts] kokoro failed pre-audio, falling back:', e);
+      fellBack = true;
+      if (ended) speakOrSettle(u);
+    },
+  });
+
+  return {
+    push: (text) => {
+      if (ended) return;
+      // See the other speakOrSettle-adjacent push() above: trim() so the join
+      // below is the only place a separator gets added, regardless of what
+      // whitespace the caller included.
+      const t = text.trim();
+      u.text = u.text ? `${u.text} ${t}` : t;
+      if (!fellBack) stream.push(text);
+    },
+    hold: (on) => {
+      // After a fallback the system voice is speaking, which has no watchdog.
+      if (!ended && !fellBack) stream.hold(on);
+    },
+    end: () => {
+      if (ended) return;
+      ended = true;
+      if (fellBack) speakOrSettle(u);
+      else stream.end();
+    },
+  };
 }
 
 export function stopSpeaking(): void {

@@ -10,7 +10,8 @@
 // way conversation.ts checks its follow-up deadline at session boundaries.
 
 import type { MessageEvent } from '../slack/protocol';
-import { isToolEcho, speakableFromMrkdwn } from '../slack/sanitize';
+import { speakableFromMrkdwn } from '../round/speakable';
+import { isToolEcho } from '../slack/sanitize';
 
 /** Backlog cap. Beyond this the oldest is dropped — it stays in the transcript. */
 export const PROACTIVE_QUEUE_MAX = 5;

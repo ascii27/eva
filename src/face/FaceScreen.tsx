@@ -10,9 +10,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useAgent } from '../agent/useAgent';
 import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
-import { speakableFromMrkdwn } from '../slack/sanitize';
+import { speakableFromMrkdwn } from '../round/speakable';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { initKokoro, type TtsEngineState } from '../speech/kokoro';
 import { FOLLOWUP_WINDOW_MS } from '../speech/conversation';
@@ -43,6 +44,7 @@ const WAKE_ENABLED_KEY = 'eva.wakeEnabled.v1';
 const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
 const ASIDES_ENABLED_KEY = 'eva.asidesEnabled.v1';
 const PROACTIVE_ENABLED_KEY = 'eva.proactiveEnabled.v1';
+const BRAIN_LOCAL_KEY = 'eva.brainLocal.v1';
 
 /**
  * Single source for the Kokoro engine's user-facing wording: the transcript
@@ -202,6 +204,26 @@ export function FaceScreen() {
     });
   }, []);
 
+  // Which brain answers: the local agent loop (default) or the remote Eva over
+  // Slack. Kept switchable so the two can be compared on the same device — and
+  // because Slack is still the only route to Eva's real tools. Persisted.
+  const [brainLocal, setBrainLocal] = useState(true);
+
+  useEffect(() => {
+    AsyncStorage.getItem(BRAIN_LOCAL_KEY).then((v) => {
+      if (v === '0') setBrainLocal(false);
+    });
+  }, []);
+
+  const toggleBrain = useCallback(() => {
+    setBrainLocal((v) => {
+      void AsyncStorage.setItem(BRAIN_LOCAL_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
+
+  const agent = useAgent({ onIssue: log, onUsage: log });
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -210,10 +232,17 @@ export function FaceScreen() {
       log(`said · ${text}`);
     },
     onIssue: (message) => log(message),
-    // Answers to a proactive message go back into its thread; anything the
-    // user starts posts at channel level, as before.
-    ask:
-      slack.status === 'unpaired' ? undefined : (text: string) => slack.ask(text, activeThread.current ?? undefined),
+    // Local brain answers directly. On the Slack brain, answers to a proactive
+    // message go back into its thread; anything the user starts posts at
+    // channel level, as before. Undefined (unpaired, no local key) is
+    // load-bearing: it drops useEcho back to the Phase-1 echo.
+    ask: brainLocal
+      ? agent.status === 'unconfigured'
+        ? undefined
+        : agent.ask
+      : slack.status === 'unpaired'
+        ? undefined
+        : (text: string) => slack.ask(text, activeThread.current ?? undefined),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -484,6 +513,12 @@ export function FaceScreen() {
           onClearWakeLog={() => {
             void clearWakeEvents().then(() => setWakeEvents([]));
           }}
+          brainLocal={brainLocal}
+          onToggleBrain={toggleBrain}
+          agentModel={agent.model ?? 'no key'}
+          onEndSession={() => void agent.endSession()}
+          onForgetAll={() => void agent.forgetAll()}
+          onCycleModel={() => void agent.cycleModel()}
           slackStatus={slack.status}
           onSlackPair={() => setPairingVisible(true)}
           onSlackReconnect={slack.reconnect}

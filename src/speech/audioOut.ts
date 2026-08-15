@@ -11,6 +11,22 @@ import { AudioContext, AudioManager } from 'react-native-audio-api';
 const KOKORO_SAMPLE_RATE = 24000;
 
 /**
+ * How long to wait for the *first* chunk before declaring the synthesis dead.
+ * Generous: a cold first synthesis is legitimately slow. The point is only that
+ * this window is covered at all — without it, a generator that hangs before
+ * yielding anything settles nothing, and the face never leaves 'thinking'.
+ */
+const FIRST_AUDIO_TIMEOUT_S = 20;
+
+/**
+ * Watchdog window while the caller has told us the silence is deliberate — a
+ * tool is running and the rest of the reply has not been generated yet.
+ * Deliberately longer than the ask's own 30s timeout (ASK_TIMEOUT_MS), so the
+ * abort is always what ends a stuck round rather than the watchdog racing it.
+ */
+const HOLD_TIMEOUT_S = 35;
+
+/**
  * Mirror stt.ts's audio session exactly (playAndRecord, defaultToSpeaker +
  * Bluetooth HFP, mode 'default'): with both engines asking for the same
  * configuration the session never churns between Eva speaking and listening —
@@ -42,6 +58,12 @@ export interface UtteranceSink {
   enqueue: (chunk: Float32Array) => void;
   /** No more chunks are coming; onDrained fires once playback empties. */
   finishInput: () => void;
+  /**
+   * Silence from here is deliberate, not a stall — more audio is coming once
+   * something slow (a tool call) finishes. Only the caller can tell the two
+   * apart, which is the whole reason this exists.
+   */
+  hold: (on: boolean) => void;
   /** Immediate halt; no callback fires after this. */
   stop: () => void;
 }
@@ -66,17 +88,29 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   // every playback event with the remaining scheduled audio plus slack.
   const chunkSeconds: number[] = [];
   let remainingSeconds = 0;
+  // remainingSeconds only means anything once real audio has been scheduled
+  // (enqueue maintains it incrementally from there); before that, this flag
+  // routes the watchdog to the dedicated pre-audio window instead.
+  let awaitingFirstAudio = true;
+  // Set by hold(): suspends the "remaining audio plus slack" reasoning, which
+  // would otherwise read a deliberate pause as a dead stream.
+  let holding = false;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
 
   const rearmWatchdog = () => {
     if (watchdog) clearTimeout(watchdog);
     if (finished) return;
+    const seconds = holding
+      ? HOLD_TIMEOUT_S
+      : awaitingFirstAudio
+        ? FIRST_AUDIO_TIMEOUT_S
+        : remainingSeconds + 5;
     watchdog = setTimeout(
       () => {
         if (__DEV__) console.log('[audioOut] watchdog: playback stalled, forcing done');
         finish(true);
       },
-      (remainingSeconds + 5) * 1000,
+      seconds * 1000,
     );
   };
 
@@ -104,9 +138,16 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     rearmWatchdog();
   };
 
+  // Cover the pre-playback window too: every other rearm site needs a chunk or a
+  // finishInput to have happened first.
+  rearmWatchdog();
+
   return {
     enqueue: (chunk) => {
       if (finished || chunk.length === 0) return;
+      // A real chunk is being scheduled: remainingSeconds is meaningful from
+      // here on, so hand the watchdog back to it.
+      awaitingFirstAudio = false;
       const buffer = context.createBuffer(1, chunk.length, KOKORO_SAMPLE_RATE);
       buffer.copyToChannel(chunk as Float32Array<ArrayBuffer>, 0);
       pending += 1;
@@ -124,9 +165,17 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     },
     finishInput: () => {
       inputDone = true;
+      // Nothing more is coming, so nothing is being waited for: a hold left
+      // standing here would only stretch the stall window for no reason.
+      holding = false;
       // A zero-audio utterance still reports drained so the caller settles.
       if (pending <= 0) finish(true);
       else rearmWatchdog();
+    },
+    hold: (on) => {
+      if (finished) return;
+      holding = on;
+      rearmWatchdog();
     },
     stop: () => finish(false),
   };

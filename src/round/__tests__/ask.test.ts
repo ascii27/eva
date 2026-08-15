@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { formatLatency } from '../latency';
+import { formatLatency } from '../ask';
 
 describe('formatLatency', () => {
   it('reports post, eva, and wake-to-audio total for a full round', () => {

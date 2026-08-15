@@ -16,20 +16,6 @@ export type SlackIncoming =
   | { type: 'disconnect'; reason: string }
   | { type: 'events_api'; envelopeId: string; retryAttempt: number; event: MessageEvent | null };
 
-export interface RoundMarks {
-  wokeAt?: number;
-  heardAt: number;
-  postedAt?: number;
-  replyAt?: number;
-  spokeAt?: number;
-}
-
-export type AskResult =
-  | { kind: 'reply'; raw: string; speakable: string; postedAt: number; replyAt: number }
-  | { kind: 'timeout'; postedAt: number }
-  | { kind: 'offline' }
-  | { kind: 'error'; message: string };
-
 export function parseIncoming(raw: string): SlackIncoming | null {
   let data: unknown;
   try {
