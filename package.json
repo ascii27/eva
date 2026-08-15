@@ -39,7 +39,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "jest",
-    "probe:tavily": "node scripts/probe-tavily.ts"
+    "probe:tavily": "node scripts/probe-tavily.ts",
+    "probe:tools": "node scripts/probe-tools.ts"
   },
   "private": true,
   "jest": {

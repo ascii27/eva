@@ -13,8 +13,9 @@
 
 import type { ToolCall, ToolMessage, ToolSpec } from '../openai';
 import { formatClock } from './clock';
-import { MEMORY_RESULTS, runMemorySearch } from './memory';
+import { runMemorySearch } from './memory';
 import { runSearch } from './search';
+import { toolSpecs } from './specs';
 
 export interface ToolConfig {
   /** Tavily key, or null when web search is not configured. */
@@ -26,39 +27,6 @@ export interface ToolKit {
   specs: ToolSpec[];
   run(call: ToolCall, signal?: AbortSignal): Promise<ToolMessage>;
 }
-
-const CLOCK: ToolSpec = {
-  name: 'clock',
-  description:
-    'The current date and time where Michael is. Use this whenever the answer depends on what day or time it is; you have no other way to know.',
-  parameters: { type: 'object', properties: {}, required: [] },
-};
-
-const MEMORY_SEARCH: ToolSpec = {
-  name: 'memory_search',
-  description:
-    `Search your notes from earlier conversations with Michael. Your most recent conversations are already summarized above, so use this for older ones — something he mentioned weeks ago, a decision you cannot place, a name you half-remember. Returns up to ${MEMORY_RESULTS} matching conversations.`,
-  parameters: {
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: 'Distinctive words to look for — names, topics, projects.' },
-    },
-    required: ['query'],
-  },
-};
-
-const WEB_SEARCH: ToolSpec = {
-  name: 'web_search',
-  description:
-    'Search the web. Use it for anything current, anything factual you are less than certain about, and anything that may have changed since you were trained — prices, people, events, records, releases, what is happening now. When in doubt, search: a wrong guess said out loud is worse than a search that finds nothing.',
-  parameters: {
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: 'The search query.' },
-    },
-    required: ['query'],
-  },
-};
 
 const error = (call: ToolCall, message: string): ToolMessage => ({
   role: 'tool',
@@ -95,7 +63,7 @@ function requireQuery(args: Record<string, unknown>): string | null {
 }
 
 export function buildToolKit({ tavilyKey }: ToolConfig): ToolKit {
-  const specs: ToolSpec[] = [CLOCK, MEMORY_SEARCH, ...(tavilyKey ? [WEB_SEARCH] : [])];
+  const specs: ToolSpec[] = toolSpecs(tavilyKey);
 
   return {
     specs,

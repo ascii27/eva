@@ -9,6 +9,7 @@
 // scoring is pure and tested here; only `runMemorySearch` touches the disk.
 
 import { allMemories, type MemoryEntry } from '../store';
+import { MEMORY_RESULTS } from './specs';
 
 /** What the ranking needs. Same shape the store hands back. */
 export type MemoryRecord = MemoryEntry;
@@ -57,9 +58,6 @@ export function searchMemories(records: MemoryRecord[], query: string, limit: nu
     .slice(0, limit)
     .map((scored) => scored.record);
 }
-
-/** How many conversations one search may hand back. More than this is unlistenable. */
-export const MEMORY_RESULTS = 3;
 
 /** Read the archive and search it. The only part of this file that does I/O. */
 export async function runMemorySearch(query: string): Promise<string> {

@@ -229,6 +229,15 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
       try {
         const messages: RequestMessage[] = buildRequest(PERSONA, memories.current, asked);
         let raw = '';
+        if (__DEV__) {
+          // The exact request, because "she declined" and "she was never asked"
+          // look identical from the outside. The heard text matters most: it
+          // arrives through speech-to-text and may not be the question that
+          // was actually spoken.
+          console.log(
+            `[agent] ask "${text}" · ${asked.turns.length} turns · ${memories.current.length} memories · ${tools.current.specs.length} tools`,
+          );
+        }
 
         // Every lap streams. Content deltas go straight to the speaker, which
         // is also how the preamble ("let me look that up") is delivered: the
@@ -258,6 +267,7 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
           usage = addUsage(usage, res.usage);
 
           if (!res.toolCalls.length) {
+            if (__DEV__) console.log(`[agent] lap ${step}: no tool call, answered directly`);
             raw = res.text;
             break;
           }
