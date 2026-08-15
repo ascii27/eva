@@ -1,6 +1,11 @@
 # Streaming speech — design
 
-Status: implemented. Device verification still open — see the checklist at the end.
+Status: implemented and verified on the device (2026-08-15). Streaming replies
+begin speaking before generation finishes and the interaction reads as good in real
+use. Two checks from the list below were flagged as the likeliest to need tuning and
+were not separately confirmed: barge-in mid-reply (the 2s `streamTail` wait now tears
+down a *live* native stream) and the short-reply settle. Neither has misbehaved in
+use.
 
 Follows [2026-08-15-local-agent-loop-design.md](2026-08-15-local-agent-loop-design.md),
 which named this as the largest remaining latency win.
