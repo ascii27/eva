@@ -361,6 +361,9 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
     memories.current = [];
     session.current = newSession(Date.now());
     await saveSession(session.current);
+    // Console as well as the transcript: whether this ran at all is the first
+    // thing you need to know when Eva is still behaving like her old self.
+    if (__DEV__) console.log('[agent] forgot everything — session and memory cleared');
     callbacks.current.onIssue?.('agent · forgot everything');
   }, []);
 
