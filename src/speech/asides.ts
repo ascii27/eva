@@ -28,10 +28,21 @@ export const TOOL_LINES: Record<string, string[]> = {
   default: ["I'm investigating...", "I'm digging into it..."],
 };
 
+/**
+ * How long a wait has to last before an aside is worth speaking. The local
+ * agent loop answers in well under a second; an opener fired immediately would
+ * talk over the reply and delay it. This also fixes the same wart on the Slack
+ * path, where the opener fired even when Eva happened to answer quickly.
+ */
+export const ASIDE_OPENER_DELAY_MS = 1_500;
+
 export interface AsideState {
+  /** Round start — the clock the opener's grace period is measured against. */
+  startedAt: number;
   lastAsideAt: number;
   pendingTool: string | null;
   lastPhrase: string | null;
+  openerSpoken: boolean;
 }
 
 /** Never repeats `avoid`; `rand` ∈ [0, 1) keeps the module pure. */
@@ -40,10 +51,9 @@ function pickPhrase(pool: string[], avoid: string | null, rand: number): string 
   return options[Math.floor(rand * options.length) % options.length];
 }
 
-/** Round entry: speak an opener immediately and seed the cadence clock. */
-export function openAside(now: number, rand: number): { say: string; state: AsideState } {
-  const say = pickPhrase(OPENERS, null, rand);
-  return { say, state: { lastAsideAt: now, pendingTool: null, lastPhrase: say } };
+/** Round entry. Speaks nothing: the opener is decideAside's first decision. */
+export function beginAside(now: number): AsideState {
+  return { startedAt: now, lastAsideAt: now, pendingTool: null, lastPhrase: null, openerSpoken: false };
 }
 
 /** A tool echo arrived; the next due aside narrates it instead of a filler. */
@@ -51,14 +61,21 @@ export function noteTool(state: AsideState, label: string): AsideState {
   return { ...state, pendingTool: label };
 }
 
-/** Called on a coarse tick; returns a line only when the cadence is due. */
+/** Called on a coarse tick; returns a line only when one is due. */
 export function decideAside(
   now: number,
   state: AsideState,
   rand: number,
 ): { say: string | null; state: AsideState } {
+  if (!state.openerSpoken) {
+    if (now - state.startedAt < ASIDE_OPENER_DELAY_MS) return { say: null, state };
+    // A tool we already know about is more informative than a generic opener.
+    const pool = state.pendingTool !== null ? (TOOL_LINES[state.pendingTool] ?? TOOL_LINES.default) : OPENERS;
+    const say = pickPhrase(pool, null, rand);
+    return { say, state: { ...state, lastAsideAt: now, pendingTool: null, lastPhrase: say, openerSpoken: true } };
+  }
   if (now - state.lastAsideAt < ASIDE_INTERVAL_MS) return { say: null, state };
   const pool = state.pendingTool !== null ? (TOOL_LINES[state.pendingTool] ?? TOOL_LINES.default) : FILLERS;
   const say = pickPhrase(pool, state.lastPhrase, rand);
-  return { say, state: { lastAsideAt: now, pendingTool: null, lastPhrase: say } };
+  return { say, state: { ...state, lastAsideAt: now, pendingTool: null, lastPhrase: say } };
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { FaceMode } from '../face/types';
 import { type AskResult, formatLatency } from '../round/ask';
-import { decideAside, noteTool, openAside, type AsideState } from './asides';
+import { beginAside, decideAside, noteTool, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { speak, stopSpeaking } from './tts';
@@ -223,11 +223,11 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       clearTimer();
       setMode('thinking'); // held by the real round trip, not a cosmetic beat
       if (handlers.current.asides) {
-        const opened = openAside(Date.now(), Math.random());
-        asideState.current = opened.state;
-        speakAside(opened.say);
-        // Coarse 1s tick; decideAside owns the real cadence. The interval
-        // (not a chained timeout) keeps ticking across long Kokoro syntheses.
+        asideState.current = beginAside(Date.now());
+        // Coarse 1s tick; decideAside owns the real cadence, including whether
+        // the wait has lasted long enough to deserve an opener at all. The
+        // interval (not a chained timeout) keeps ticking across long Kokoro
+        // syntheses.
         asideTimer.current = setInterval(() => {
           if (!asideState.current) return;
           const d = decideAside(Date.now(), asideState.current, Math.random());
