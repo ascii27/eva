@@ -21,6 +21,30 @@ unnecessary: `useAgent` already drives the lap loop, so it fires `onToolStart`
 itself when a lap resolves with tool calls, a few milliseconds later and with
 one less API surface.
 
+**Correction — the preamble works, on the right model.** An earlier revision of
+this document recorded as fact that the model emits no preamble, and concluded
+the central mechanism "did not survive". That was measured entirely on
+`gpt-4o-mini` and does not generalise. Over the same six questions
+(`npm run probe:tools`):
+
+| | gpt-4o-mini | gpt-5.4-mini | o4-mini |
+|---|---|---|---|
+| tool calls | 5/6 | **6/6** | 5/6 |
+| preambles emitted | 0/6 | **6/6** | 0/6 |
+| first audio, no-tool turn | 914ms | **561ms** | — |
+| first audio, tool turn | never | **647ms** | — |
+
+`gpt-5.4-mini` produces "I'll look that up", "let me check my notes" unprompted
+— exactly what the design asked for — and is faster to first audio. It is now
+the default. The synthesized-preamble fallback proposed after the first device
+session was therefore never built; `TOOL_LINES` remains the cover for models
+that don't narrate, and cycling the overlay's Model button to `gpt-4o-mini` is
+how that path stays testable.
+
+The lesson worth keeping: "the model won't do X" is a claim about one model,
+and this project had no way to check it across models until `probe-tools`
+existed.
+
 The search digest changed shape once it met the real API (`npm run
 probe:tavily`). The design said the synthesized answer would lead with snippets
 behind it "for when it is thin or wrong". In practice the snippets behind a good
