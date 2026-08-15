@@ -105,6 +105,12 @@ let streamTail: Promise<void> = Promise.resolve();
 export interface KokoroStream {
   /** Append text to synthesize. Ignored after end() or a stop. */
   push(text: string): void;
+  /**
+   * The gap that is about to open is deliberate — a tool is running and the
+   * rest of the reply has not been written yet. Without this the playback
+   * watchdog reads the silence as a dead stream and settles the round.
+   */
+  hold(on: boolean): void;
   /** No more text coming: drain the buffer and finish. */
   end(): void;
 }
@@ -124,7 +130,7 @@ export function speakStreamWithKokoro(handlers: KokoroSpeakHandlers): KokoroStre
   const e = engine;
   if (!e || status.state !== 'ready') {
     handlers.onError(new Error('kokoro engine is not ready'), false);
-    return { push: () => {}, end: () => {} };
+    return { push: () => {}, hold: () => {}, end: () => {} };
   }
 
   const s: ActiveSpeech = { stopped: false, audioStarted: false, sink: null };
@@ -135,6 +141,10 @@ export function speakStreamWithKokoro(handlers: KokoroSpeakHandlers): KokoroStre
   let live = false;
   let ended = false;
   const queued: string[] = [];
+  // A hold can be asked for before the sink exists — the tool may resolve
+  // faster than the previous stream winds down — so remember it and apply it
+  // alongside the queued text.
+  let held = false;
 
   const insert = (text: string) => {
     try {
@@ -163,6 +173,7 @@ export function speakStreamWithKokoro(handlers: KokoroSpeakHandlers): KokoroStre
       handlers,
       () => {
         live = true;
+        if (held) s.sink?.hold(true);
         for (const text of queued.splice(0)) insert(text);
       },
       () => ended,
@@ -178,6 +189,11 @@ export function speakStreamWithKokoro(handlers: KokoroSpeakHandlers): KokoroStre
         return;
       }
       insert(trimmed);
+    },
+    hold: (on) => {
+      if (s.stopped || ended) return;
+      held = on;
+      s.sink?.hold(on);
     },
     end: () => {
       if (s.stopped || ended) return;

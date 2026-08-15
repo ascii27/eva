@@ -127,6 +127,13 @@ export async function speak(text: string, cb: SpeakCallbacks = {}): Promise<void
 export interface SpeechStream {
   /** Append text to speak. Safe to call repeatedly as a reply arrives. */
   push(text: string): void;
+  /**
+   * More text is coming, but not for a while — a tool is running. Keeps the
+   * playback watchdog from reading the deliberate silence as a dead stream and
+   * settling the round mid-answer. A no-op on the system voice, which has no
+   * streaming playback to stall.
+   */
+  hold(on: boolean): void;
   /** No more text coming. */
   end(): void;
 }
@@ -167,6 +174,9 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
           u.text = u.text ? `${u.text} ${t}` : t;
         }
       },
+      // Nothing is playing yet — the system voice speaks the whole thing on
+      // end() — so there is no stall to guard against.
+      hold: () => {},
       end: () => {
         if (ended) return;
         ended = true;
@@ -206,6 +216,10 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
       const t = text.trim();
       u.text = u.text ? `${u.text} ${t}` : t;
       if (!fellBack) stream.push(text);
+    },
+    hold: (on) => {
+      // After a fallback the system voice is speaking, which has no watchdog.
+      if (!ended && !fellBack) stream.hold(on);
     },
     end: () => {
       if (ended) return;

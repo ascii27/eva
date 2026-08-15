@@ -19,6 +19,14 @@ const KOKORO_SAMPLE_RATE = 24000;
 const FIRST_AUDIO_TIMEOUT_S = 20;
 
 /**
+ * Watchdog window while the caller has told us the silence is deliberate — a
+ * tool is running and the rest of the reply has not been generated yet.
+ * Deliberately longer than the ask's own 30s timeout (ASK_TIMEOUT_MS), so the
+ * abort is always what ends a stuck round rather than the watchdog racing it.
+ */
+const HOLD_TIMEOUT_S = 35;
+
+/**
  * Mirror stt.ts's audio session exactly (playAndRecord, defaultToSpeaker +
  * Bluetooth HFP, mode 'default'): with both engines asking for the same
  * configuration the session never churns between Eva speaking and listening —
@@ -50,6 +58,12 @@ export interface UtteranceSink {
   enqueue: (chunk: Float32Array) => void;
   /** No more chunks are coming; onDrained fires once playback empties. */
   finishInput: () => void;
+  /**
+   * Silence from here is deliberate, not a stall — more audio is coming once
+   * something slow (a tool call) finishes. Only the caller can tell the two
+   * apart, which is the whole reason this exists.
+   */
+  hold: (on: boolean) => void;
   /** Immediate halt; no callback fires after this. */
   stop: () => void;
 }
@@ -78,12 +92,19 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   // (enqueue maintains it incrementally from there); before that, this flag
   // routes the watchdog to the dedicated pre-audio window instead.
   let awaitingFirstAudio = true;
+  // Set by hold(): suspends the "remaining audio plus slack" reasoning, which
+  // would otherwise read a deliberate pause as a dead stream.
+  let holding = false;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
 
   const rearmWatchdog = () => {
     if (watchdog) clearTimeout(watchdog);
     if (finished) return;
-    const seconds = awaitingFirstAudio ? FIRST_AUDIO_TIMEOUT_S : remainingSeconds + 5;
+    const seconds = holding
+      ? HOLD_TIMEOUT_S
+      : awaitingFirstAudio
+        ? FIRST_AUDIO_TIMEOUT_S
+        : remainingSeconds + 5;
     watchdog = setTimeout(
       () => {
         if (__DEV__) console.log('[audioOut] watchdog: playback stalled, forcing done');
@@ -144,9 +165,17 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     },
     finishInput: () => {
       inputDone = true;
+      // Nothing more is coming, so nothing is being waited for: a hold left
+      // standing here would only stretch the stall window for no reason.
+      holding = false;
       // A zero-audio utterance still reports drained so the caller settles.
       if (pending <= 0) finish(true);
       else rearmWatchdog();
+    },
+    hold: (on) => {
+      if (finished) return;
+      holding = on;
+      rearmWatchdog();
     },
     stop: () => finish(false),
   };

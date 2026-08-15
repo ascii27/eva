@@ -289,6 +289,8 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       const onDelta = (delta: string) => {
         if (round !== epoch.current) return;
         openSpeech();
+        // The answer is arriving: whatever gap a tool opened is over.
+        speech.current?.hold(false);
         const r = pushText(sentences.current, delta);
         sentences.current = r.state;
         for (const sentence of r.sentences) {
@@ -297,8 +299,38 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         }
       };
 
+      /**
+       * A tool is starting. Everything streamed so far was Eva's preamble —
+       * "let me look that up" — so it gets flushed and spoken now rather than
+       * waiting for a sentence boundary that may never come, and the stream is
+       * held so the silence that follows isn't mistaken for a dead stream.
+       */
+      const onToolStart = (names: string[]) => {
+        if (round !== epoch.current) return;
+        if (speech.current) {
+          const tail = flushPending(sentences.current);
+          if (tail) {
+            spoken.current = spoken.current ? `${spoken.current} ${tail}` : tail;
+            speech.current.push(tail);
+          }
+          // A half-sentence left pending would otherwise be glued to the front
+          // of the answer's first sentence when the tool returns.
+          sentences.current = emptySentences();
+          speech.current.hold(true);
+          // The preamble was said aloud, so the transcript should show it —
+          // but it is not part of the answer, and clearing it here is what
+          // keeps it out of the reply line (and out of the failure line, which
+          // reports whatever was actually spoken).
+          if (spoken.current) onSaid?.(spoken.current);
+          spoken.current = '';
+        }
+        // With no preamble spoken (the model skipped it), the aside machinery
+        // is still armed and this is what makes its next line name the tool.
+        if (names[0]) noteToolActivity(names[0]);
+      };
+
       try {
-        const result = await doAsk(text, { onDelta });
+        const result = await doAsk(text, { onDelta, onToolStart });
         if (round !== epoch.current) return; // cancelled or superseded mid-flight
         if (result.kind !== 'reply') {
           convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
@@ -363,7 +395,20 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         if (round === epoch.current && !speech.current) clearRoundSpeech();
       }
     },
-    [clearRoundSpeech, clearTimer, deliver, finishSpoken, onIssue, onPulse, onSaid, sayBack, setMode, settle, speakAside],
+    [
+      clearRoundSpeech,
+      clearTimer,
+      deliver,
+      finishSpoken,
+      noteToolActivity,
+      onIssue,
+      onPulse,
+      onSaid,
+      sayBack,
+      setMode,
+      settle,
+      speakAside,
+    ],
   );
 
   /**
