@@ -50,7 +50,7 @@ const MEMORY_SEARCH: ToolSpec = {
 const WEB_SEARCH: ToolSpec = {
   name: 'web_search',
   description:
-    'Search the web for current information — news, facts you are unsure of, anything that changed after your training. Do not use it for things you already know.',
+    'Search the web. Use it for anything current, anything factual you are less than certain about, and anything that may have changed since you were trained — prices, people, events, records, releases, what is happening now. When in doubt, search: a wrong guess said out loud is worse than a search that finds nothing.',
   parameters: {
     type: 'object',
     properties: {

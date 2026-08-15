@@ -56,6 +56,9 @@ function addUsage(a: ChatUsage | null, b: ChatUsage | null): ChatUsage | null {
   };
 }
 
+/** Dev breadcrumb guard: the tool list is fixed for the session, so print it once. */
+let toolsLogged = false;
+
 export type AgentStatus = 'unconfigured' | 'ready';
 
 export interface UseAgentOptions {
@@ -72,6 +75,13 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
   // Built once at bring-up, never per turn: the specs are part of OpenAI's
   // cached prefix, so a list that moved between turns would cost the discount.
   const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey() }));
+  if (__DEV__ && !toolsLogged) {
+    toolsLogged = true;
+    // What Eva is actually offered. Worth printing: "she says she can't do
+    // that" looks identical whether the tool is missing or she declined it,
+    // and only one of those is a wiring problem.
+    console.log(`[agent] tools offered: ${tools.current.specs.map((s) => s.name).join(', ') || 'none'}`);
+  }
   // The live session and the memory block. Refs, not state: ask() reads them
   // synchronously and nothing about the face changes when they move.
   const session = useRef<Session | null>(null);
