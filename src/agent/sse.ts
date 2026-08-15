@@ -48,6 +48,11 @@ export function parseSse(state: SseState, incoming: string): { state: SseState; 
     } catch {
       continue;
     }
+    // JSON.parse succeeds on `null`, `42`, and `"text"` — all valid JSON, none of
+    // them a frame. Reject them here rather than letting a field access throw:
+    // this runs while audio is already playing, so a throw would abandon the
+    // rest of a reply mid-sentence.
+    if (typeof json !== 'object' || json === null) continue;
     const frame = json as {
       choices?: { delta?: { content?: unknown } }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } };

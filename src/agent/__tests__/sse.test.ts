@@ -77,4 +77,25 @@ describe('parseSse', () => {
     const raw = `: keep-alive\nevent: message\n${frame('x')}`;
     expect(parseSse(emptySse(), raw).chunk.deltas).toEqual(['x']);
   });
+
+  it('skips a frame whose payload is valid JSON but not an object', () => {
+    // JSON.parse succeeds on all three, so the try/catch does not catch them.
+    for (const payload of ['null', '42', '"just a string"', 'true']) {
+      expect(() => parseSse(emptySse(), `data: ${payload}\n\n`)).not.toThrow();
+      expect(parseSse(emptySse(), `data: ${payload}\n\n`).chunk.deltas).toEqual([]);
+    }
+  });
+
+  it('keeps parsing after a non-object payload', () => {
+    const raw = 'data: null\n\n' + `data: ${JSON.stringify({ choices: [{ delta: { content: 'after' } }] })}\n\n`;
+    expect(parseSse(emptySse(), raw).chunk.deltas).toEqual(['after']);
+  });
+
+  it('carries a frame split exactly at the data: prefix boundary', () => {
+    // The brief names this split point explicitly; nothing covered it.
+    const first = parseSse(emptySse(), 'data:');
+    expect(first.chunk.deltas).toEqual([]);
+    const second = parseSse(first.state, ` ${JSON.stringify({ choices: [{ delta: { content: 'x' } }] })}\n\n`);
+    expect(second.chunk.deltas).toEqual(['x']);
+  });
 });
