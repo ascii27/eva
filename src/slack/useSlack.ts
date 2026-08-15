@@ -12,8 +12,10 @@ import {
   setSlackConfig,
   SlackConfig,
 } from './config';
-import { isEvaReply, isSelf, type AskResult, type MessageEvent } from './protocol';
-import { isToolEcho, speakableFromMrkdwn, toolLabelFromEcho } from './sanitize';
+import type { AskResult } from '../round/ask';
+import { speakableFromMrkdwn } from '../round/speakable';
+import { isEvaReply, isSelf, type MessageEvent } from './protocol';
+import { isToolEcho, toolLabelFromEcho } from './sanitize';
 import { SlackSocket } from './socket';
 
 // Sized to Eva's observed real-world latency (50s+ when cold) — retune down

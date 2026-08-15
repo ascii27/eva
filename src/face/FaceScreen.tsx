@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
-import { speakableFromMrkdwn } from '../slack/sanitize';
+import { speakableFromMrkdwn } from '../round/speakable';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { initKokoro, type TtsEngineState } from '../speech/kokoro';
 import { FOLLOWUP_WINDOW_MS } from '../speech/conversation';

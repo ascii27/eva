@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import type { FaceMode } from '../face/types';
-import { formatLatency } from '../slack/latency';
-import type { AskResult } from '../slack/protocol';
+import { type AskResult, formatLatency } from '../round/ask';
 import { decideAside, noteTool, openAside, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
@@ -13,8 +12,11 @@ const PLEASED_BEAT_MS = 600;
 const CONFUSED_BEAT_MS = 1200;
 const LOW_CONFIDENCE = 0.35;
 
-const TIMEOUT_LINE = "Sorry — Eva hasn't answered yet. Her reply will show up in the transcript.";
-const OFFLINE_LINE = "I can't reach Slack right now.";
+// Generic fallbacks. Each transport may supply its own copy on the result —
+// the Slack path's "her reply will show up in the transcript" only makes sense
+// for an async channel, and the local agent has nothing to reach.
+const TIMEOUT_LINE = "Sorry — I didn't get an answer in time.";
+const OFFLINE_LINE = "I can't reach Eva right now.";
 
 export interface EchoHandlers {
   setMode: (m: FaceMode) => void;
@@ -252,14 +254,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
           }
           case 'timeout':
             handlers.current.onLatency?.(formatLatency({ ...marks, postedAt: result.postedAt }));
-            deliver(TIMEOUT_LINE, 'confused');
+            deliver(result.message ?? TIMEOUT_LINE, 'confused');
             break;
           case 'offline':
-            deliver(OFFLINE_LINE, 'confused');
+            deliver(result.message ?? OFFLINE_LINE, 'confused');
             break;
           case 'error':
             stopSpeaking(); // a lingering or queued aside must not talk over (or hijack) the confused face
-            onIssue?.(`Slack: ${result.message}`);
+            onIssue?.(result.message); // transports prefix their own source
             settle('confused', CONFUSED_BEAT_MS);
             break;
         }
