@@ -5,6 +5,11 @@
 // bundle at Metro start, so they are not secret from the bundle either.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DEFAULT_MODEL } from './models';
+
+// Re-exported so callers have one import for configuration; the values live in
+// models.ts because scripts/ needs them without AsyncStorage.
+export { DEFAULT_MODEL, MODEL_PRESETS } from './models';
 
 export interface AgentConfig {
   /** OpenAI API key (sk-…). */
@@ -15,11 +20,9 @@ export interface AgentConfig {
 
 export const AGENT_CONFIG_KEY = 'eva.agentConfig.v1';
 
-/**
- * Cheap, fast, and — unlike gpt-3.5-turbo — eligible for automatic prompt
- * caching, which is what makes a growing conversation affordable.
- */
-export const DEFAULT_MODEL = 'gpt-4o-mini';
+/** The model chosen from the dev overlay. Separate from the credential record. */
+export const AGENT_MODEL_KEY = 'eva.agentModel.v1';
+
 
 /**
  * Dev-time source: EXPO_PUBLIC_OPENAI_* from .env.local (gitignored, inlined at
@@ -29,6 +32,42 @@ export function envAgentInput(): AgentConfig | null {
   const apiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
   if (!apiKey) return null;
   return { apiKey, model: process.env.EXPO_PUBLIC_OPENAI_MODEL || DEFAULT_MODEL };
+}
+
+/** The model chosen from the overlay, or null when none has been. */
+export async function getModelOverride(): Promise<string | null> {
+  try {
+    const raw = await AsyncStorage.getItem(AGENT_MODEL_KEY);
+    return raw && raw.trim() ? raw.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist an overlay choice; null clears it and hands the decision back down the chain. */
+export async function setModelOverride(model: string | null): Promise<void> {
+  try {
+    if (model && model.trim()) await AsyncStorage.setItem(AGENT_MODEL_KEY, model.trim());
+    else await AsyncStorage.removeItem(AGENT_MODEL_KEY);
+  } catch {
+    // Losing the choice across a restart beats crashing the face.
+  }
+}
+
+/**
+ * Which model to talk to, resolved independently of where the API key came
+ * from. That separation is the point: `envAgentInput()` returns key *and*
+ * model together, and bring-up prefers it wholesale, so on a device with
+ * EXPO_PUBLIC_OPENAI_API_KEY set — which is every device here — a model
+ * persisted alongside the credentials would never be read at all.
+ *
+ *   overlay choice  →  EXPO_PUBLIC_OPENAI_MODEL  →  DEFAULT_MODEL
+ */
+export async function resolveModel(): Promise<string> {
+  const override = await getModelOverride();
+  if (override) return override;
+  const fromEnv = process.env.EXPO_PUBLIC_OPENAI_MODEL;
+  return fromEnv && fromEnv.trim() ? fromEnv.trim() : DEFAULT_MODEL;
 }
 
 /**

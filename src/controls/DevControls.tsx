@@ -66,6 +66,8 @@ interface DevControlsProps {
   onEndSession: () => void;
   /** Delete every archived conversation and the live session. Irreversible. */
   onForgetAll: () => void;
+  /** Step to the next model in MODEL_PRESETS; takes effect on the next round. */
+  onCycleModel: () => void;
 }
 
 export function DevControls(props: DevControlsProps) {
@@ -195,9 +197,12 @@ export function DevControls(props: DevControlsProps) {
             />
             <Btn label="End session" sub="→ memory" onPress={props.onEndSession} />
           </View>
-          {/* Its own row: styles.row does not wrap and the panel is a fixed
-              300px, so a third button here is squeezed to nothing. Being apart
-              from the buttons you press casually also suits a wipe. */}
+          {/* One button per row from here down: styles.row does not wrap and
+              the panel is a fixed 300px, so a third button beside the pair
+              above is squeezed to nothing. */}
+          <View style={styles.row}>
+            <Btn label="Model" sub={props.agentModel} onPress={props.onCycleModel} />
+          </View>
           <View style={styles.row}>
             <Btn
               label={forgetArmed ? 'Wipe everything?' : 'Forget all'}

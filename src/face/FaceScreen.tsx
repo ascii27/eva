@@ -518,6 +518,7 @@ export function FaceScreen() {
           agentModel={agent.model ?? 'no key'}
           onEndSession={() => void agent.endSession()}
           onForgetAll={() => void agent.forgetAll()}
+          onCycleModel={() => void agent.cycleModel()}
           slackStatus={slack.status}
           onSlackPair={() => setPairingVisible(true)}
           onSlackReconnect={slack.reconnect}

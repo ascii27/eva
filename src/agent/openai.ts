@@ -58,7 +58,16 @@ export interface ChatOptions {
   /** Omitted from the request when empty — the API rejects `tools: []`. */
   tools?: ToolSpec[];
   signal?: AbortSignal;
+  /**
+   * Sent as `max_completion_tokens`, which every model family accepts. The
+   * older `max_tokens` spelling is rejected outright by the gpt-5 and o-series
+   * models, so there is nothing to gain by branching on the model id.
+   */
   maxTokens?: number;
+  /**
+   * Left unset by the agent loop, and best kept that way: o-series models
+   * reject any value but their default.
+   */
   temperature?: number;
 }
 
@@ -98,7 +107,7 @@ export async function chat({
       ...(tools && tools.length
         ? { tools: tools.map((t) => ({ type: 'function', function: t })) }
         : {}),
-      ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+      ...(maxTokens !== undefined ? { max_completion_tokens: maxTokens } : {}),
       ...(temperature !== undefined ? { temperature } : {}),
     }),
   });
@@ -280,7 +289,7 @@ export function chatStream({
         ...(tools && tools.length
           ? { tools: tools.map((t) => ({ type: 'function', function: t })) }
           : {}),
-        ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+        ...(maxTokens !== undefined ? { max_completion_tokens: maxTokens } : {}),
         ...(temperature !== undefined ? { temperature } : {}),
       }),
     );

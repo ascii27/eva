@@ -9,7 +9,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AskOptions, AskResult } from '../round/ask';
 import { speakableFromMrkdwn } from '../round/speakable';
-import { type AgentConfig, envAgentInput, envTavilyKey, getAgentConfig } from './config';
+import {
+  type AgentConfig,
+  MODEL_PRESETS,
+  envAgentInput,
+  envTavilyKey,
+  getAgentConfig,
+  resolveModel,
+  setModelOverride,
+} from './config';
 import {
   appendTurn,
   applyCompaction,
@@ -143,7 +151,11 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const cfg = envAgentInput() ?? (await getAgentConfig());
+      const credentials = envAgentInput() ?? (await getAgentConfig());
+      // The model is resolved separately from the credentials on purpose —
+      // see resolveModel. Whichever source the key came from, an overlay
+      // choice outranks the model that came bundled with it.
+      const cfg = credentials ? { ...credentials, model: await resolveModel() } : null;
       if (cancelled) return;
       config.current = cfg;
       setModel(cfg?.model ?? null);
@@ -367,5 +379,26 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
     callbacks.current.onIssue?.('agent · forgot everything');
   }, []);
 
-  return { status, model, ask, endSession, forgetAll };
+  /**
+   * Step to the next model in MODEL_PRESETS, persist it, and use it from the
+   * next round — no reload.
+   *
+   * Switching mid-session invalidates the cached prefix once, since the model
+   * is part of the cache key. That is expected rather than a caching bug: the
+   * next few turns rebuild it.
+   */
+  const cycleModel = useCallback(async (): Promise<void> => {
+    const current = config.current?.model ?? null;
+    const at = MODEL_PRESETS.indexOf((current ?? '') as (typeof MODEL_PRESETS)[number]);
+    // An unlisted model (set through the env) lands at -1, so the first tap
+    // moves to the head of the list rather than nowhere.
+    const next = MODEL_PRESETS[(at + 1) % MODEL_PRESETS.length];
+    await setModelOverride(next);
+    if (config.current) config.current = { ...config.current, model: next };
+    setModel(next);
+    if (__DEV__) console.log(`[agent] model → ${next}`);
+    callbacks.current.onIssue?.(`agent · model ${next}`);
+  }, []);
+
+  return { status, model, ask, endSession, forgetAll, cycleModel };
 }
