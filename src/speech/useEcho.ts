@@ -18,6 +18,12 @@ const LOW_CONFIDENCE = 0.35;
 // for an async channel, and the local agent has nothing to reach.
 const TIMEOUT_LINE = "Sorry — I didn't get an answer in time.";
 const OFFLINE_LINE = "I can't reach Eva right now.";
+/**
+ * Said only when a round broke after Eva promised to do something and before
+ * she said anything else — a tool call that failed on its way to an answer.
+ * `error.message` is a diagnostic for the transcript, not a line to speak.
+ */
+const FAILED_LINE = "Sorry — that didn't work out.";
 
 export interface EchoHandlers {
   setMode: (m: FaceMode) => void;
@@ -344,11 +350,26 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
             spoken.current = spoken.current ? `${spoken.current} ${tail}` : tail;
             speech.current.push(tail);
           }
+          // A failure after audio started is a transcript line, never a spoken
+          // apology over the top of a half-delivered answer — but an open
+          // stream no longer proves the answer started. A tool round clears
+          // `spoken` at the tool boundary, so an empty one here means all Eva
+          // said was a preamble promising an answer that never came, and
+          // stopping there would be worse than apologizing.
+          if (result.kind !== 'reply' && !spoken.current) {
+            const line =
+              result.kind === 'timeout'
+                ? (result.message ?? TIMEOUT_LINE)
+                : result.kind === 'offline'
+                  ? (result.message ?? OFFLINE_LINE)
+                  : FAILED_LINE;
+            speech.current.hold(false);
+            speech.current.push(line);
+            spoken.current = line;
+          }
           speech.current.end();
           speech.current = null;
           onSaid?.(result.kind === 'reply' ? result.speakable : spoken.current);
-          // A failure after audio started is a transcript line, never a spoken
-          // apology over the top of a half-delivered answer.
           if (result.kind === 'error') onIssue?.(result.message);
           return;
         }

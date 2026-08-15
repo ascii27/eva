@@ -225,11 +225,17 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
         // model emits it as ordinary content on the same response as the tool
         // call, so it is already being spoken by the time the tool runs.
         for (let step = 0; step < MAX_STEPS; step++) {
+          // The last lap is offered no tools, which forces an answer out of
+          // whatever has been gathered. Without this a model that kept calling
+          // tools would exhaust the loop having said nothing at all — after
+          // promising out loud that it was looking something up. The dropped
+          // specs cost this one lap its cached prefix; that is a fair price on
+          // a round that has already gone wrong.
           const res = await chatStream({
             apiKey: cfg.apiKey,
             model: cfg.model,
             messages,
-            tools: tools.current.specs,
+            tools: step === MAX_STEPS - 1 ? [] : tools.current.specs,
             signal: controller.signal,
             maxTokens: MAX_REPLY_TOKENS,
             onDelta: (delta) => {
