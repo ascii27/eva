@@ -1,5 +1,5 @@
-import { describe, expect, it } from '@jest/globals';
-import { formatResults, SNIPPET_CHARS } from '../search';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
+import { formatResults, runSearch, SNIPPET_CHARS } from '../search';
 
 /**
  * Shaped after a real Tavily response. Trimmed to the fields the formatter
@@ -83,5 +83,92 @@ describe('formatResults', () => {
 
   it('handles a result with content but no title', () => {
     expect(formatResults({ results: [{ content: 'Untitled but useful.' }] })).toContain('Untitled but useful.');
+  });
+});
+
+/**
+ * A response in the shape the live API actually returns, per Tavily's endpoint
+ * reference — including the fields we do not read (score, id, response_time,
+ * request_id). Tolerating them is the point: they are what a real call brings.
+ */
+const LIVE_SHAPED = {
+  query: 'capital of australia',
+  answer: 'Canberra is the capital of Australia.',
+  results: [
+    {
+      title: 'Canberra — Wikipedia',
+      url: 'https://en.wikipedia.org/wiki/Canberra',
+      content: 'Canberra is the capital city of Australia.',
+      score: 0.97,
+      id: 'r1',
+      favicon: 'https://en.wikipedia.org/favicon.ico',
+    },
+  ],
+  images: [],
+  response_time: 1.42,
+  request_id: 'req_abc123',
+};
+
+describe('runSearch', () => {
+  const original = global.fetch;
+  let calls: { url: string; init: RequestInit }[] = [];
+
+  const respondWith = (status: number, body: unknown) => {
+    (global as { fetch: unknown }).fetch = (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) });
+    };
+  };
+
+  const body = () => JSON.parse(calls[0].init.body as string);
+
+  beforeEach(() => {
+    calls = [];
+  });
+
+  afterEach(() => {
+    (global as { fetch: unknown }).fetch = original;
+  });
+
+  it('authenticates with a bearer token', async () => {
+    respondWith(200, LIVE_SHAPED);
+    await runSearch('tvly-secret', 'capital of australia');
+    expect((calls[0].init.headers as Record<string, string>).Authorization).toBe('Bearer tvly-secret');
+  });
+
+  it('asks for the synthesized answer, which is what makes the reply sayable', async () => {
+    respondWith(200, LIVE_SHAPED);
+    await runSearch('tvly-secret', 'capital of australia');
+    expect(body().include_answer).toBe(true);
+    expect(body().query).toBe('capital of australia');
+  });
+
+  it('reads a live-shaped response, ignoring the fields it does not use', async () => {
+    respondWith(200, LIVE_SHAPED);
+    expect(await runSearch('tvly-secret', 'capital of australia')).toContain('Canberra is the capital');
+  });
+
+  it('passes the abort signal through, so a superseded round stops the search', async () => {
+    respondWith(200, LIVE_SHAPED);
+    const controller = new AbortController();
+    await runSearch('tvly-secret', 'x', controller.signal);
+    expect(calls[0].init.signal).toBe(controller.signal);
+  });
+
+  it('reports a rejected key as a sentence rather than throwing', async () => {
+    // A tool that throws takes down a round that is already speaking aloud.
+    respondWith(401, { detail: 'unauthorized' });
+    await expect(runSearch('tvly-wrong', 'x')).resolves.toContain('401');
+  });
+
+  it('reports a network failure as a sentence rather than throwing', async () => {
+    (global as { fetch: unknown }).fetch = () => Promise.reject(new Error('offline'));
+    await expect(runSearch('tvly-secret', 'x')).resolves.toContain('offline');
+  });
+
+  it('reports unreadable JSON as a sentence rather than throwing', async () => {
+    (global as { fetch: unknown }).fetch = () =>
+      Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error('bad json')) });
+    await expect(runSearch('tvly-secret', 'x')).resolves.toMatch(/could not|failed/i);
   });
 });
