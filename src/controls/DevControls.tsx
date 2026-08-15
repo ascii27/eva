@@ -64,11 +64,16 @@ interface DevControlsProps {
   agentModel: string;
   /** Close the conversation out to memory now, instead of after the 30min gap. */
   onEndSession: () => void;
+  /** Delete every archived conversation and the live session. Irreversible. */
+  onForgetAll: () => void;
 }
 
 export function DevControls(props: DevControlsProps) {
   const { eyeColor } = props;
   const [askText, setAskText] = useState('');
+  // Forget-all is irreversible and sits next to buttons you press casually, so
+  // it arms on the first tap and only fires on the second.
+  const [forgetArmed, setForgetArmed] = useState(false);
   const submitAsk = () => {
     const text = askText.trim();
     if (!text) return;
@@ -189,6 +194,19 @@ export function DevControls(props: DevControlsProps) {
               onPress={props.onToggleBrain}
             />
             <Btn label="End session" sub="→ memory" onPress={props.onEndSession} />
+            <Btn
+              label={forgetArmed ? 'Sure?' : 'Forget all'}
+              sub={forgetArmed ? 'tap to confirm' : 'wipe memory'}
+              active={forgetArmed}
+              onPress={() => {
+                if (!forgetArmed) {
+                  setForgetArmed(true);
+                  return;
+                }
+                setForgetArmed(false);
+                props.onForgetAll();
+              }}
+            />
           </View>
           <View style={styles.row}>
             <TextInput

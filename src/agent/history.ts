@@ -66,7 +66,14 @@ export const KEEP_RECENT_TURNS = 6;
 /** How many archived session summaries to carry as memory. */
 export const MEMORY_LIMIT = 5;
 
-const MEMORY_HEADER = 'What you remember from earlier conversations:';
+// The qualifier is not decoration. These notes are written by a past version of
+// Eva and outlive the capabilities she had at the time, so a note recording
+// what she could not do will still be sitting here after she can — and it wins,
+// because a remembered fact reads as more specific than an instruction. The
+// summarizers are told not to write such notes (see persona.ts); this is the
+// second line of defence for the ones already on disk.
+const MEMORY_HEADER =
+  'What you remember from earlier conversations. These are notes on what was said at the time, not a description of what you can do now — where a note disagrees with the tools you have been given, the tools are right:';
 const SUMMARY_HEADER = 'Earlier in this conversation:';
 
 /**

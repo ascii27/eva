@@ -44,7 +44,7 @@ A few things genuinely have no tool: his calendar, Slack, Notion, his files, the
  */
 export const SUMMARIZE_TURNS = `You are compacting a spoken conversation to keep it affordable. Rewrite what follows as a single compact summary that replaces it entirely.
 
-Keep: what was asked and answered, decisions reached, facts about Michael or his work that later turns would need, and anything left unresolved. Drop: pleasantries, filler, and repetition.
+Keep: what was asked and answered, decisions reached, facts about Michael or his work that later turns would need, and anything left unresolved. Drop: pleasantries, filler, and repetition. Never record what Eva can or cannot do — that describes a version of her, not the conversation, and a note about what she could not reach will stop her trying later.
 
 Write it as terse third-person notes, not dialogue, and no longer than 150 words. Output only the summary.`;
 
@@ -56,6 +56,8 @@ Write it as terse third-person notes, not dialogue, and no longer than 150 words
 export const SUMMARIZE_SESSION = `This spoken conversation has ended. Write what is worth remembering from it the next time you talk to Michael.
 
 Keep only what stays true or still matters afterwards: his preferences, commitments and deadlines, decisions made, ongoing concerns, facts about his work and the people in it. Drop anything that was only relevant in the moment — the weather, the time, small talk, questions already fully answered.
+
+Never record what Eva can or cannot do. Her tools change between versions, so a note saying she could not look something up will still be here after she can, and it will stop her trying. Write about Michael and his world, never about Eva's own abilities.
 
 Write it as a few terse third-person notes, no longer than 100 words. If there is genuinely nothing worth carrying forward, output exactly: NOTHING.`;
 

@@ -12,6 +12,7 @@
 // Costs a few hundred tokens per question.
 
 import { readFileSync } from 'node:fs';
+import { buildRequest, appendTurn, newSession } from '../src/agent/history.ts';
 import { PERSONA } from '../src/agent/persona.ts';
 import { toolSpecs } from '../src/agent/tools/specs.ts';
 
@@ -51,18 +52,29 @@ interface Choice {
   message?: { content?: string | null; tool_calls?: { function?: { name?: string; arguments?: string } }[] };
 }
 
-async function ask(question: string): Promise<Choice['message']> {
+/**
+ * A memory of the kind that caused the worst bug in this feature: written by an
+ * earlier version of Eva, it records as durable fact that she cannot look
+ * things up. Measured at 0/3 tool calls with it present, 3/3 without.
+ * The summarizers are now told never to write these; this keeps them honest.
+ */
+const POISONED_MEMORIES = [
+  'Michael tested the device with questions about sports scores, the news and the weather. Eva explained each time that she has no tools at the desk and cannot look anything up.',
+  'Michael is building Eva as a desk appliance. He asked about her limitations; she confirmed she can only talk, not act.',
+];
+
+async function ask(question: string, memories: string[] = []): Promise<Choice['message']> {
+  // Built through the real buildRequest, so the memory block is laid out
+  // exactly as the device lays it out — that layout is what made it bite.
+  let session = newSession(Date.now());
+  session = appendTurn(session, { role: 'user', content: question }, Date.now());
+
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      // The layout buildRequest produces: persona as one leading system
-      // message, then the turn. No remembered summaries — a fresh session.
-      messages: [
-        { role: 'system', content: PERSONA },
-        { role: 'user', content: question },
-      ],
+      messages: buildRequest(PERSONA, memories, session),
       tools: toolSpecs('probe-key').map((t) => ({ type: 'function', function: t })),
       max_tokens: 300,
     }),
@@ -97,4 +109,22 @@ for (const [question, expected] of cases) {
   }
 }
 
-console.log(`\n${called}/${cases.length} provoked a tool call.\n`);
+console.log(`\n${called}/${cases.length} provoked a tool call.`);
+
+// Regression: the same question, but with a memory asserting she has no tools.
+// This is only observable against the live model, which is why it lives here
+// rather than in the jest suite.
+if (!argv.length) {
+  const question = 'what is the weather in san francisco right now';
+  let survived = 0;
+  const runs = 3;
+  for (let i = 0; i < runs; i++) {
+    const message = await ask(question, POISONED_MEMORIES);
+    if ((message?.tool_calls ?? []).length) survived++;
+  }
+  console.log(
+    `${survived}/${runs} survived ${POISONED_MEMORIES.length} memories claiming she has no tools` +
+      (survived === runs ? '' : '   <-- REGRESSION: stale memory is overriding the tools again'),
+  );
+}
+console.log('');

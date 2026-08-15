@@ -22,7 +22,7 @@ import {
 } from './history';
 import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage } from './openai';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
-import { archiveSession, loadSession, recentMemories, saveSession } from './store';
+import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from './store';
 import { buildToolKit, type ToolKit } from './tools';
 
 /**
@@ -344,5 +344,25 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
     await archive(closing, now);
   }, [archive]);
 
-  return { status, model, ask, endSession };
+  /**
+   * Throw away every archived conversation and the live session.
+   *
+   * Not merely a tidy-up affordance: a memory written by an earlier version of
+   * Eva can assert something about her that is no longer true, and a
+   * remembered "I cannot look things up" reliably beats an instruction saying
+   * she can — measured at 0/3 tool calls against 3/3 without it. The
+   * summarizers no longer write such notes, but nothing rewrites the ones
+   * already on disk, so there has to be a way to drop them.
+   */
+  const forgetAll = useCallback(async (): Promise<void> => {
+    askGen.current++; // any round still in flight must not write history back
+    inFlight.current?.abort();
+    await clearAll();
+    memories.current = [];
+    session.current = newSession(Date.now());
+    await saveSession(session.current);
+    callbacks.current.onIssue?.('agent · forgot everything');
+  }, []);
+
+  return { status, model, ask, endSession, forgetAll };
 }
