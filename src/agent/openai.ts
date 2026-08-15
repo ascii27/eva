@@ -194,6 +194,14 @@ export function chatStream({
       }
     };
 
+    // fetch() checks signal.aborted synchronously; XHR has no equivalent, and an
+    // already-fired 'abort' event will never fire again. Without this an aborted
+    // caller still gets a live request and stray onDelta calls.
+    if (signal?.aborted) {
+      finish(() => reject(new Error('aborted')));
+      return;
+    }
+
     const onAbort = () => xhr.abort();
     signal?.addEventListener('abort', onAbort);
     const cleanup = () => signal?.removeEventListener('abort', onAbort);
