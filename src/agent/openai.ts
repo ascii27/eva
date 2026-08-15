@@ -151,15 +151,16 @@ export interface ChatStreamOptions extends ChatOptions {
  * Streaming counterpart to `chat`, on XMLHttpRequest rather than fetch —
  * React Native's fetch cannot stream a response body.
  *
- * Tool calls are NOT supported here: their arguments arrive fragmented across
- * frames and would need reassembly. `toolCalls` is always empty, and the caller
- * is responsible for using non-streaming `chat` whenever tools are offered
- * (see the guard in useAgent).
+ * Tool calls stream too: their arguments arrive fragmented across frames and
+ * `sse.ts` reassembles them by index, releasing a call only once the stream
+ * reports it has finished. That is what lets a tool-using turn keep the
+ * streaming latency win instead of falling back to `chat`.
  */
 export function chatStream({
   apiKey,
   model,
   messages,
+  tools,
   signal,
   maxTokens,
   temperature,
@@ -171,6 +172,7 @@ export function chatStream({
     let consumed = 0;
     let text = '';
     let usage: ChatUsage | null = null;
+    let toolCalls: ToolCall[] = [];
     let settled = false;
 
     const finish = (fn: () => void) => {
@@ -188,6 +190,9 @@ export function chatStream({
       const r = parseSse(sse, incoming);
       sse = r.state;
       if (r.chunk.usage) usage = r.chunk.usage;
+      // Emitted on exactly one read (the one that sees the stream finish), so
+      // this assigns rather than appends.
+      if (r.chunk.toolCalls.length) toolCalls = r.chunk.toolCalls;
       for (const delta of r.chunk.deltas) {
         text += delta;
         try {
@@ -235,9 +240,23 @@ export function chatStream({
       finish(() =>
         resolve({
           text: text.trim(),
-          toolCalls: [],
+          toolCalls,
           usage,
-          message: { role: 'assistant', content: text },
+          // Shaped for the next lap: the API wants `content: null`, not an
+          // empty string, when the turn was nothing but a tool call.
+          message: {
+            role: 'assistant',
+            content: text || null,
+            ...(toolCalls.length
+              ? {
+                  tool_calls: toolCalls.map((c) => ({
+                    id: c.id,
+                    type: 'function' as const,
+                    function: { name: c.name, arguments: c.arguments },
+                  })),
+                }
+              : {}),
+          },
         }),
       );
     };
@@ -258,6 +277,9 @@ export function chatStream({
         // Without this a streamed response carries no usage at all, and the
         // per-round token line silently goes blank.
         stream_options: { include_usage: true },
+        ...(tools && tools.length
+          ? { tools: tools.map((t) => ({ type: 'function', function: t })) }
+          : {}),
         ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
         ...(temperature !== undefined ? { temperature } : {}),
       }),

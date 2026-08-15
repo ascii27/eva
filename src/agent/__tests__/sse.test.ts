@@ -5,6 +5,25 @@ import { emptySse, parseSse } from '../sse';
 const frame = (content: string) =>
   `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
 
+/**
+ * One tool-call frame. The API sends `id`/`name` on the first frame for an
+ * index and appends `arguments` fragments on the rest, so both are optional.
+ */
+const toolFrame = (index: number, part: { id?: string; name?: string; args?: string }) => {
+  const call: Record<string, unknown> = { index };
+  if (part.id) call.id = part.id;
+  if (part.id) call.type = 'function';
+  const fn: Record<string, unknown> = {};
+  if (part.name) fn.name = part.name;
+  if (part.args !== undefined) fn.arguments = part.args;
+  call.function = fn;
+  return `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [call] }, finish_reason: null }] })}\n\n`;
+};
+
+/** The frame that closes a choice, carrying the reason it stopped. */
+const finishFrame = (reason: string) =>
+  `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: reason }] })}\n\n`;
+
 describe('parseSse', () => {
   it('reads a single complete frame', () => {
     const { chunk } = parseSse(emptySse(), frame('Hello'));
@@ -97,5 +116,111 @@ describe('parseSse', () => {
     expect(first.chunk.deltas).toEqual([]);
     const second = parseSse(first.state, ` ${JSON.stringify({ choices: [{ delta: { content: 'x' } }] })}\n\n`);
     expect(second.chunk.deltas).toEqual(['x']);
+  });
+
+  it('reports no tool calls on an ordinary content turn', () => {
+    const { chunk } = parseSse(emptySse(), frame('Hello') + finishFrame('stop'));
+    expect(chunk.toolCalls).toEqual([]);
+  });
+});
+
+describe('parseSse tool calls', () => {
+  it('assembles a tool call fragmented across frames', () => {
+    const raw =
+      toolFrame(0, { id: 'call_1', name: 'web_search', args: '' }) +
+      toolFrame(0, { args: '{"query":' }) +
+      toolFrame(0, { args: '"eva"}' }) +
+      finishFrame('tool_calls');
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.toolCalls).toEqual([{ id: 'call_1', name: 'web_search', arguments: '{"query":"eva"}' }]);
+  });
+
+  it('assembles arguments split mid-JSON-token across chunk boundaries', () => {
+    // The split lands inside the string literal "san francisco", which is
+    // exactly where a naive per-frame JSON.parse would fall over.
+    const whole =
+      toolFrame(0, { id: 'call_1', name: 'web_search', args: '' }) +
+      toolFrame(0, { args: '{"query":"san fran' }) +
+      toolFrame(0, { args: 'cisco weather"}' }) +
+      finishFrame('tool_calls');
+    const cut = Math.floor(whole.length / 2);
+    const first = parseSse(emptySse(), whole.slice(0, cut));
+    expect(first.chunk.toolCalls).toEqual([]);
+    const second = parseSse(first.state, whole.slice(cut));
+    expect(second.chunk.toolCalls).toEqual([
+      { id: 'call_1', name: 'web_search', arguments: '{"query":"san francisco weather"}' },
+    ]);
+  });
+
+  it('holds a tool call back until the stream reports it is finished', () => {
+    // Emitting early would hand the dispatcher half a JSON object.
+    const raw = toolFrame(0, { id: 'call_1', name: 'clock', args: '{' }) + toolFrame(0, { args: '}' });
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.toolCalls).toEqual([]);
+  });
+
+  it('assembles two parallel tool calls in index order', () => {
+    const raw =
+      toolFrame(1, { id: 'call_b', name: 'clock', args: '{}' }) +
+      toolFrame(0, { id: 'call_a', name: 'memory_search', args: '{"q":"x"}' }) +
+      finishFrame('tool_calls');
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.toolCalls).toEqual([
+      { id: 'call_a', name: 'memory_search', arguments: '{"q":"x"}' },
+      { id: 'call_b', name: 'clock', arguments: '{}' },
+    ]);
+  });
+
+  it('emits tool calls on [DONE] when the finish frame never arrived', () => {
+    const raw = toolFrame(0, { id: 'call_1', name: 'clock', args: '{}' }) + 'data: [DONE]\n\n';
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.toolCalls).toEqual([{ id: 'call_1', name: 'clock', arguments: '{}' }]);
+  });
+
+  it('does not re-emit tool calls after the finish frame flushed them', () => {
+    // finish_reason and [DONE] both flush; without a reset the round would
+    // dispatch the same tool twice.
+    const first = parseSse(
+      emptySse(),
+      toolFrame(0, { id: 'call_1', name: 'clock', args: '{}' }) + finishFrame('tool_calls'),
+    );
+    expect(first.chunk.toolCalls).toHaveLength(1);
+    const second = parseSse(first.state, 'data: [DONE]\n\n');
+    expect(second.chunk.toolCalls).toEqual([]);
+  });
+
+  it('reads content deltas interleaved with tool-call frames', () => {
+    // The preamble Eva speaks aloud arrives on the same response as the call.
+    const raw =
+      frame('Let me look that up.') +
+      toolFrame(0, { id: 'call_1', name: 'web_search', args: '{"query":"x"}' }) +
+      finishFrame('tool_calls');
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.deltas).toEqual(['Let me look that up.']);
+    expect(chunk.toolCalls).toHaveLength(1);
+  });
+
+  it('keeps accumulating after a malformed tool-call frame', () => {
+    const raw =
+      toolFrame(0, { id: 'call_1', name: 'clock', args: '{"a"' }) +
+      'data: {not json\n\n' +
+      toolFrame(0, { args: ':1}' }) +
+      finishFrame('tool_calls');
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.toolCalls).toEqual([{ id: 'call_1', name: 'clock', arguments: '{"a":1}' }]);
+  });
+
+  it('emits a truncated call rather than dropping it, so dispatch can report the error', () => {
+    // finish_reason 'length' means max_tokens cut the arguments off mid-JSON.
+    const raw = toolFrame(0, { id: 'call_1', name: 'web_search', args: '{"query":"unfin' }) + finishFrame('length');
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.toolCalls).toEqual([{ id: 'call_1', name: 'web_search', arguments: '{"query":"unfin' }]);
+  });
+
+  it('ignores a tool-call frame with no index', () => {
+    const raw = `data: ${JSON.stringify({
+      choices: [{ delta: { tool_calls: [{ function: { arguments: '{}' } }] }, finish_reason: null }] })}\n\n`;
+    expect(() => parseSse(emptySse(), raw)).not.toThrow();
+    expect(parseSse(emptySse(), raw + finishFrame('tool_calls')).chunk.toolCalls).toEqual([]);
   });
 });
