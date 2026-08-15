@@ -1,6 +1,25 @@
 # Local tools — design
 
-Status: designed, not yet implemented.
+Status: implemented, **not yet verified on the device**. The pure layers are
+covered (335 tests green, typecheck clean), but nothing below — the preamble
+actually arriving as content alongside a tool call, the `hold()` fix, Tavily's
+live response shape — has been exercised on the phone. The device checks at the
+bottom of this document are all still open.
+
+Two things changed during implementation, both because tools made a previously
+unreachable path reachable:
+
+- The last lap is offered no tools, forcing an answer out of whatever was
+  gathered. `MAX_STEPS` could otherwise exhaust with nothing said, after Eva had
+  promised out loud to look something up.
+- `useEcho` no longer treats an open `speech.current` as proof the answer
+  started. A tool round clears `spoken` at the tool boundary, so an empty one
+  means only a preamble played — and an apology beats stopping mid-promise.
+
+A `chatStream.onToolCall` callback in the original design was dropped as
+unnecessary: `useAgent` already drives the lap loop, so it fires `onToolStart`
+itself when a lap resolves with tool calls, a few milliseconds later and with
+one less API surface.
 
 Follows [2026-08-15-streaming-speech-design.md](2026-08-15-streaming-speech-design.md),
 whose closing note named this as the next round — and named the fork it starts
