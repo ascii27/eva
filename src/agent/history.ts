@@ -230,6 +230,16 @@ function turnMessage(turn: Turn, resolve?: PhotoResolver): ChatMessage {
 }
 
 /**
+ * What hermes-agent knows about Michael's week, already rendered. Two strings
+ * rather than one because they change at different rates — see the ordering
+ * note in buildRequest, and src/hermes/bundle.ts for what is in each.
+ */
+export interface BundleText {
+  core: string;
+  volatile: string;
+}
+
+/**
  * The request message list. See the caching note at the top of this file for
  * why persona+memory and the running summary are separate messages.
  *
@@ -240,12 +250,30 @@ function turnMessage(turn: Turn, resolve?: PhotoResolver): ChatMessage {
  * rather than lazy: it is exactly the state of a session rehydrated from disk,
  * where the cache did not survive the relaunch, and every photo reads as its
  * caption.
+ *
+ * `bundle` is the projection from hermes, and its position is the whole reason
+ * it is two strings. Everything here is laid out MOST STABLE FIRST, so that a
+ * change to one block invalidates only what follows it:
+ *
+ *   persona + memories   fixed for the session
+ *   running summary      rewritten on compaction, which is rare
+ *   bundle core          rewritten only when hermes' answer actually changed
+ *   bundle volatile      small; how old the picture is, every refresh
+ *   turns
+ *
+ * The tempting alternative — put the volatile bundle *last*, right before the
+ * newest turn, to protect the prefix — is worse, and worse in a convincing way.
+ * Last means the bundle is never inside the cached prefix at all, so its ~2,500
+ * tokens are billed at full price on every single turn. Early means they are
+ * billed only on the turns where the bundle actually changed. Early wins, and it
+ * wins by more the longer the conversation runs.
  */
 export function buildRequest(
   persona: string,
   memories: string[],
   session: Session,
   resolve?: PhotoResolver,
+  bundle?: BundleText | null,
 ): ChatMessage[] {
   const prefix = memories.length
     ? `${persona}\n\n${MEMORY_HEADER}\n${memories.map((m) => `- ${m}`).join('\n')}`
@@ -253,5 +281,9 @@ export function buildRequest(
 
   const messages: ChatMessage[] = [{ role: 'system', content: prefix }];
   if (session.summary) messages.push({ role: 'system', content: `${SUMMARY_HEADER} ${session.summary}` });
+  if (bundle) {
+    messages.push({ role: 'system', content: bundle.core });
+    messages.push({ role: 'system', content: bundle.volatile });
+  }
   return [...messages, ...session.turns.map((t) => turnMessage(t, resolve))];
 }

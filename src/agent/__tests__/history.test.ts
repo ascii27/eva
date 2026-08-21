@@ -218,6 +218,55 @@ describe('buildRequest', () => {
     expect(msgs[0].content).toBe(PERSONA);
   });
 
+  // The bundle from hermes. Its POSITION is the point — see the layout note on
+  // buildRequest: everything is ordered most-stable-first so a change to one
+  // block invalidates only what follows it, and the bundle is deliberately
+  // early rather than late.
+  describe('the hermes bundle', () => {
+    const BUNDLE = { core: 'his week, at length', volatile: 'assembled four minutes ago' };
+
+    it('changes nothing at all when there is none', () => {
+      const withOut = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2), summary: 'shop talk' }));
+      expect(buildRequest(PERSONA, ['a memory'], session({ turns: turns(2), summary: 'shop talk' }), undefined, null)).toEqual(
+        withOut,
+      );
+    });
+
+    it('sits after the summary and before the turns', () => {
+      const msgs = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2), summary: 'shop talk' }), undefined, BUNDLE);
+      expect(msgs[0].content).toContain(PERSONA);
+      expect(msgs[1].content).toContain('shop talk');
+      expect(msgs[2].content).toBe(BUNDLE.core);
+      expect(msgs[3].content).toBe(BUNDLE.volatile);
+      expect(msgs.slice(4)).toEqual(turns(2));
+    });
+
+    it('still sits after the persona when there is no summary to follow', () => {
+      const msgs = buildRequest(PERSONA, [], session({ turns: turns(1) }), undefined, BUNDLE);
+      expect(msgs[0].content).toBe(PERSONA);
+      expect(msgs[1].content).toBe(BUNDLE.core);
+      expect(msgs[2].content).toBe(BUNDLE.volatile);
+    });
+
+    it('keeps the core and the freshness in separate messages', () => {
+      // Two messages, not one, so a refresh that changed nothing rewrites only
+      // the small one and leaves the core inside the cached prefix.
+      const a = buildRequest(PERSONA, [], session({ turns: turns(1) }), undefined, BUNDLE);
+      const b = buildRequest(PERSONA, [], session({ turns: turns(1) }), undefined, {
+        ...BUNDLE,
+        volatile: 'assembled nine minutes ago',
+      });
+      expect(a[1]).toEqual(b[1]);
+      expect(a[2]).not.toEqual(b[2]);
+    });
+
+    it('leaves the leading persona message untouched, whatever the bundle says', () => {
+      const msgs = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2) }), undefined, BUNDLE);
+      const without = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2) }));
+      expect(msgs[0]).toEqual(without[0]);
+    });
+  });
+
   it('folds memories into the leading system message, so the prefix stays cacheable', () => {
     const msgs = buildRequest(PERSONA, ['he prefers mornings', 'the demo is Thursday'], session({ turns: turns(2) }));
     expect(msgs[0].content).toContain('he prefers mornings');

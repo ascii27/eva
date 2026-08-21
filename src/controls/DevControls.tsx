@@ -72,6 +72,9 @@ interface DevControlsProps {
   onLookTest: () => void;
   /** Step to the next model in MODEL_PRESETS; takes effect on the next round. */
   onCycleModel: () => void;
+  /** Bundle age and cost, or why there isn't one. */
+  bundleLabel: string;
+  onBundleRefresh: () => void;
 }
 
 export function DevControls(props: DevControlsProps) {
@@ -206,6 +209,12 @@ export function DevControls(props: DevControlsProps) {
               above is squeezed to nothing. */}
           <View style={styles.row}>
             <Btn label="Model" sub={props.agentModel} onPress={props.onCycleModel} />
+          </View>
+          <View style={styles.row}>
+            {/* What hermes last sent down, and how old it is. Worth a button:
+                "she doesn't know about the two o'clock" looks identical whether
+                the bundle is stale, unparseable, or was never fetched at all. */}
+            <Btn label="Bundle" sub={props.bundleLabel} onPress={props.onBundleRefresh} />
           </View>
           <View style={styles.row}>
             <Btn

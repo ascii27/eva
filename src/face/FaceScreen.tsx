@@ -11,6 +11,7 @@ import { useFonts } from 'expo-font';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAgent } from '../agent/useAgent';
+import { useBundle, type BundleState } from '../hermes/useBundle';
 import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../round/speakable';
@@ -69,6 +70,19 @@ function describeTtsState(s: TtsEngineState): { line: string | null; label: stri
       // Expo Go / simulator without the dev build: silence, system voice covers it.
       return { line: null, label: 'system voice' };
   }
+}
+
+/**
+ * The overlay's one-line summary of the bundle. Distinguishes "no hermes" from
+ * "hermes, but nothing yet" from a live one — three states that all look like
+ * Eva not knowing about the two o'clock.
+ */
+function describeBundle(configured: boolean, state: BundleState | null): string {
+  if (!configured) return 'no hermes';
+  if (!state) return 'none yet';
+  const minutes = Math.floor((Date.now() - state.generatedAt) / 60_000);
+  const age = minutes < 1 ? 'just now' : `${minutes}m`;
+  return `${age} · ${state.coreTokens} tok${state.staleness === 'fresh' ? '' : ` · ${state.staleness === 'outOfSync' ? 'out of sync' : 'stale'}`}`;
 }
 
 export function FaceScreen() {
@@ -227,6 +241,17 @@ export function FaceScreen() {
   // whether there is a camera has to be known by then.
   const vision = useVision({ onIssue: log });
 
+  // What Eva's other half knows about the week. Mounted before useAgent for the
+  // same reason vision is — it hands `bundleText` down into the round.
+  //
+  // `busy` is the face being anything but idle, which does double duty: a
+  // refresh never competes for the network with a turn somebody is listening
+  // to, and it is the evidence of a person in the room that keeps the fast
+  // cadence alive. `echoBusy` would cover the ramp-up window too but is
+  // declared further down, and a refresh landing in that window is harmless —
+  // nothing waits on one.
+  const bundle = useBundle({ busy: mode !== 'idle', onIssue: log });
+
   const agent = useAgent({
     onIssue: log,
     onUsage: log,
@@ -239,6 +264,7 @@ export function FaceScreen() {
         }
       : null,
     resolvePhoto: vision.resolvePhoto,
+    bundleText: bundle.text,
   });
 
   const echo = useEcho({
@@ -474,6 +500,7 @@ export function FaceScreen() {
           entries={entries}
           watching={wake.status === 'watching'}
           connection={slack.status}
+          bundle={bundle.state ? { staleness: bundle.state.staleness, ageMs: Date.now() - bundle.state.generatedAt } : null}
           vision={
             vision.available
               ? { ...vision.state, onCameraReady: vision.onCameraReady }
@@ -570,6 +597,8 @@ export function FaceScreen() {
             void agent.forgetAll();
           }}
           onCycleModel={() => void agent.cycleModel()}
+          bundleLabel={describeBundle(bundle.configured, bundle.state)}
+          onBundleRefresh={bundle.refresh}
           slackStatus={slack.status}
           onSlackPair={() => setPairingVisible(true)}
           onSlackReconnect={slack.reconnect}

@@ -23,6 +23,7 @@ import {
   appendTurn,
   applyCompaction,
   buildRequest,
+  type BundleText,
   isGap,
   MEMORY_LIMIT,
   newSession,
@@ -88,9 +89,22 @@ export interface UseAgentOptions {
   vision?: VisionHandles | null;
   /** Photo bytes by id, for the request. Null from it means aged out. */
   resolvePhoto?: PhotoResolver;
+  /**
+   * What hermes knows about Michael's week, or null when there is no bundle.
+   *
+   * A getter taking `now`, not a value, for two reasons: a round must use the
+   * bundle that is current when it is *asked* rather than whichever one the
+   * hook last rendered with, and the freshness half has to be rendered against
+   * this moment. Same shape and same reasoning as `resolvePhoto`.
+   *
+   * Nothing here ever waits on hermes. If this returns null — no hermes
+   * configured, or none fetched yet — the request is exactly what it was before
+   * the bridge existed.
+   */
+  bundleText?: (now: number) => BundleText | null;
 }
 
-export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto }: UseAgentOptions = {}) {
+export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto, bundleText }: UseAgentOptions = {}) {
   const [status, setStatus] = useState<AgentStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<AgentConfig | null>(null);
@@ -114,8 +128,16 @@ export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto }: UseA
    *  touch history — its answer belongs to a question already superseded. */
   const askGen = useRef(0);
   const inFlight = useRef<AbortController | null>(null);
-  const callbacks = useRef({ onIssue, onUsage, resolvePhoto });
-  callbacks.current = { onIssue, onUsage, resolvePhoto };
+  /**
+   * Rounds answered straight off vs. rounds that had to reach for a tool, since
+   * launch. The harness spec calls this the single best health metric for the
+   * system, on the reading that a low direct rate means the bundle is too thin
+   * rather than the model too weak. Counted on the first lap only — later laps
+   * are the same round continuing.
+   */
+  const recall = useRef({ direct: 0, tool: 0 });
+  const callbacks = useRef({ onIssue, onUsage, resolvePhoto, bundleText });
+  callbacks.current = { onIssue, onUsage, resolvePhoto, bundleText };
 
   /** One completion, outside the conversation — used for both summarizers. */
   const complete = useCallback(async (instruction: string, body: string): Promise<string | null> => {
@@ -274,11 +296,13 @@ export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto }: UseA
       };
 
       try {
+        const bundle = callbacks.current.bundleText?.(postedAt) ?? null;
         const messages: RequestMessage[] = buildRequest(
           PERSONA,
           memories.current,
           asked,
           callbacks.current.resolvePhoto,
+          bundle,
         );
         let raw = '';
         if (__DEV__) {
@@ -287,7 +311,7 @@ export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto }: UseA
           // arrives through speech-to-text and may not be the question that
           // was actually spoken.
           console.log(
-            `[agent] ask "${text}" · ${asked.turns.length} turns · ${memories.current.length} memories · ${tools.current.specs.length} tools`,
+            `[agent] ask "${text}" · ${asked.turns.length} turns · ${memories.current.length} memories · ${tools.current.specs.length} tools · bundle ${bundle ? 'yes' : 'no'}`,
           );
         }
 
@@ -319,11 +343,17 @@ export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto }: UseA
           usage = addUsage(usage, res.usage);
 
           if (!res.toolCalls.length) {
+            // A turn that reached no tool answered from what was already
+            // resident — the bundle, memory, or the conversation. That ratio is
+            // the health metric the whole bridge is judged on, and it is
+            // measured here rather than declared by the model.
+            if (step === 0) recall.current.direct += 1;
             if (__DEV__) console.log(`[agent] lap ${step}: no tool call, answered directly`);
             raw = res.text;
             break;
           }
 
+          if (step === 0) recall.current.tool += 1;
           // Tell the speaker the reply is about to pause. Everything spoken so
           // far was the preamble; what comes back after this is the answer.
           opts?.onToolStart?.(res.toolCalls.map((c) => c.name));
@@ -362,7 +392,12 @@ export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto }: UseA
         }
 
         const replyAt = Date.now();
-        if (usage) callbacks.current.onUsage?.(`agent · ${formatUsage(usage)}`);
+        if (usage) {
+          const { direct, tool } = recall.current;
+          const total = direct + tool;
+          const rate = total ? ` · ${Math.round((direct / total) * 100)}% direct` : '';
+          callbacks.current.onUsage?.(`agent · ${formatUsage(usage)}${rate}`);
+        }
         if (!raw) return { kind: 'error', message: 'agent · empty reply' };
 
         // The user turn stays: Michael really did say it. The assistant turn does

@@ -1,11 +1,35 @@
 # The hermes bridge — context bundle (read path) — design
 
-Status: **designed, not implemented.** Nothing below has been measured. The
-numbers that matter — how long a hermes bundle run actually takes, what it
-costs, whether the prompt-cache layout earns its discount, what fraction of
-turns stop needing a tool — are all open, and `npm run probe:hermes` exists in
-this design specifically so they get measured before device code depends on
-them.
+Status: **implemented, nothing measured.** The read path is built and wired —
+typecheck clean, 460 tests green — but not one number in this document has been
+checked against a running hermes, because there was no reachable one to check
+against. Everything below is design intent until `npm run probe:hermes` says
+otherwise.
+
+Still open, in the order they would change this document:
+
+- **Is hermes reachable at all?** Its API server binds `127.0.0.1:8642` by
+  default. Nothing here has spoken to one.
+- **What does a bundle run cost, in seconds and tokens?** If it is a minute and
+  expensive, the 150s cadence is wrong and the section on it is wrong with it.
+- **Does hermes accept `max_completion_tokens`?** Every OpenAI family does;
+  hermes is compatible rather than OpenAI. The probe answers this explicitly and
+  falls back if not.
+- **Does the tier-0 rate land near the spec's 70%?** `useAgent` now counts it and
+  prints it on every usage line. Needs the device and a week.
+
+One thing did change during implementation, and it is worth recording because it
+was the opposite of the first instinct: **the bundle goes early in the message
+list, not late.** Late placement protects the cached prefix but means the bundle
+is never *in* it, so its tokens are billed in full on every turn. See the layout
+note in `buildRequest`.
+
+A second, smaller correction: `bundle.ts` carries its own copy of the four-chars-
+per-token estimator rather than importing `history.ts`'s. Node's type stripping
+resolves relative imports only with an explicit `.ts` extension, no app file here
+uses that style, and putting an untested import form in the Metro path for a
+two-line function was the worse trade. Found by running the probe rather than by
+reasoning about it.
 
 ## The problem
 
