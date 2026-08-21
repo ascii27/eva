@@ -47,11 +47,31 @@ export const WEB_SEARCH: ToolSpec = {
   },
 };
 
+export const CAMERA_LOOK: ToolSpec = {
+  name: 'camera_look',
+  description:
+    'Take a photo through the camera on Michael\'s desk, which faces him, and look at what it sees. Use it whenever the answer depends on something in front of you — something he is holding up, something on the desk, a page or a screen he is showing you, or how something looks. He is asked out loud before the shutter fires and can say no, so treat it as asking rather than taking. The photo comes back as the next message for you to look at.',
+  parameters: {
+    type: 'object',
+    properties: {
+      looking_for: {
+        type: 'string',
+        description: 'What you are hoping to see, in a few words.',
+      },
+    },
+    required: ['looking_for'],
+  },
+};
+
 /**
  * The specs offered for a session. Order is fixed and the list is built once —
  * specs sit inside OpenAI's cached prefix, so a list that moved between turns
  * would cost the caching discount history.ts is built around.
+ *
+ * `camera` is whether the native modules loaded, not whether iOS has granted
+ * access. The OS permission is requested on first use precisely so it cannot
+ * change this list mid-session.
  */
-export function toolSpecs(tavilyKey: string | null): ToolSpec[] {
-  return [CLOCK, MEMORY_SEARCH, ...(tavilyKey ? [WEB_SEARCH] : [])];
+export function toolSpecs(tavilyKey: string | null, camera = false): ToolSpec[] {
+  return [CLOCK, MEMORY_SEARCH, ...(tavilyKey ? [WEB_SEARCH] : []), ...(camera ? [CAMERA_LOOK] : [])];
 }

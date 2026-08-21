@@ -66,6 +66,10 @@ interface DevControlsProps {
   onEndSession: () => void;
   /** Delete every archived conversation and the live session. Irreversible. */
   onForgetAll: () => void;
+  /** Whether the native camera modules loaded at all. */
+  visionAvailable: boolean;
+  /** Drive the consent gate end to end without the model. */
+  onLookTest: () => void;
   /** Step to the next model in MODEL_PRESETS; takes effect on the next round. */
   onCycleModel: () => void;
 }
@@ -230,6 +234,14 @@ export function DevControls(props: DevControlsProps) {
               returnKeyType="send"
             />
             <Btn label="Ask" onPress={submitAsk} />
+          </View>
+
+          <Text style={styles.sectionLabel}>VISION · {props.visionAvailable ? 'camera' : 'none'}</Text>
+          {/* Runs the whole consent gate — question, mic, shutter, thumbnail —
+              without going near the model, which is the only way to exercise
+              it when the model declines to reach for the camera. */}
+          <View style={styles.row}>
+            <Btn label="Look" sub="asks first" onPress={props.onLookTest} />
           </View>
 
           <Text style={styles.sectionLabel}>SLACK</Text>

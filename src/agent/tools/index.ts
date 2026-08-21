@@ -12,32 +12,63 @@
 //    would take down a round that was already speaking aloud.
 
 import type { ToolCall, ToolMessage, ToolSpec } from '../openai';
+import type { Photo } from '../../vision/photos';
 import { formatClock } from './clock';
 import { runMemorySearch } from './memory';
 import { runSearch } from './search';
 import { toolSpecs } from './specs';
 
+/** What the camera tool needs from `useVision`, and nothing more. */
+export interface VisionHandles {
+  /** iOS camera access, requested before anything is spoken. */
+  ensurePermission(): Promise<boolean>;
+  /** Mount the viewfinder so the lens warms up during the question. */
+  showPreview(): void;
+  hidePreview(): void;
+  takePhoto(): Promise<{ photo: Photo } | { error: string }>;
+}
+
 export interface ToolConfig {
   /** Tavily key, or null when web search is not configured. */
   tavilyKey: string | null;
+  /** Camera handles, or null on a build with no camera (Expo Go, simulator). */
+  vision: VisionHandles | null;
+}
+
+/** Per-call context: the round's abort signal and its spoken-consent gate. */
+export interface ToolRunOptions {
+  signal?: AbortSignal;
+  /**
+   * Ask the room out loud and wait. Absent on transports that cannot run a
+   * spoken gate — in which case the camera declines rather than firing, which
+   * is the whole guarantee. The wording belongs to the speech layer, so there
+   * is nothing to pass in.
+   */
+  onConsent?: () => Promise<boolean>;
+}
+
+/**
+ * A tool's answer. `photo` is set only by `camera_look`: an image cannot ride
+ * on a `tool` message, so the caller pushes it as a user message afterwards.
+ */
+export interface ToolResult {
+  message: ToolMessage;
+  photo?: Photo;
 }
 
 export interface ToolKit {
   /** Offered to the model verbatim, unchanged for the life of the session. */
   specs: ToolSpec[];
-  run(call: ToolCall, signal?: AbortSignal): Promise<ToolMessage>;
+  run(call: ToolCall, opts?: ToolRunOptions): Promise<ToolResult>;
 }
 
-const error = (call: ToolCall, message: string): ToolMessage => ({
-  role: 'tool',
-  tool_call_id: call.id,
-  content: `Error: ${message}`,
+const error = (call: ToolCall, message: string): ToolResult => ({
+  message: { role: 'tool', tool_call_id: call.id, content: `Error: ${message}` },
 });
 
-const answer = (call: ToolCall, content: string): ToolMessage => ({
-  role: 'tool',
-  tool_call_id: call.id,
-  content,
+const answer = (call: ToolCall, content: string, photo?: Photo): ToolResult => ({
+  message: { role: 'tool', tool_call_id: call.id, content },
+  ...(photo ? { photo } : {}),
 });
 
 /**
@@ -62,12 +93,51 @@ function requireQuery(args: Record<string, unknown>): string | null {
   return typeof query === 'string' && query.trim() ? query.trim() : null;
 }
 
-export function buildToolKit({ tavilyKey }: ToolConfig): ToolKit {
-  const specs: ToolSpec[] = toolSpecs(tavilyKey);
+/**
+ * Take a photo, but only after the room says yes out loud.
+ *
+ * Every path that is not an audible yes returns without a shutter, and the
+ * order of the checks matters: iOS permission is settled *before* anything is
+ * spoken, because that dialog is a modal and one appearing over an open
+ * microphone would eat the answer to the question we just asked.
+ */
+async function runCameraLook(
+  call: ToolCall,
+  vision: VisionHandles | null,
+  onConsent: ToolRunOptions['onConsent'],
+): Promise<ToolResult> {
+  if (!vision) return error(call, 'there is no camera on this device.');
+  // No gate available means no way to ask, and unasked is not allowed.
+  if (!onConsent) return error(call, 'you cannot ask for permission to use the camera right now, so do not use it.');
+
+  if (!(await vision.ensurePermission())) {
+    return error(call, "Michael hasn't allowed camera access on this device.");
+  }
+
+  vision.showPreview();
+  try {
+    const allowed = await onConsent();
+    if (!allowed) return answer(call, 'Michael did not agree to the photo. Do not try again unless he brings it up.');
+
+    const shot = await vision.takePhoto();
+    if ('error' in shot) return error(call, shot.error);
+    return answer(call, 'Photo taken. It is in the next message.', shot.photo);
+  } catch (e) {
+    // Neither handle is supposed to reject, but this one runs while a round is
+    // already speaking aloud — a throw escaping here would take that round down
+    // mid-sentence. See the file header: a tool never throws.
+    return error(call, `the camera failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    vision.hidePreview();
+  }
+}
+
+export function buildToolKit({ tavilyKey, vision }: ToolConfig): ToolKit {
+  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null);
 
   return {
     specs,
-    async run(call, signal) {
+    async run(call, opts) {
       const args = parseArgs(call.arguments);
       if (!args) return error(call, `could not read the arguments to ${call.name}.`);
 
@@ -85,8 +155,11 @@ export function buildToolKit({ tavilyKey }: ToolConfig): ToolKit {
           if (!tavilyKey) return error(call, 'web search is not configured on this device.');
           const query = requireQuery(args);
           if (!query) return error(call, 'web_search needs a query.');
-          return answer(call, await runSearch(tavilyKey, query, signal));
+          return answer(call, await runSearch(tavilyKey, query, opts?.signal));
         }
+
+        case 'camera_look':
+          return runCameraLook(call, vision, opts?.onConsent);
 
         default:
           return error(call, `no tool named ${call.name}.`);

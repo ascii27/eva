@@ -25,3 +25,23 @@ export const DEFAULT_MODEL = 'gpt-5.4-mini';
  * that behaviour is the model's and not ours.
  */
 export const MODEL_PRESETS = ['gpt-5.4-mini', 'gpt-5.4', 'gpt-4o-mini', 'o4-mini'] as const;
+
+/**
+ * Vision, measured with `npm run probe:vision`. All four accept image input —
+ * o4-mini included, which was the one in doubt — so switching models mid-session
+ * never turns the camera into an error.
+ *
+ * What does differ is the consent preamble, and it matters more here than for
+ * any other tool: that sentence is the question the microphone opens for.
+ * Over three room-shaped questions ("what am I holding", …):
+ *
+ *   gpt-5.4-mini  3/3 called camera_look, 3/3 phrased it as a question
+ *   gpt-5.4       2/3 called it,          2/2 phrased it as a question
+ *   gpt-4o-mini   0/3 called it — it asks "mind if I take a look?" and then
+ *                 never reaches for the tool, so nothing happens
+ *   o4-mini       3/3 called it,          0/3 said anything at all
+ *
+ * o4-mini is why the gate speaks CONSENT_QUESTION itself when no preamble
+ * arrives: without that branch it opens the mic in silence and waits for
+ * someone to agree to a question they never heard.
+ */

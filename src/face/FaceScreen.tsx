@@ -30,6 +30,7 @@ import {
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
 import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
+import { useVision } from '../vision/useVision';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
@@ -222,7 +223,23 @@ export function FaceScreen() {
     });
   }, []);
 
-  const agent = useAgent({ onIssue: log, onUsage: log });
+  // Mounted before useAgent: the tool spec list is built once at bring-up, so
+  // whether there is a camera has to be known by then.
+  const vision = useVision({ onIssue: log });
+
+  const agent = useAgent({
+    onIssue: log,
+    onUsage: log,
+    vision: vision.available
+      ? {
+          ensurePermission: vision.ensurePermission,
+          showPreview: vision.showPreview,
+          hidePreview: vision.hidePreview,
+          takePhoto: vision.takePhoto,
+        }
+      : null,
+    resolvePhoto: vision.resolvePhoto,
+  });
 
   const echo = useEcho({
     setMode,
@@ -457,6 +474,11 @@ export function FaceScreen() {
           entries={entries}
           watching={wake.status === 'watching'}
           connection={slack.status}
+          vision={
+            vision.available
+              ? { ...vision.state, onCameraReady: vision.onCameraReady }
+              : undefined
+          }
         />
       )}
 
@@ -517,7 +539,36 @@ export function FaceScreen() {
           onToggleBrain={toggleBrain}
           agentModel={agent.model ?? 'no key'}
           onEndSession={() => void agent.endSession()}
-          onForgetAll={() => void agent.forgetAll()}
+          visionAvailable={vision.available}
+          onLookTest={() => {
+            echo.cancel();
+            // Deliberately the same order as runCameraLook: permission before
+            // anything is spoken, viewfinder before the question so the camera
+            // warms up while it plays, shutter only after a yes.
+            startUserRound(() => {
+              void (async () => {
+                if (!(await vision.ensurePermission())) {
+                  log('vision · camera access denied');
+                  return;
+                }
+                vision.showPreview();
+                try {
+                  await echoRef.current.look(async () => {
+                    const shot = await vision.takePhoto();
+                    log('error' in shot ? `vision · ${shot.error}` : `vision · captured ${shot.photo.id}`);
+                  });
+                } finally {
+                  vision.hidePreview();
+                }
+              })();
+            });
+          }}
+          onForgetAll={() => {
+            // Photos are part of what she remembers, so they go too — and
+            // their cache files with them.
+            vision.forgetPhotos();
+            void agent.forgetAll();
+          }}
           onCycleModel={() => void agent.cycleModel()}
           slackStatus={slack.status}
           onSlackPair={() => setPairingVisible(true)}

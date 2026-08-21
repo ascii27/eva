@@ -1,9 +1,11 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { hexToRgba } from './geometry';
 import type { FaceMode } from './types';
 import type { SlackStatus } from '../slack/useSlack';
+import { CameraPreview } from '../vision/CameraPreview';
+import type { CameraHandle } from '../vision/camera';
 import { hhmm } from '../util/time';
 
 /** Per-mode "Last said" placeholder, from the design; real utterances override. */
@@ -22,6 +24,20 @@ export interface TranscriptEntry {
   text: string;
 }
 
+/**
+ * The camera slot. Viewfinder while a consent gate is open, then the frame it
+ * captured — one slot, so the preview visibly becomes the photo.
+ */
+export interface VisionProps {
+  previewing: boolean;
+  thumbnailUri: string | null;
+  onCameraReady: (camera: CameraHandle | null) => void;
+}
+
+/** Design-unit size of the camera slot; fits the gap above TRANSCRIPT. */
+const CAM_W = 202;
+const CAM_H = 152;
+
 interface SideColumnProps {
   mode: FaceMode;
   eyeColor: string;
@@ -33,9 +49,21 @@ interface SideColumnProps {
   watching?: boolean;
   /** Real Slack link state — drives the label and dot. */
   connection: SlackStatus;
+  /** Absent on a build with no camera, which renders no slot at all. */
+  vision?: VisionProps;
 }
 
-export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries, watching, connection }: SideColumnProps) {
+export function SideColumn({
+  mode,
+  eyeColor,
+  k,
+  width,
+  lastSaid,
+  entries,
+  watching,
+  connection,
+  vision,
+}: SideColumnProps) {
   const connLabel =
     mode === 'alert'
       ? 'Eva · initiating'
@@ -81,6 +109,35 @@ export function SideColumn({ mode, eyeColor, k, width, lastSaid, entries, watchi
           {lastSaid ?? SAID[mode]}
         </Text>
       </View>
+
+      {vision && (vision.previewing || vision.thumbnailUri) && (
+        <View style={{ gap: 6 * k, marginTop: 16 * k }}>
+          <Text style={[styles.sectionLabel, { fontSize: 9 * k, letterSpacing: 1.26 * k }]}>
+            {vision.previewing ? 'LOOKING' : 'SAW'}
+          </Text>
+          {vision.previewing ? (
+            <CameraPreview
+              onReady={vision.onCameraReady}
+              eyeColor={eyeColor}
+              k={k}
+              width={CAM_W * k}
+              height={CAM_H * k}
+            />
+          ) : (
+            <Image
+              source={{ uri: vision.thumbnailUri! }}
+              style={{
+                width: CAM_W * k,
+                height: CAM_H * k,
+                borderRadius: 6 * k,
+                borderWidth: 1,
+                borderColor: `${eyeColor}33`,
+              }}
+              resizeMode="cover"
+            />
+          )}
+        </View>
+      )}
 
       <View style={{ marginTop: 'auto', gap: 6 * k }}>
         <Text style={[styles.sectionLabel, { fontSize: 9 * k, letterSpacing: 1.26 * k }]}>TRANSCRIPT</Text>

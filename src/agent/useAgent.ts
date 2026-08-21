@@ -18,6 +18,7 @@ import {
   resolveModel,
   setModelOverride,
 } from './config';
+import { captionFor, type Photo } from '../vision/photos';
 import {
   appendTurn,
   applyCompaction,
@@ -26,12 +27,13 @@ import {
   MEMORY_LIMIT,
   newSession,
   planCompaction,
+  type PhotoResolver,
   type Session,
 } from './history';
 import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage } from './openai';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
 import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from './store';
-import { buildToolKit, type ToolKit } from './tools';
+import { buildToolKit, type ToolKit, type VisionHandles } from './tools';
 
 /**
  * A local round should feel immediate; anything this slow has gone wrong rather
@@ -52,6 +54,13 @@ const MAX_REPLY_TOKENS = 300;
 
 /** Summaries are cheap and shouldn't wander. */
 const MAX_SUMMARY_TOKENS = 300;
+
+/**
+ * The text alongside a photo. Deliberately in Michael's voice: the image is
+ * pushed as a user message (an image cannot ride on a tool message), so it
+ * should read as him showing her something rather than as narration.
+ */
+const PHOTO_MESSAGE = 'Here is the photo from the camera.';
 
 /** Running total across a round's laps. Either side may be absent. */
 function addUsage(a: ChatUsage | null, b: ChatUsage | null): ChatUsage | null {
@@ -74,15 +83,20 @@ export interface UseAgentOptions {
   onIssue?: (message: string) => void;
   /** Per-round token usage line, e.g. `agent · 412 in (256 cached) · 89 out`. */
   onUsage?: (line: string) => void;
+  /** Camera handles, or null on a build without one — decides whether
+   *  `camera_look` is offered at all. Read once, at bring-up. */
+  vision?: VisionHandles | null;
+  /** Photo bytes by id, for the request. Null from it means aged out. */
+  resolvePhoto?: PhotoResolver;
 }
 
-export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
+export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto }: UseAgentOptions = {}) {
   const [status, setStatus] = useState<AgentStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<AgentConfig | null>(null);
   // Built once at bring-up, never per turn: the specs are part of OpenAI's
   // cached prefix, so a list that moved between turns would cost the discount.
-  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey() }));
+  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision }));
   if (__DEV__ && !toolsLogged) {
     toolsLogged = true;
     // What Eva is actually offered. Worth printing: "she says she can't do
@@ -100,8 +114,8 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
    *  touch history — its answer belongs to a question already superseded. */
   const askGen = useRef(0);
   const inFlight = useRef<AbortController | null>(null);
-  const callbacks = useRef({ onIssue, onUsage });
-  callbacks.current = { onIssue, onUsage };
+  const callbacks = useRef({ onIssue, onUsage, resolvePhoto });
+  callbacks.current = { onIssue, onUsage, resolvePhoto };
 
   /** One completion, outside the conversation — used for both summarizers. */
   const complete = useCallback(async (instruction: string, body: string): Promise<string | null> => {
@@ -232,14 +246,40 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
 
       const controller = new AbortController();
       inFlight.current = controller;
-      const timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
+      let timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
       let usage: ChatUsage | null = null;
       // Text handed to the speaker so far. On a mid-stream failure this is
       // what Eva actually said, so it is what goes into history.
       let streamed = '';
+      // Set when a tool hands back an image; becomes the turn's photo below.
+      let photo: Photo | undefined;
+
+      /**
+       * Run a gate with the round's clock stopped.
+       *
+       * The 30s budget is sized for a model and a network, not for a person
+       * looking up from what they were doing — a spoken consent gate can spend
+       * half of it before anyone has said a word, and the first-use iOS
+       * permission dialog can spend all of it. Same reasoning as `speech.hold`
+       * suspending audioOut's stall watchdog: the wait is expected, so the
+       * thing watching for a hang has to be told.
+       */
+      const gated = async <T,>(fn: () => Promise<T>): Promise<T> => {
+        clearTimeout(timer);
+        try {
+          return await fn();
+        } finally {
+          timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
+        }
+      };
 
       try {
-        const messages: RequestMessage[] = buildRequest(PERSONA, memories.current, asked);
+        const messages: RequestMessage[] = buildRequest(
+          PERSONA,
+          memories.current,
+          asked,
+          callbacks.current.resolvePhoto,
+        );
         let raw = '';
         if (__DEV__) {
           // The exact request, because "she declined" and "she was never asked"
@@ -290,15 +330,31 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
           messages.push(res.message);
           for (const call of res.toolCalls) {
             const startedAt = Date.now();
-            const answered = await tools.current.run(call, controller.signal);
+            const answered = await tools.current.run(call, {
+              signal: controller.signal,
+              onConsent: opts?.onConsent ? () => gated(opts.onConsent!) : undefined,
+            });
             if (__DEV__) {
               // The gap this prints is the one the speech hold has to cover.
               const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
               console.log(
-                `[agent] tool ${call.name}(${call.arguments}) → ${secs}s, ${answered.content.length} chars: ${answered.content.slice(0, 90)}`,
+                `[agent] tool ${call.name}(${call.arguments}) → ${secs}s, ${answered.message.content.length} chars: ${answered.message.content.slice(0, 90)}`,
               );
             }
-            messages.push(answered);
+            messages.push(answered.message);
+            // An image cannot ride on a tool message, so it follows as a user
+            // turn. Kept out of `session` until the round resolves — a round
+            // that dies here should not leave a photo in the conversation.
+            if (answered.photo) {
+              photo = answered.photo;
+              messages.push({
+                role: 'user',
+                content: [
+                  { type: 'text', text: PHOTO_MESSAGE },
+                  { type: 'image_url', image_url: { url: answered.photo.dataUrl } },
+                ],
+              });
+            }
           }
           // The preamble was spoken, not answered with — it belongs to the
           // tool lap we are about to discard, so it must not become history.
@@ -314,6 +370,18 @@ export function useAgent({ onIssue, onUsage }: UseAgentOptions = {}) {
         // appending here would place this answer after the newer question.
         if (gen !== askGen.current) return { kind: 'error', message: 'agent · superseded' };
 
+        // The photo goes in ahead of the answer that describes it, and carries
+        // only an id and a caption — the bytes stay in the vision window, which
+        // is what keeps base64 out of everything store.ts writes to disk. The
+        // caption comes from Eva's own reply, so once the image ages out the
+        // turn still says what was in it.
+        if (photo) {
+          session.current = appendTurn(
+            session.current ?? asked,
+            { role: 'user', content: PHOTO_MESSAGE, photo: { id: photo.id, caption: captionFor(raw) } },
+            replyAt,
+          );
+        }
         session.current = appendTurn(session.current ?? asked, { role: 'assistant', content: raw }, replyAt);
         await saveSession(session.current);
         // After the answer is on its way to the speaker, never before it.
