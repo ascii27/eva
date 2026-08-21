@@ -2,8 +2,8 @@ import { describe, expect, it, jest } from '@jest/globals';
 import type { Photo } from '../../../vision/photos';
 import { buildToolKit, type ToolConfig, type VisionHandles } from '../index';
 
-const WITH_SEARCH: ToolConfig = { tavilyKey: 'tvly-test', vision: null };
-const WITHOUT_SEARCH: ToolConfig = { tavilyKey: null, vision: null };
+const WITH_SEARCH: ToolConfig = { tavilyKey: 'tvly-test', vision: null, errands: null };
+const WITHOUT_SEARCH: ToolConfig = { tavilyKey: null, vision: null, errands: null };
 
 const names = (cfg: ToolConfig) => buildToolKit(cfg).specs.map((s) => s.name);
 
@@ -41,7 +41,69 @@ describe('buildToolKit specs', () => {
   });
 
   it('offers camera_look when the camera is there', () => {
-    expect(names({ tavilyKey: null, vision: stubVision() })).toContain('camera_look');
+    expect(names({ tavilyKey: null, vision: stubVision(), errands: null })).toContain('camera_look');
+  });
+
+  it('omits ask_other_half when no hermes is configured', () => {
+    expect(names(WITHOUT_SEARCH)).not.toContain('ask_other_half');
+  });
+
+  it('offers ask_other_half when one is', () => {
+    expect(names({ ...WITHOUT_SEARCH, errands: { start: () => 'id' } })).toContain('ask_other_half');
+  });
+});
+
+describe('ask_other_half', () => {
+  const call = (args: string) => ({ id: 'c1', name: 'ask_other_half', arguments: args });
+
+  it('returns without waiting, so the round settles at local speed', async () => {
+    // The point of the whole design: a hermes answer was measured at 88.7s and
+    // cannot be inside the turn that asked for it. `start` is synchronous.
+    let started: [string, boolean] | null = null;
+    const kit = buildToolKit({
+      ...WITHOUT_SEARCH,
+      errands: {
+        start: (q, needs) => {
+          started = [q, needs];
+          return 'e1';
+        },
+      },
+    });
+    const res = await kit.run(call('{"question":"is the offsite confirmed","needs_lookup":true}'));
+    expect(started).toEqual(['is the offsite confirmed', true]);
+    expect(res.message.content).toMatch(/come back to him/i);
+  });
+
+  it('passes the lookup flag through, since it is most of the wall-clock', async () => {
+    let needs: boolean | null = null;
+    const kit = buildToolKit({
+      ...WITHOUT_SEARCH,
+      errands: {
+        start: (_q, n) => {
+          needs = n;
+          return 'e1';
+        },
+      },
+    });
+    await kit.run(call('{"question":"what did he decide about the rewrite","needs_lookup":false}'));
+    expect(needs).toBe(false);
+  });
+
+  it('has her decline rather than promise when she is already full', async () => {
+    const kit = buildToolKit({ ...WITHOUT_SEARCH, errands: { start: () => null } });
+    const res = await kit.run(call('{"question":"anything","needs_lookup":true}'));
+    expect(res.message.content).toMatch(/still working through/i);
+  });
+
+  it('refuses an empty question rather than sending one', async () => {
+    const kit = buildToolKit({ ...WITHOUT_SEARCH, errands: { start: () => 'e1' } });
+    const res = await kit.run(call('{"question":"  ","needs_lookup":true}'));
+    expect(res.message.content).toMatch(/^Error:/);
+  });
+
+  it('says plainly there is no way to ask when hermes is absent', async () => {
+    const res = await buildToolKit(WITHOUT_SEARCH).run(call('{"question":"anything","needs_lookup":true}'));
+    expect(res.message.content).toMatch(/^Error:/);
   });
 });
 
@@ -103,14 +165,14 @@ describe('camera_look', () => {
   const no = async () => false;
 
   it('returns the photo when consent is given', async () => {
-    const result = await buildToolKit({ tavilyKey: null, vision: vision() }).run(call, { onConsent: yes });
+    const result = await buildToolKit({ tavilyKey: null, vision: vision(), errands: null }).run(call, { onConsent: yes });
     expect(result.photo).toBe(photo);
     expect(result.message.content.toLowerCase()).not.toContain('error');
   });
 
   it('does not take a photo when consent is refused', async () => {
     const v = vision();
-    const result = await buildToolKit({ tavilyKey: null, vision: v }).run(call, { onConsent: no });
+    const result = await buildToolKit({ tavilyKey: null, vision: v, errands: null }).run(call, { onConsent: no });
     expect(v.takePhoto).not.toHaveBeenCalled();
     expect(result.photo).toBeUndefined();
   });
@@ -118,7 +180,7 @@ describe('camera_look', () => {
   it('refuses outright when there is no way to ask', async () => {
     // A transport with no spoken gate (Slack) must not become a silent shutter.
     const v = vision();
-    const result = await buildToolKit({ tavilyKey: null, vision: v }).run(call, {});
+    const result = await buildToolKit({ tavilyKey: null, vision: v, errands: null }).run(call, {});
     expect(v.takePhoto).not.toHaveBeenCalled();
     expect(result.message.content.toLowerCase()).toContain('error');
   });
@@ -133,7 +195,7 @@ describe('camera_look', () => {
         return true;
       }),
     });
-    await buildToolKit({ tavilyKey: null, vision: v }).run(call, {
+    await buildToolKit({ tavilyKey: null, vision: v, errands: null }).run(call, {
       onConsent: async () => {
         order.push('asked');
         return true;
@@ -145,7 +207,7 @@ describe('camera_look', () => {
   it('never asks when iOS has denied the camera', async () => {
     const asked = jest.fn(async () => true);
     const v = vision({ ensurePermission: jest.fn(async () => false) });
-    const result = await buildToolKit({ tavilyKey: null, vision: v }).run(call, { onConsent: asked });
+    const result = await buildToolKit({ tavilyKey: null, vision: v, errands: null }).run(call, { onConsent: asked });
     expect(asked).not.toHaveBeenCalled();
     expect(result.message.content.toLowerCase()).toContain('error');
   });
@@ -157,7 +219,7 @@ describe('camera_look', () => {
       [yes, vision({ takePhoto: jest.fn(async () => ({ error: 'the camera failed' })) })],
     ] as const) {
       const v = handles;
-      await buildToolKit({ tavilyKey: null, vision: v }).run(call, { onConsent: consent });
+      await buildToolKit({ tavilyKey: null, vision: v, errands: null }).run(call, { onConsent: consent });
       expect(v.hidePreview).toHaveBeenCalled();
     }
   });
@@ -170,7 +232,7 @@ describe('camera_look', () => {
     });
     // A throw here would take down a round that is already speaking aloud, so
     // even a handle that breaks its own contract has to come back as words.
-    const result = await buildToolKit({ tavilyKey: null, vision: v }).run(call, { onConsent: yes });
+    const result = await buildToolKit({ tavilyKey: null, vision: v, errands: null }).run(call, { onConsent: yes });
     expect(result.message.content.toLowerCase()).toContain('error');
     expect(result.photo).toBeUndefined();
     expect(v.hidePreview).toHaveBeenCalled();
@@ -178,7 +240,7 @@ describe('camera_look', () => {
 
   it('reports a gate that rejects rather than throwing', async () => {
     const v = vision();
-    const result = await buildToolKit({ tavilyKey: null, vision: v }).run(call, {
+    const result = await buildToolKit({ tavilyKey: null, vision: v, errands: null }).run(call, {
       onConsent: async () => {
         throw new Error('round cancelled');
       },

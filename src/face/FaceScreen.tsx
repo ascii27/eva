@@ -12,6 +12,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAgent } from '../agent/useAgent';
 import { useBundle, type BundleState } from '../hermes/useBundle';
+import { useErrands } from '../hermes/useErrands';
 import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../round/speakable';
@@ -241,16 +242,26 @@ export function FaceScreen() {
   // whether there is a camera has to be known by then.
   const vision = useVision({ onIssue: log });
 
-  // What Eva's other half knows about the week. Mounted before useAgent for the
-  // same reason vision is — it hands `bundleText` down into the round.
+  // What Eva's other half last sent down about the week. Mounted before
+  // useAgent for the same reason vision is — it hands `bundleText` into the
+  // round. Nothing is fetched on a timer; see the note at the top of useBundle.
+  const bundle = useBundle({ onIssue: log });
+
+  // Questions Eva handed to hermes and walked away from. An answer arrives
+  // minutes later and is spoken through the proactive queue — the same path
+  // her unprompted Slack messages take, with the same wait-for-a-quiet-face
+  // drain — so there is no second delivery mechanism here.
   //
-  // `busy` is the face being anything but idle, which does double duty: a
-  // refresh never competes for the network with a turn somebody is listening
-  // to, and it is the evidence of a person in the room that keeps the fast
-  // cadence alive. `echoBusy` would cover the ramp-up window too but is
-  // declared further down, and a refresh landing in that window is harmless —
-  // nothing waits on one.
-  const bundle = useBundle({ busy: mode !== 'idle', onIssue: log });
+  // Mounted before useAgent because `ask_other_half` is only offered when a
+  // hermes is configured, and that list is fixed at bring-up.
+  const errands = useErrands({
+    onIssue: log,
+    onResult: (line) => {
+      const at = Date.now();
+      log(`eva · ${line}`);
+      pushProactive({ ts: `errand.${at}`, threadTs: null, text: line, at });
+    },
+  });
 
   const agent = useAgent({
     onIssue: log,
@@ -265,6 +276,7 @@ export function FaceScreen() {
       : null,
     resolvePhoto: vision.resolvePhoto,
     bundleText: bundle.text,
+    errands: errands.configured ? { start: errands.start } : null,
   });
 
   const echo = useEcho({
@@ -388,8 +400,11 @@ export function FaceScreen() {
     const d = dequeue(backlog.current);
     if (!d.item) return;
     backlog.current = d.queue;
+    // Null for anything that did not come from Slack — an errand answer, or the
+    // overlay's test line. Assigning it anyway would point a follow-up at a
+    // thread that does not exist, and it would go nowhere without a word.
     activeThread.current = d.item.threadTs;
-    holdExchange(d.item.threadTs);
+    if (d.item.threadTs) holdExchange(d.item.threadTs);
     const { text } = d.item;
     startRound(() => echoRef.current.announce(text));
   }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound]);
@@ -552,7 +567,7 @@ export function FaceScreen() {
           onProactiveTest={() => {
             const at = Date.now();
             log(`eva · ${PROACTIVE_TEST_LINE}`);
-            pushProactive({ ts: `test.${at}`, threadTs: `test.${at}`, text: PROACTIVE_TEST_LINE, at });
+            pushProactive({ ts: `test.${at}`, threadTs: null, text: PROACTIVE_TEST_LINE, at });
           }}
           onClose={() => setDevVisible(false)}
           wakeEnabled={wakeEnabled}
@@ -599,6 +614,7 @@ export function FaceScreen() {
           onCycleModel={() => void agent.cycleModel()}
           bundleLabel={describeBundle(bundle.configured, bundle.state)}
           onBundleRefresh={bundle.refresh}
+          errandsInFlight={errands.configured ? errands.inFlight : null}
           slackStatus={slack.status}
           onSlackPair={() => setPairingVisible(true)}
           onSlackReconnect={slack.reconnect}

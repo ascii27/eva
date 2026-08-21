@@ -1,19 +1,30 @@
-// The bundle's timing and side effects. Owned by FaceScreen, mirroring
-// useAgent and useSlack; all the policy it enforces lives in bundle.ts.
+// The bundle's side effects. Owned by FaceScreen, mirroring useAgent and
+// useSlack; all the policy it enforces lives in bundle.ts.
 //
-// The invariant this hook exists to keep: **hermes is never on the critical
-// path of a spoken turn.** Nothing here is awaited by `ask`. A refresh in
-// flight blocks nothing, a failed refresh changes nothing, and a turn that
-// arrives mid-refresh answers from whatever is already resident and says how
-// old it is. If you ever find yourself wanting to await a refresh before
-// answering, that is the bug, not the fix.
+// **THERE IS NO PREFETCH.** An earlier design polled hermes for a bundle every
+// 150 seconds. The first live measurement killed it: one bundle cost 325,546
+// prompt tokens on hermes' side and took 88.7 seconds, because it is a full
+// agent run with tools behind it. On that cadence it is roughly 190M tokens a
+// day, most of them produced at three in the morning for nobody.
+//
+// So the bundle is now something hermes will *broadcast* when it has something
+// to say, and this hook is the receiving half waiting for that to exist. What
+// remains live today is everything below the arrival: parse, budget, render,
+// age, persist, and hand two strings to the prompt. `refresh()` is still here
+// and still works, but it is wired only to the dev overlay's button — a person
+// pressing it, not a timer.
+//
+// The invariant that outlives all of it: **hermes is never on the critical path
+// of a spoken turn.** Nothing here is awaited by `ask`. A refresh in flight
+// blocks nothing and a failed one changes nothing. Anything Eva actually needs
+// from hermes mid-conversation goes through `ask_other_half` and comes back
+// minutes later — see src/hermes/errands.ts.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   budgetCore,
   coreTokens,
   parseBundle,
-  refreshInterval,
   renderCore,
   renderVolatile,
   staleness,
@@ -25,14 +36,9 @@ import { envHermesConfig, type HermesConfig } from './config';
 import { loadBundle, saveBundle } from './store';
 
 /**
- * How often to reconsider refreshing. Not the cadence — `refreshInterval`
- * decides that, and it moves — just the granularity at which the decision is
- * re-taken. A tick that finds nothing to do costs a comparison.
- *
- * A repeating tick rather than a scheduled timeout because the cadence depends
- * on how long the room has been quiet, which changes while the timer would
- * already be armed. Rescheduling on every mode change would be the same thing
- * with more moving parts.
+ * How often the *displayed* age is recomputed. Nothing is fetched on this tick —
+ * without it the overlay would read "fresh" for half an hour after the last
+ * bundle arrived.
  */
 const TICK_MS = 15_000;
 
@@ -43,13 +49,6 @@ export interface BundleState {
 }
 
 export interface UseBundleOptions {
-  /**
-   * True while the face is doing anything but idling. Does double duty: a
-   * refresh never competes for the network with a turn somebody is listening
-   * to, and it is the signal that there is a person in the room, which is what
-   * keeps the fast cadence alive.
-   */
-  busy: boolean;
   /** Human-readable failures and breadcrumbs, for the transcript. */
   onIssue?: (message: string) => void;
 }
@@ -60,7 +59,7 @@ export interface BundleText {
   volatile: string;
 }
 
-export function useBundle({ busy, onIssue }: UseBundleOptions) {
+export function useBundle({ onIssue }: UseBundleOptions = {}) {
   const config = useRef<HermesConfig | null>(envHermesConfig());
   const [configured] = useState(config.current !== null);
   // For the overlay and the side column. The rendered text does not live here:
@@ -73,8 +72,6 @@ export function useBundle({ busy, onIssue }: UseBundleOptions) {
   // spoken round should not be re-rendering two thousand tokens of prose.
   const current = useRef<{ bundle: Bundle; core: string } | null>(null);
   const inFlight = useRef<AbortController | null>(null);
-  const lastAttemptAt = useRef(0);
-  const lastInteractionAt = useRef(0);
   const callbacks = useRef({ onIssue });
   callbacks.current = { onIssue };
 
@@ -108,7 +105,6 @@ export function useBundle({ busy, onIssue }: UseBundleOptions) {
 
     const controller = new AbortController();
     inFlight.current = controller;
-    lastAttemptAt.current = Date.now();
     try {
       const res = await fetchBundle(cfg, controller.signal);
       if (controller.signal.aborted) return;
@@ -151,12 +147,12 @@ export function useBundle({ busy, onIssue }: UseBundleOptions) {
     let cancelled = false;
     void (async () => {
       const stored = await loadBundle();
-      if (cancelled) return;
-      if (stored) {
-        apply(stored);
-        if (__DEV__) console.log(`[hermes] restored a bundle from disk, ${staleness(stored.generatedAt, Date.now())}`);
-      }
-      if (!cancelled) await refresh();
+      if (cancelled || !stored) return;
+      // Restored, not fetched. Whatever hermes last sent is what she knows, and
+      // the volatile block will say how old that is — which past thirty minutes
+      // is Eva telling him plainly that she is out of sync.
+      apply(stored);
+      if (__DEV__) console.log(`[hermes] restored a bundle from disk, ${staleness(stored.generatedAt, Date.now())}`);
     })();
     return () => {
       cancelled = true;
@@ -164,32 +160,14 @@ export function useBundle({ busy, onIssue }: UseBundleOptions) {
     };
   }, [apply, refresh]);
 
-  // Anything but idle means somebody is in the room, which is what keeps the
-  // fast cadence alive. Both edges are recorded — a round starting and a round
-  // ending are each evidence of a person — which also keeps this out of the
-  // render pass, where writing a ref would not belong.
+  // Keep the displayed age moving. Nothing is fetched here.
   useEffect(() => {
-    lastInteractionAt.current = Date.now();
-  }, [busy]);
-
-  useEffect(() => {
-    if (!config.current) return;
     const id = setInterval(() => {
-      // Staleness first, unconditionally: the displayed age has to keep moving
-      // even through a long round, or the overlay reads "fresh" for half an
-      // hour after the network dropped.
       const held = current.current?.bundle;
       if (held) publish(held);
-
-      // Never mid-round: the network belongs to the turn somebody is listening
-      // to. The next tick picks it up a few seconds later.
-      if (busy || inFlight.current) return;
-      const now = Date.now();
-      if (now - lastAttemptAt.current < refreshInterval(now, lastInteractionAt.current)) return;
-      void refresh();
     }, TICK_MS);
     return () => clearInterval(id);
-  }, [busy, publish, refresh]);
+  }, [publish]);
 
   /**
    * The bundle as it goes into the prompt, or null when there is none.
@@ -210,7 +188,11 @@ export function useBundle({ busy, onIssue }: UseBundleOptions) {
     /** Age, cost, and staleness, for the overlay and the side column. */
     state,
     text,
-    /** Fetch now, from the dev overlay. */
+    /**
+     * Fetch one now. Wired to the dev overlay's button and nothing else — the
+     * only way to exercise the render path on the device until hermes
+     * broadcasts. Deliberately not on a timer; see the note at the top.
+     */
     refresh: useCallback(() => void refresh(), [refresh]),
   };
 }

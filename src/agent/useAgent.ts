@@ -34,7 +34,7 @@ import {
 import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage } from './openai';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
 import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from './store';
-import { buildToolKit, type ToolKit, type VisionHandles } from './tools';
+import { buildToolKit, type ErrandHandles, type ToolKit, type VisionHandles } from './tools';
 
 /**
  * A local round should feel immediate; anything this slow has gone wrong rather
@@ -87,6 +87,12 @@ export interface UseAgentOptions {
   /** Camera handles, or null on a build without one — decides whether
    *  `camera_look` is offered at all. Read once, at bring-up. */
   vision?: VisionHandles | null;
+  /**
+   * Errand handles, or null with no hermes configured — decides whether
+   * `ask_other_half` is offered. Read once, at bring-up, for the same reason
+   * vision is: the spec list has to be fixed for the session.
+   */
+  errands?: ErrandHandles | null;
   /** Photo bytes by id, for the request. Null from it means aged out. */
   resolvePhoto?: PhotoResolver;
   /**
@@ -104,13 +110,13 @@ export interface UseAgentOptions {
   bundleText?: (now: number) => BundleText | null;
 }
 
-export function useAgent({ onIssue, onUsage, vision = null, resolvePhoto, bundleText }: UseAgentOptions = {}) {
+export function useAgent({ onIssue, onUsage, vision = null, errands = null, resolvePhoto, bundleText }: UseAgentOptions = {}) {
   const [status, setStatus] = useState<AgentStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<AgentConfig | null>(null);
   // Built once at bring-up, never per turn: the specs are part of OpenAI's
   // cached prefix, so a list that moved between turns would cost the discount.
-  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision }));
+  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands }));
   if (__DEV__ && !toolsLogged) {
     toolsLogged = true;
     // What Eva is actually offered. Worth printing: "she says she can't do

@@ -75,6 +75,8 @@ interface DevControlsProps {
   /** Bundle age and cost, or why there isn't one. */
   bundleLabel: string;
   onBundleRefresh: () => void;
+  /** Errands out to hermes, or null when none is configured. */
+  errandsInFlight: number | null;
 }
 
 export function DevControls(props: DevControlsProps) {
@@ -216,6 +218,13 @@ export function DevControls(props: DevControlsProps) {
                 the bundle is stale, unparseable, or was never fetched at all. */}
             <Btn label="Bundle" sub={props.bundleLabel} onPress={props.onBundleRefresh} />
           </View>
+          {props.errandsInFlight !== null && (
+            <Text style={styles.note}>
+              {props.errandsInFlight === 0
+                ? 'no errands out'
+                : `${props.errandsInFlight} errand${props.errandsInFlight === 1 ? '' : 's'} out to hermes`}
+            </Text>
+          )}
           <View style={styles.row}>
             <Btn
               label={forgetArmed ? 'Wipe everything?' : 'Forget all'}
@@ -320,6 +329,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     color: '#5c625c',
     marginTop: 10,
+  },
+  /** A read-only line under a row — status, not an affordance. */
+  note: {
+    fontFamily: 'JetBrainsMono_400Regular',
+    fontSize: 9,
+    letterSpacing: 0.6,
+    color: '#5c625c',
+    marginTop: 6,
   },
   row: {
     flexDirection: 'row',

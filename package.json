@@ -41,6 +41,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "jest",
+    "probe:errand": "node scripts/probe-errand.ts",
     "probe:hermes": "node scripts/probe-hermes.ts",
     "probe:tavily": "node scripts/probe-tavily.ts",
     "probe:tools": "node scripts/probe-tools.ts",

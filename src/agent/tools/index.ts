@@ -13,6 +13,7 @@
 
 import type { ToolCall, ToolMessage, ToolSpec } from '../openai';
 import type { Photo } from '../../vision/photos';
+import { BUSY, STARTED } from '../../hermes/errands';
 import { formatClock } from './clock';
 import { runMemorySearch } from './memory';
 import { runSearch } from './search';
@@ -28,11 +29,23 @@ export interface VisionHandles {
   takePhoto(): Promise<{ photo: Photo } | { error: string }>;
 }
 
+/** What `ask_other_half` needs from `useErrands`, and nothing more. */
+export interface ErrandHandles {
+  /**
+   * Hand a question to hermes and return AT ONCE — an id, or null when she is
+   * already carrying as many as she can. Never awaits: an answer measured at
+   * 88.7s must not be inside the round that asked for it.
+   */
+  start(question: string, needsLookup: boolean): string | null;
+}
+
 export interface ToolConfig {
   /** Tavily key, or null when web search is not configured. */
   tavilyKey: string | null;
   /** Camera handles, or null on a build with no camera (Expo Go, simulator). */
   vision: VisionHandles | null;
+  /** Errand handles, or null when no hermes gateway is configured. */
+  errands: ErrandHandles | null;
 }
 
 /** Per-call context: the round's abort signal and its spoken-consent gate. */
@@ -132,8 +145,8 @@ async function runCameraLook(
   }
 }
 
-export function buildToolKit({ tavilyKey, vision }: ToolConfig): ToolKit {
-  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null);
+export function buildToolKit({ tavilyKey, vision, errands }: ToolConfig): ToolKit {
+  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null, errands !== null);
 
   return {
     specs,
@@ -160,6 +173,17 @@ export function buildToolKit({ tavilyKey, vision }: ToolConfig): ToolKit {
 
         case 'camera_look':
           return runCameraLook(call, vision, opts?.onConsent);
+
+        case 'ask_other_half': {
+          if (!errands) return error(call, 'you have no way to reach your other half from this device.');
+          const question = typeof args.question === 'string' ? args.question.trim() : '';
+          if (!question) return error(call, 'ask_other_half needs a question.');
+          // Returns immediately — that is the whole design. The round settles
+          // at local speed and the answer arrives later through the proactive
+          // queue, so there is no gap here for the speaker to cover.
+          const id = errands.start(question, args.needs_lookup !== false);
+          return answer(call, id ? STARTED : BUSY);
+        }
 
         default:
           return error(call, `no tool named ${call.name}.`);
