@@ -19,7 +19,18 @@
 //    different sentences, and collapsing them is how an appliance starts lying
 //    confidently. Every section is `string[] | null` for that reason alone.
 
-import { estimateTokens } from '../agent/history';
+/**
+ * Four characters per token, rounded up — the same heuristic and the same
+ * reasoning as `estimateTokens` in history.ts, which is the original. Copied
+ * rather than imported, for one unglamorous reason: `scripts/probe-hermes.ts`
+ * loads this module under Node's type stripping, which resolves relative
+ * imports only with an explicit `.ts` extension, and no app file here uses that
+ * style. Two lines of duplication beats an import style that exists nowhere
+ * else in the Metro path. If the heuristic ever moves, move both.
+ */
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
 
 /** A section hermes never sent is null; one it sent as empty is []. */
 export type Section = string[] | null;

@@ -33,8 +33,14 @@ function envLocal(name: string): string | null {
 
 // Let the real config module make the decision, so the probe exercises the same
 // precedence and normalisation the device does.
+//
+// Only assign when there is something to assign: `process.env.X = undefined`
+// stores the *string* "undefined", which sails past every falsy check in
+// config.ts and ends up in the request as `undefined/chat/completions`.
 for (const name of ['EXPO_PUBLIC_HERMES_BASE_URL', 'EXPO_PUBLIC_HERMES_KEY', 'EXPO_PUBLIC_HERMES_MODEL']) {
-  process.env[name] ??= envLocal(name) ?? undefined;
+  if (process.env[name]) continue;
+  const value = envLocal(name);
+  if (value) process.env[name] = value;
 }
 
 const cfg = envHermesConfig();
