@@ -37,7 +37,7 @@ function envLocal(name: string): string | null {
 // Only assign when there is something to assign: `process.env.X = undefined`
 // stores the *string* "undefined", which sails past every falsy check in
 // config.ts and ends up in the request as `undefined/chat/completions`.
-for (const name of ['EXPO_PUBLIC_HERMES_BASE_URL', 'EXPO_PUBLIC_HERMES_KEY', 'EXPO_PUBLIC_HERMES_MODEL']) {
+for (const name of ['EXPO_PUBLIC_HERMES_BASE_URL', 'EXPO_PUBLIC_HERMES_API_KEY', 'EXPO_PUBLIC_HERMES_MODEL']) {
   if (process.env[name]) continue;
   const value = envLocal(name);
   if (value) process.env[name] = value;
@@ -45,7 +45,7 @@ for (const name of ['EXPO_PUBLIC_HERMES_BASE_URL', 'EXPO_PUBLIC_HERMES_KEY', 'EX
 
 const cfg = envHermesConfig();
 if (!cfg) {
-  console.error('No hermes configured. Set EXPO_PUBLIC_HERMES_BASE_URL and EXPO_PUBLIC_HERMES_KEY');
+  console.error('No hermes configured. Set EXPO_PUBLIC_HERMES_BASE_URL and EXPO_PUBLIC_HERMES_API_KEY');
   console.error('in .env.local — see hermes/config/api-server.example.env for the server side.');
   process.exit(1);
 }

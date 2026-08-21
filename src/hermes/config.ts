@@ -20,8 +20,13 @@ export interface HermesConfig {
   model: string;
 }
 
-/** hermes names the model after the profile; this is its own default. */
-export const DEFAULT_HERMES_MODEL = 'hermes';
+/**
+ * hermes names the model after the profile. Measured from `/v1/models` on the
+ * live gateway 2026-08-21 — the server turns out to accept anything in this
+ * field, but matching what it advertises costs nothing and stops the probe
+ * warning about it.
+ */
+export const DEFAULT_HERMES_MODEL = 'hermes-agent';
 
 /**
  * Long-term memory scope. Stable forever: what hermes learns from the desk
@@ -52,7 +57,7 @@ function normalize(url: string): string {
  */
 export function envHermesConfig(): HermesConfig | null {
   const baseUrl = process.env.EXPO_PUBLIC_HERMES_BASE_URL;
-  const apiKey = process.env.EXPO_PUBLIC_HERMES_KEY;
+  const apiKey = process.env.EXPO_PUBLIC_HERMES_API_KEY;
   if (!baseUrl || !apiKey) return null;
   return {
     baseUrl: normalize(baseUrl),

@@ -1,28 +1,66 @@
 # The hermes bridge — context bundle (read path) — design
 
-Status: **implemented, nothing measured.** The read path is built and wired —
-typecheck clean, 460 tests green — but not one number in this document has been
-checked against a running hermes, because there was no reachable one to check
-against. Everything below is design intent until `npm run probe:hermes` says
-otherwise.
+Status: **implemented and measured once, against the live gateway at
+`orbit-python.exe.xyz` on 2026-08-21.** It works end to end: hermes returned a
+bundle of real goals and real overdue tasks, it parsed, and it rendered to 572
+tokens of prose that reads correctly out loud.
 
-Still open, in the order they would change this document:
+One measurement invalidates part of this document, and it is the one the status
+note above was written to catch.
 
-- **Is hermes reachable at all?** Its API server binds `127.0.0.1:8642` by
-  default. Nothing here has spoken to one.
-- **What does a bundle run cost, in seconds and tokens?** If it is a minute and
-  expensive, the 150s cadence is wrong and the section on it is wrong with it.
-- **Does hermes accept `max_completion_tokens`?** Every OpenAI family does;
-  hermes is compatible rather than OpenAI. The probe answers this explicitly and
-  falls back if not.
-- **Does the tier-0 rate land near the spec's 70%?** `useAgent` now counts it and
-  prints it on every usage line. Needs the device and a week.
+| | Measured |
+|---|---|
+| Round trip | **88.7s** — within 2s of the client's own 120s timeout |
+| hermes-side prompt tokens | **325,546** for one bundle |
+| hermes-side completion tokens | 2,634 |
+| Rendered core on the device | **572 tokens** — a fifth of the 2,500 budget |
+| `max_completion_tokens` | accepted |
+| Model id | `hermes-agent`, not `hermes` (fixed) |
 
-One thing did change during implementation, and it is worth recording because it
-was the opposite of the first instinct: **the bundle goes early in the message
-list, not late.** Late placement protects the cached prefix but means the bundle
-is never *in* it, so its tokens are billed in full on every turn. See the layout
-note in `buildRequest`.
+**The 150-second cadence in this document is wrong and must not ship.** A bundle
+costs hermes ~325k prompt tokens because it is a full agent run — 112 skills, its
+own system prompt, memory, and several tool laps, all resent per lap. At 150s
+that is ~576 runs a day and something on the order of 190M tokens a day. The
+device side is not the problem and never was: 572 tokens in the prompt is
+cheaper than the section that describes budgeting it.
+
+The 89s round trip constrains this independently — a refresh occupies more than
+half of any two-minute window before cost enters the argument.
+
+Cadence and the staleness thresholds are also coupled in a way this document
+missed. `STALE_AFTER_MS` is 10 minutes; any cadence at or above that leaves Eva
+permanently hedging, because the bundle is stale more often than it is fresh.
+The two numbers have to move together.
+
+### What else the first run showed
+
+- **The honesty instruction works, and it worked without the skill installed.**
+  Google Calendar was unreachable (its connection needs re-authorizing), and
+  hermes left the section out entirely and said why in `identity` — exactly the
+  behaviour `prompt.ts` asks for. Eva will say she can't see his calendar rather
+  than describing an empty one. That is the absent-vs-empty distinction earning
+  its keep on the very first run.
+- **`people`, `decisions`, and `openLoops` came back absent.** hermes had nothing
+  to say about them and correctly said nothing. That is the gap
+  `hermes/skills/eva-bundle/SKILL.md` exists to close, and it is **not installed**
+  on the gateway (112 other skills are).
+- Sections that did arrive — five goals, ten overdue items across work, personal,
+  and inbox — are specific and well written for the ear without any tuning.
+
+### Still open
+
+- What that 325k actually *bills*, which depends on hermes-side prompt caching
+  across its laps. The face value is alarming; the marginal cost may not be.
+- The tier-0 rate. `useAgent` counts it and prints `N% direct` on every usage
+  line. Needs the device and a week.
+- Everything on the device: whether Eva answers goal and task questions without
+  reaching for a tool, and whether the stale and out-of-sync wording sounds
+  right out loud.
+
+One thing changed during implementation, and it was the opposite of the first
+instinct: **the bundle goes early in the message list, not late.** Late placement
+protects the cached prefix but means the bundle is never *in* it, so its tokens
+are billed in full on every turn. See the layout note in `buildRequest`.
 
 A second, smaller correction: `bundle.ts` carries its own copy of the four-chars-
 per-token estimator rather than importing `history.ts`'s. Node's type stripping
