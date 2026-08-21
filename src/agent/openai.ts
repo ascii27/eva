@@ -1,10 +1,15 @@
 // OpenAI chat completions calls the device makes directly — no SDK, just fetch,
 // in the same shape as src/slack/api.ts.
+//
+// The endpoint is a parameter rather than a constant because hermes-agent's API
+// server is OpenAI-compatible: `src/hermes/` reaches Eva's other half by passing
+// a different `baseUrl` and a couple of headers through this same client. That
+// is the whole transport story for the bridge — there is no second HTTP layer.
 
 import type { ChatMessage } from './history';
 import { emptySse, parseSse } from './sse';
 
-const BASE = 'https://api.openai.com/v1';
+export const OPENAI_BASE = 'https://api.openai.com/v1';
 
 export interface ChatUsage {
   promptTokens: number;
@@ -69,6 +74,17 @@ export interface ChatOptions {
    * reject any value but their default.
    */
   temperature?: number;
+  /**
+   * Where to send it, without a trailing slash. Defaults to OpenAI; the bundle
+   * fetch points it at hermes-agent's API server instead.
+   */
+  baseUrl?: string;
+  /**
+   * Extra request headers, merged over the defaults. Used for hermes' custom
+   * `X-Hermes-*` scoping headers; the Authorization and Content-Type headers
+   * are set from `apiKey` and cannot be replaced here.
+   */
+  headers?: Record<string, string>;
 }
 
 interface RawChoice {
@@ -93,10 +109,13 @@ export async function chat({
   signal,
   maxTokens,
   temperature,
+  baseUrl = OPENAI_BASE,
+  headers,
 }: ChatOptions): Promise<ChatReply> {
-  const res = await fetch(`${BASE}/chat/completions`, {
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
+      ...headers,
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json; charset=utf-8',
     },
@@ -151,6 +170,9 @@ export function formatUsage(usage: ChatUsage): string {
   return `${usage.promptTokens} in${cached} · ${usage.completionTokens} out`;
 }
 
+/** Set from `apiKey` on both paths; a caller cannot replace these. */
+const MANAGED_HEADERS = new Set(['authorization', 'content-type', 'accept']);
+
 export interface ChatStreamOptions extends ChatOptions {
   /** Called with each content delta as it arrives, in order. */
   onDelta: (text: string) => void;
@@ -173,6 +195,8 @@ export function chatStream({
   signal,
   maxTokens,
   temperature,
+  baseUrl = OPENAI_BASE,
+  headers,
   onDelta,
 }: ChatStreamOptions): Promise<ChatReply> {
   return new Promise<ChatReply>((resolve, reject) => {
@@ -226,7 +250,15 @@ export function chatStream({
     signal?.addEventListener('abort', onAbort);
     const cleanup = () => signal?.removeEventListener('abort', onAbort);
 
-    xhr.open('POST', `${BASE}/chat/completions`);
+    xhr.open('POST', `${baseUrl}/chat/completions`);
+    // Managed headers are dropped from the caller's map rather than overwritten:
+    // XHR's setRequestHeader *appends* to an existing header (`Bearer a, Bearer b`)
+    // instead of replacing it, so the object-spread precedence used on the `chat`
+    // path above has no equivalent here and has to be spelled out.
+    for (const [name, value] of Object.entries(headers ?? {})) {
+      if (MANAGED_HEADERS.has(name.toLowerCase())) continue;
+      xhr.setRequestHeader(name, value);
+    }
     xhr.setRequestHeader('Authorization', `Bearer ${apiKey}`);
     xhr.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
     xhr.setRequestHeader('Accept', 'text/event-stream');
