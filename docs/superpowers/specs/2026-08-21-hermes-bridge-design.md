@@ -1,3 +1,13 @@
+> **Superseded in part, 2026-08-21.** The pull-a-bundle-on-a-timer design below
+> was measured and abandoned the same day. hermes is now reached by **errand** —
+> Eva hands it a question, says she'll come back to him, and the answer arrives
+> minutes later through the proactive queue. The bundle machinery survives as the
+> receiving half for a future phase in which hermes *broadcasts*; nothing polls.
+>
+> What changed and why is at the end, under **What the measurement changed**.
+> Everything about message layout, the absent-vs-empty rule, and the rejected
+> parts of the harness spec still stands.
+
 # The hermes bridge — context bundle (read path) — design
 
 Status: **implemented and measured once, against the live gateway at
@@ -274,3 +284,79 @@ in v1 and measure first. Agreed.
 
 `npm run probe:hermes` answers the first two in a few seconds. The third needs
 the device and a week.
+
+
+## What the measurement changed
+
+The first live run against the gateway did what the status note at the top was
+written to allow: it invalidated the central mechanism.
+
+**A bundle is not cheap and it is not fast.** 325,546 hermes-side prompt tokens
+and 88.7 seconds, because it is a full agent run — 112 skills, its own system
+prompt, memory, several tool laps, all resent per lap. On a 150-second cadence
+that is ~576 runs and on the order of 190M tokens a day, most of them produced
+at three in the morning for nobody. No adjustment to the interval rescues the
+shape; the shape was wrong.
+
+**So hermes became something Eva asks, not something the device polls.**
+
+`ask_other_half(question, needs_lookup)` hands over a question and returns *at
+once*. Her preamble streams and speaks as every tool preamble does, the gap is
+milliseconds instead of 89 seconds, and the round settles at local speed. She
+says she'll come back to him and carries on. When the answer lands it becomes a
+`ProactiveItem` and rides the queue that already speaks her unprompted Slack
+messages — the backlog cap, the wait for a quiet face, `announce()`. There was no
+delivery mechanism to build, only one to reuse.
+
+This keeps the hard invariant more honestly than the bundle ever did. The bundle
+kept hermes off the critical path by having prefetched *in time*; the errand
+keeps it off by never being on it.
+
+`needs_lookup` is Eva's call per question, because it is most of the wall-clock:
+a full agent run against calendar and tasks, or an answer from memory. The
+request also asks hermes for brevity and low reasoning every time — the answer is
+read aloud in a room, and hermes writing for a chat window produces paragraphs
+nobody can listen to.
+
+### What the errand probe changed in the code
+
+`npm run probe:errand` runs the round for real against OpenAI and stubs the tool
+result, so both risks could be measured rather than argued about.
+
+- **`memory_search` shadowed the new tool.** Asked "did Ana ever reply about the
+  scope note", Eva searched her own notes, found nothing, and *stopped* —
+  "I don't see anything in my notes." Only 1 of 4 questions reached the other
+  half. Drawing the line in both descriptions — memory covers conversations at
+  this desk, and an empty result there is the strongest signal the answer is
+  elsewhere — took it to **4/4**, with the controls still going to `web_search`
+  and `clock`. She now says "I'm not finding a note on that, so I'll ask my other
+  half" unprompted.
+- **The double-speak risk did not materialise.** 0 of 4 repeated the preamble in
+  the acknowledgement. It was worth checking: she speaks once before the tool and
+  once after, four seconds apart.
+
+### What survives, and what it is waiting for
+
+Everything below the arrival of a bundle: `parseBundle`, `budgetCore`,
+`renderCore` / `renderVolatile`, the staleness thresholds, `store.ts`, and
+`buildRequest`'s parameter. That is precisely the receiving half a broadcast
+needs, and the plan is that hermes will push on its own schedule with no tool
+runs, with the device only listening. `useBundle.refresh()` still works and is
+wired to the dev overlay's button — a person pressing it, not a timer.
+
+The absent-vs-empty rule earned its keep on the very first live run and is the
+reason to keep the rest: Google Calendar was unreachable, hermes omitted the
+section and said why in `identity`, and Eva will say she can't see his calendar
+rather than describing an empty afternoon.
+
+### Still open
+
+- Whether Eva delegates well *on the device*, in conversation, rather than in a
+  probe with one question and no history.
+- Whether an answer arriving four minutes later, re-anchored by `deliveryLine`,
+  actually lands as helpful rather than as an interruption.
+- What an errand bills. `needs_lookup: false` should be far cheaper than the
+  325k a full bundle cost, but that has not been measured.
+- Errands do not survive a relaunch — they are in memory only. Fine for
+  questions; delegating *actions* would need the durable outbox and idempotency
+  keys from the harness spec.
