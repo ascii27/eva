@@ -58,8 +58,10 @@ interface DevControlsProps {
   /** Typed question → full Eva round trip (the simulator path — no STT needed). */
   onAsk: (text: string) => void;
   /** Which brain answers: the local agent loop, or the remote Eva over Slack. */
-  brainLocal: boolean;
+  brain: 'local' | 'realtime' | 'slack';
   onToggleBrain: () => void;
+  /** Live socket state on the realtime brain; null on the other two. */
+  realtimeConnection: 'closed' | 'connecting' | 'open' | null;
   /** Active local model id, or why there isn't one. */
   agentModel: string;
   /** Close the conversation out to memory now, instead of after the 30min gap. */
@@ -196,16 +198,30 @@ export function DevControls(props: DevControlsProps) {
             <Btn label="Proactive test" onPress={props.onProactiveTest} />
           </View>
 
-          <Text style={styles.sectionLabel}>BRAIN · {props.brainLocal ? props.agentModel : 'slack'}</Text>
+          <Text style={styles.sectionLabel}>
+            BRAIN · {props.brain === 'slack' ? 'slack' : props.agentModel}
+          </Text>
           <View style={styles.row}>
             <Btn
-              label={props.brainLocal ? 'Local' : 'Slack'}
+              label={props.brain === 'local' ? 'Local' : props.brain === 'realtime' ? 'Realtime' : 'Slack'}
               sub="tap to switch"
-              active={props.brainLocal}
+              active={props.brain !== 'slack'}
               onPress={props.onToggleBrain}
             />
             <Btn label="End session" sub="→ memory" onPress={props.onEndSession} />
           </View>
+          {/* Whether the socket is up, and so whether the next question pays a
+              handshake. A round that fails with nothing to show for it looks
+              the same as one that was never asked; this is the difference. */}
+          {props.realtimeConnection !== null && (
+            <Text style={styles.note}>
+              {props.realtimeConnection === 'open'
+                ? 'socket open — the next question skips the handshake'
+                : props.realtimeConnection === 'connecting'
+                  ? 'socket dialling'
+                  : 'socket closed — dials on the next wake'}
+            </Text>
+          )}
           {/* One button per row from here down: styles.row does not wrap and
               the panel is a fixed 300px, so a third button beside the pair
               above is squeezed to nothing. */}
