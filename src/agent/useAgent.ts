@@ -32,6 +32,7 @@ import {
   type Session,
 } from './history';
 import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage } from './openai';
+import { addSpend, emptySpend, formatSpend, type Spend } from './spend';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
 import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from './store';
 import { buildToolKit, type ErrandHandles, type ToolKit, type VisionHandles } from './tools';
@@ -142,6 +143,9 @@ export function useAgent({ onIssue, onUsage, vision = null, errands = null, reso
    * are the same round continuing.
    */
   const recall = useRef({ direct: 0, tool: 0 });
+  /** Cumulative token spend since launch, in the same units the realtime brain
+   *  reports, so the two transports can be compared on one console. */
+  const spend = useRef<Spend>(emptySpend(Date.now()));
   const callbacks = useRef({ onIssue, onUsage, resolvePhoto, bundleText });
   callbacks.current = { onIssue, onUsage, resolvePhoto, bundleText };
 
@@ -347,6 +351,13 @@ export function useAgent({ onIssue, onUsage, vision = null, errands = null, reso
           // Usage is per-lap, and a tool round has several. Summing is the only
           // honest headline number; the last lap alone hides the tool traffic.
           usage = addUsage(usage, res.usage);
+          spend.current = addSpend(spend.current, res.usage, false);
+          // Per request, because that is the unit chat completions bills — and
+          // on this path every lap re-uploads the whole prompt, which is what
+          // the input count is showing.
+          if (res.usage) {
+            console.log(`[spend] agent lap ${step} · ${formatUsage(res.usage)} · ${cfg.model}`);
+          }
 
           if (!res.toolCalls.length) {
             // A turn that reached no tool answered from what was already
@@ -398,6 +409,9 @@ export function useAgent({ onIssue, onUsage, vision = null, errands = null, reso
         }
 
         const replyAt = Date.now();
+        spend.current = addSpend(spend.current, null, true);
+        console.log(`[spend] agent round · ${usage ? formatUsage(usage) : 'no usage reported'}`);
+        console.log(`[spend] agent total · ${formatSpend(spend.current, replyAt)}`);
         if (usage) {
           const { direct, tool } = recall.current;
           const total = direct + tool;
