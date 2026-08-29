@@ -43,6 +43,7 @@
     "test": "jest",
     "probe:errand": "node scripts/probe-errand.ts",
     "probe:hermes": "node scripts/probe-hermes.ts",
+    "probe:realtime": "node scripts/probe-realtime.ts",
     "probe:tavily": "node scripts/probe-tavily.ts",
     "probe:tools": "node scripts/probe-tools.ts",
     "probe:vision": "node scripts/probe-vision.ts"

@@ -5,11 +5,11 @@
 // bundle at Metro start, so they are not secret from the bundle either.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DEFAULT_MODEL } from './models';
+import { DEFAULT_MODEL, DEFAULT_REALTIME_MODEL } from './models';
 
 // Re-exported so callers have one import for configuration; the values live in
 // models.ts because scripts/ needs them without AsyncStorage.
-export { DEFAULT_MODEL, MODEL_PRESETS } from './models';
+export { DEFAULT_MODEL, MODEL_PRESETS, DEFAULT_REALTIME_MODEL, REALTIME_MODEL_PRESETS } from './models';
 
 export interface AgentConfig {
   /** OpenAI API key (sk-…). */
@@ -22,6 +22,9 @@ export const AGENT_CONFIG_KEY = 'eva.agentConfig.v1';
 
 /** The model chosen from the dev overlay. Separate from the credential record. */
 export const AGENT_MODEL_KEY = 'eva.agentModel.v1';
+
+/** The realtime brain's model choice. Separate from the chat brain's. */
+export const REALTIME_MODEL_KEY = 'eva.realtimeModel.v1';
 
 
 /**
@@ -68,6 +71,35 @@ export async function resolveModel(): Promise<string> {
   if (override) return override;
   const fromEnv = process.env.EXPO_PUBLIC_OPENAI_MODEL;
   return fromEnv && fromEnv.trim() ? fromEnv.trim() : DEFAULT_MODEL;
+}
+
+/**
+ * The realtime brain's model, on its own key.
+ *
+ * Deliberately not the same override as the chat brain's: the two cycle
+ * through different preset lists, and one key would let a tap on one brain
+ * leave the other pointing at a model it cannot reach at all.
+ *
+ *   overlay choice  →  EXPO_PUBLIC_OPENAI_REALTIME_MODEL  →  DEFAULT_REALTIME_MODEL
+ */
+export async function resolveRealtimeModel(): Promise<string> {
+  try {
+    const raw = await AsyncStorage.getItem(REALTIME_MODEL_KEY);
+    if (raw && raw.trim()) return raw.trim();
+  } catch {
+    // fall through to the env and the default
+  }
+  const fromEnv = process.env.EXPO_PUBLIC_OPENAI_REALTIME_MODEL;
+  return fromEnv && fromEnv.trim() ? fromEnv.trim() : DEFAULT_REALTIME_MODEL;
+}
+
+export async function setRealtimeModelOverride(model: string | null): Promise<void> {
+  try {
+    if (model && model.trim()) await AsyncStorage.setItem(REALTIME_MODEL_KEY, model.trim());
+    else await AsyncStorage.removeItem(REALTIME_MODEL_KEY);
+  } catch {
+    // Losing the choice across a restart beats crashing the face.
+  }
 }
 
 /**
