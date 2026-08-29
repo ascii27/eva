@@ -50,16 +50,18 @@ export interface AskOptions {
    * round and a missing handler are all false, because the one thing this must
    * never do is let a tool act on consent nobody gave.
    *
-   * Takes no wording: what gets said is the speech layer's business. When the
-   * model emitted a preamble, that already asked and this only waits for the
-   * answer; when it didn't, the gate speaks its own question first.
+   * When the model emitted a preamble, that already asked and this only waits
+   * for the answer; when it didn't, the gate speaks a question itself.
+   * `question` is that fallback, and only tools whose gate is about something
+   * variable pass one — the camera's is fixed wording, but an action has to be
+   * read back or he is agreeing to something unnamed.
    *
    * Local-only in practice, and supplied rather than advertised: a transport
    * that cannot run a spoken gate simply omits it, and the tool that needs one
    * declines instead. Same shape as `onDelta` — see the note above about not
    * having a capability flag.
    */
-  onConsent?: () => Promise<boolean>;
+  onConsent?: (question?: string) => Promise<boolean>;
 }
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;

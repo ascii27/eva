@@ -391,9 +391,13 @@ export function useEcho({
    * Takes the round rather than claiming one: a gate inside an ask must stay
    * in the round it is gating, or it would supersede the very request waiting
    * on the answer.
+   *
+   * `question` is only ever the fallback for a model that emitted no preamble.
+   * The camera passes none and gets CONSENT_QUESTION; an action passes its own
+   * readback, because what is being agreed to is the action itself.
    */
   const askForConsent = useCallback(
-    async (round: number): Promise<boolean> => {
+    async (round: number, question?: string): Promise<boolean> => {
       if (round !== epoch.current) return false;
 
       // An aside firing into the gate would talk over the question or the
@@ -433,7 +437,7 @@ export function useEcho({
       } else {
         // Nothing has been asked yet — the model skipped its preamble, or
         // there is no model in this round at all (the overlay's Look button).
-        await sayAndWait(round, CONSENT_QUESTION);
+        await sayAndWait(round, question ?? CONSENT_QUESTION);
       }
       if (round !== epoch.current) return false;
 
@@ -447,7 +451,7 @@ export function useEcho({
 
       // Back to waiting, whichever way it went.
       setMode('thinking');
-      onIssue?.(`vision · ${answer === 'yes' ? 'allowed' : 'declined'}`);
+      onIssue?.(`consent · ${answer === 'yes' ? 'allowed' : 'declined'}`);
       return answer === 'yes';
     },
     [listenForAnswer, onIssue, onSaid, sayAndWait, setMode],
@@ -589,7 +593,7 @@ export function useEcho({
       };
 
       try {
-        const result = await doAsk(text, { onDelta, onToolStart, onConsent: () => askForConsent(round) });
+        const result = await doAsk(text, { onDelta, onToolStart, onConsent: (q) => askForConsent(round, q) });
         if (round !== epoch.current) return; // cancelled or superseded mid-flight
         if (result.kind !== 'reply') {
           convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;

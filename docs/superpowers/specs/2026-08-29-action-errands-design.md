@@ -1,6 +1,32 @@
 # Action errands — Eva can ask her other half to *do* things — design
 
-Status: **designed 2026-08-29**, implementing on `feat/action-errands`.
+Status: **implemented and measured 2026-08-29** on `feat/action-errands`.
+Device verification still outstanding.
+
+| `npm run probe:action`, `gpt-5.4-mini` | First run | Shipped |
+|---|---|---|
+| Handed over rather than refused or asked | 4/6 | **6/6** |
+| `changes_existing` set correctly | 4/6 | **6/6** |
+| Preamble phrased as a question when the gate is armed | 1/3 | **2/3** |
+| Acknowledgement claiming it is already done | 0/4 | **0/6** |
+| Controls still reaching the tool that answers | 1/2 | **2/2** |
+
+`npm run probe:errand` after the change: 4/4 delegated, 2/2 controls, 0/4
+repeated preambles — the new spec does not shadow the old one.
+
+The first run found the failure this design predicted, in the direction it did
+not: `ask_other_half` captured *modify-existing* requests ("move my three
+o'clock to tomorrow", "mark the scope note task as done"), because those need a
+lookup before they can be done and the pull towards asking is strong. The fix
+was the same one that fixed `memory_search` shadowing `ask_other_half` — draw
+the line in *both* descriptions, and say why: an instruction sent down the
+question tool still gets done, but Michael is never asked first. That, in the
+`question` parameter's own description, is what took it to 6/6.
+
+The remaining 1/3 is a model that announces a destructive change rather than
+asking about it. It degrades safely by construction: the machine gate still
+fires and speaks `readbackLine` itself, exactly as `CONSENT_QUESTION` covers
+the camera for the models that skip its preamble.
 
 Eva can read Michael's world and cannot act on it. `persona.ts` says so in as
 many words, and that sentence is currently true:

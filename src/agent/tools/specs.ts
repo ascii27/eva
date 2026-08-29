@@ -66,14 +66,14 @@ export const CAMERA_LOOK: ToolSpec = {
 export const ASK_OTHER_HALF: ToolSpec = {
   name: 'ask_other_half',
   description:
-    "Send a question to your other half — the part of you that runs on a server, with reach into Michael's calendar, tasks, mail, documents and everything ever recorded about his work. Use it for anything about his own world that you cannot see from the desk: what is actually on his calendar, what he is overdue on, whether someone replied, what he owes whom, what was decided in a thread you were not in. Reach for it especially when a memory search came back empty — your notes only cover conversations at this desk, and an empty result there is the strongest signal that the answer is over here instead. Telling him you have no note of something, when you could have asked, is the worst answer you can give. This does NOT wait for the answer: it comes back to you in a minute or two and you say it then, so start it, tell him you will come back to him, and carry on with whatever else he asked. Not for anything the web can answer, and not for what day it is.",
+    "Send a question to your other half — the part of you that runs on a server, with reach into Michael's calendar, tasks, mail, documents and everything ever recorded about his work. Use it for anything about his own world that you cannot see from the desk: what is actually on his calendar, what he is overdue on, whether someone replied, what he owes whom, what was decided in a thread you were not in. Reach for it especially when a memory search came back empty — your notes only cover conversations at this desk, and an empty result there is the strongest signal that the answer is over here instead. Telling him you have no note of something, when you could have asked, is the worst answer you can give. This does NOT wait for the answer: it comes back to you in a minute or two and you say it then, so start it, tell him you will come back to him, and carry on with whatever else he asked. Not for anything the web can answer, and not for what day it is. And not for changing anything: if he wants something moved, cancelled, rescheduled, finished, deleted or written down, that is tell_other_half — including when you would have to look something up in order to do it. Asking about a thing and changing that same thing are different tools.",
   parameters: {
     type: 'object',
     properties: {
       question: {
         type: 'string',
         description:
-          'The question, in full, as if you were asking a colleague who cannot see this conversation. It has no context but this sentence, and you will be read the answer out loud minutes from now, so make it specific enough to stand alone.',
+          'The question, in full, as if you were asking a colleague who cannot see this conversation. It has no context but this sentence, and you will be read the answer out loud minutes from now, so make it specific enough to stand alone. It must be a question — something to find out. If you catch yourself writing an instruction here, it belongs in tell_other_half instead: sent down this one it would still get done, but Michael would never be asked first.',
       },
       needs_lookup: {
         type: 'boolean',
@@ -82,6 +82,28 @@ export const ASK_OTHER_HALF: ToolSpec = {
       },
     },
     required: ['question', 'needs_lookup'],
+  },
+};
+
+export const TELL_OTHER_HALF: ToolSpec = {
+  name: 'tell_other_half',
+  description:
+    "Have your other half actually DO something in Michael's world — add or complete a task, put something on his calendar, draft or send a message, create or edit a document or a page. He is the half of you that can change things: you cannot touch any of it from the desk yourself, but he can, and handing it to him is how it gets done. Use it whenever Michael wants something done rather than found out — \"add milk to my list\", \"put that in my calendar for Thursday\", \"start me a budget plan in Notion\". Say you will get it done; telling him you can't act is wrong now, and telling him to go and do it himself is worse. The line against ask_other_half is what is left behind afterwards: that one finds something out and changes nothing, this one changes something. Changing something that already exists is still this tool and not that one — moving or rescheduling a meeting, cancelling one, completing or deleting a task, rewriting something already written. Those need looking up before they can be done, and that pull towards asking is the mistake: he does the looking up himself as part of doing it. This does NOT wait — he works on it over the next minute or two and reports back to you then, so hand it over, say you have passed it on, and carry on with the conversation. Never tell Michael it is done until that report comes back.",
+  parameters: {
+    type: 'object',
+    properties: {
+      action: {
+        type: 'string',
+        description:
+          'What you want done, in full, written as an instruction to a colleague who cannot see this conversation and has no context but this sentence. Say exactly what should change and where, and include everything he would need to do it without asking: the wording of the task, the day and time, which list or calendar or page. He cannot come back to you with a question.',
+      },
+      changes_existing: {
+        type: 'boolean',
+        description:
+          'True when this edits, moves, reschedules, renames, completes, cancels or deletes something that is already there. False when it only creates something new and leaves everything else as it was. Adding a task or making a new page is false; rescheduling or cancelling a meeting, completing or deleting a task, and rewriting something already written are all true. True means Michael is asked out loud to confirm before anything is sent, so get it right — an unnecessary question costs him a breath, a missing one costs him a meeting.',
+      },
+    },
+    required: ['action', 'changes_existing'],
   },
 };
 
@@ -94,7 +116,8 @@ export const ASK_OTHER_HALF: ToolSpec = {
  * access. The OS permission is requested on first use precisely so it cannot
  * change this list mid-session.
  *
- * `otherHalf` is whether a hermes gateway is configured. Absent rather than
+ * `otherHalf` is whether a hermes gateway is configured, and it gates both the
+ * asking and the telling — they are one gateway. Absent rather than
  * present-and-failing, the same rule as web search without a Tavily key: Eva
  * knowing she has no way to ask beats her promising to and then apologising.
  */
@@ -104,6 +127,6 @@ export function toolSpecs(tavilyKey: string | null, camera = false, otherHalf = 
     MEMORY_SEARCH,
     ...(tavilyKey ? [WEB_SEARCH] : []),
     ...(camera ? [CAMERA_LOOK] : []),
-    ...(otherHalf ? [ASK_OTHER_HALF] : []),
+    ...(otherHalf ? [ASK_OTHER_HALF, TELL_OTHER_HALF] : []),
   ];
 }

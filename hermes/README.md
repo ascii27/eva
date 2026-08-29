@@ -64,13 +64,33 @@ whether the device can read the result.
 | `X-Hermes-Session-Key` | `eva-device` | Stable long-term memory scope, so what hermes learns from the desk accumulates in one place. |
 | `X-Hermes-Session-Id` | a bundle-only id | Keeps ~500 refreshes a day out of hermes' actual transcript with Michael. A refresh is machinery, not a conversation. |
 
+## Delegation
+
+Landed 2026-08-29. Eva can hand hermes something to **do**, not only something
+to find out: `tell_other_half` posts an instruction down the same
+`/v1/chat/completions` endpoint the errand path already uses, returns at once,
+and the report arrives minutes later through the proactive queue.
+
+Two things live on the device rather than here. **The confirmation gate** — an
+action that would change something already there is read back and waits for an
+audible yes before anything is sent — because the microphone is the only half
+that can hear one. And **the outbox**, a journal of actions sent and not yet
+answered, so a relaunch mid-flight leaves a trace instead of silence.
+
+The Runs API this section used to point at (`POST /v1/runs`, `run_id`, an SSE
+event stream, `POST /v1/runs/{id}/approval`) is still the better shape
+eventually — but writes already work over chat completions, and its approval is
+server-side, which is the wrong end of the room. It becomes interesting when
+something other than the desk needs to approve.
+
+Design: `docs/superpowers/specs/2026-08-29-action-errands-design.md`.
+
 ## Not here yet
 
-Delegation, the outbox, and the mem0 wiring. The device can currently *read*
-Michael's world and cannot *act* on it — she is told to say so plainly rather
-than promise. When that lands, hermes' Runs API (`POST /v1/runs`, `run_id`, an
-SSE event stream, and `POST /v1/runs/{id}/approval`) is the natural transport:
-it already has the shape delegation needs, including approvals, which maps onto
-the spoken-consent gate the camera already uses.
+Replay and the mem0 wiring. The outbox records what was sent and never
+re-sends it: de-duplicating across a relaunch needs an idempotency key hermes
+does not promise to honour, and a task added twice is worse than one Eva admits
+losing track of. `pendingOps` in the bundle schema is still empty — the journal
+is what would feed it, once hermes broadcasts.
 
 Design: `docs/superpowers/specs/2026-08-21-hermes-bridge-design.md`.
