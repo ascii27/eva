@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
-import { chatStream, formatUsage, type ToolSpec } from '../openai';
+import { chatStream, formatUsage, OPENAI_BASE, type ToolSpec } from '../openai';
 
 describe('formatUsage', () => {
   it('reports prompt and completion tokens', () => {
@@ -28,6 +28,9 @@ class FakeXhr {
   status = 200;
   responseText = '';
   sentBody: Record<string, unknown> | null = null;
+  url: string | null = null;
+  /** Every setRequestHeader call, in order — repeats included, since XHR appends. */
+  headers: [string, string][] = [];
   /** Whether onprogress had been assigned by the time send() was called. */
   hadProgressHandlerAtSend = false;
   onprogress: (() => void) | null = null;
@@ -39,8 +42,13 @@ class FakeXhr {
     FakeXhr.last = this;
   }
 
-  open(): void {}
-  setRequestHeader(): void {}
+  open(_method: string, url: string): void {
+    this.url = url;
+  }
+
+  setRequestHeader(name: string, value: string): void {
+    this.headers.push([name, value]);
+  }
 
   send(body: string): void {
     this.hadProgressHandlerAtSend = this.onprogress !== null;
@@ -168,5 +176,53 @@ describe('chatStream', () => {
     xhr.emit(contentFrame('Hello.') + finishFrame('stop'));
     xhr.finish();
     await expect(promise).resolves.toMatchObject({ text: 'Hello.', toolCalls: [] });
+  });
+
+  // The bridge to hermes-agent is nothing but these two options, so they are
+  // worth pinning: hermes' API server is OpenAI-compatible, and src/hermes/
+  // reaches it by pointing this same client somewhere else.
+  describe('endpoint options', () => {
+    it('defaults to OpenAI', () => {
+      const { xhr } = start();
+      expect(xhr.url).toBe(`${OPENAI_BASE}/chat/completions`);
+    });
+
+    it('posts to a supplied baseUrl instead', () => {
+      void chatStream({
+        apiKey: 'sk-test',
+        model: 'hermes',
+        messages: [{ role: 'user', content: 'hi' }],
+        baseUrl: 'https://hermes.example/v1',
+        onDelta: () => {},
+      });
+      expect(FakeXhr.last?.url).toBe('https://hermes.example/v1/chat/completions');
+    });
+
+    it('sends caller headers alongside the managed ones', () => {
+      void chatStream({
+        apiKey: 'sk-test',
+        model: 'hermes',
+        messages: [{ role: 'user', content: 'hi' }],
+        headers: { 'X-Hermes-Session-Key': 'eva-device' },
+        onDelta: () => {},
+      });
+      expect(FakeXhr.last?.headers).toContainEqual(['X-Hermes-Session-Key', 'eva-device']);
+      expect(FakeXhr.last?.headers).toContainEqual(['Authorization', 'Bearer sk-test']);
+    });
+
+    it('drops a caller header that would collide, rather than appending to it', () => {
+      // XHR concatenates repeats into `Bearer theirs, Bearer sk-test`, which is
+      // not a credential anyone accepts — so the managed three are filtered out
+      // of the caller's map instead of being overwritten.
+      void chatStream({
+        apiKey: 'sk-test',
+        model: 'hermes',
+        messages: [{ role: 'user', content: 'hi' }],
+        headers: { authorization: 'Bearer theirs' },
+        onDelta: () => {},
+      });
+      const auth = FakeXhr.last?.headers.filter(([name]) => name.toLowerCase() === 'authorization');
+      expect(auth).toEqual([['Authorization', 'Bearer sk-test']]);
+    });
   });
 });

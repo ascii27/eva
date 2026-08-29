@@ -11,6 +11,8 @@ import { useFonts } from 'expo-font';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAgent } from '../agent/useAgent';
+import { useBundle, type BundleState } from '../hermes/useBundle';
+import { useErrands } from '../hermes/useErrands';
 import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../round/speakable';
@@ -30,6 +32,7 @@ import {
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
 import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
+import { useVision } from '../vision/useVision';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
@@ -68,6 +71,19 @@ function describeTtsState(s: TtsEngineState): { line: string | null; label: stri
       // Expo Go / simulator without the dev build: silence, system voice covers it.
       return { line: null, label: 'system voice' };
   }
+}
+
+/**
+ * The overlay's one-line summary of the bundle. Distinguishes "no hermes" from
+ * "hermes, but nothing yet" from a live one — three states that all look like
+ * Eva not knowing about the two o'clock.
+ */
+function describeBundle(configured: boolean, state: BundleState | null): string {
+  if (!configured) return 'no hermes';
+  if (!state) return 'none yet';
+  const minutes = Math.floor((Date.now() - state.generatedAt) / 60_000);
+  const age = minutes < 1 ? 'just now' : `${minutes}m`;
+  return `${age} · ${state.coreTokens} tok${state.staleness === 'fresh' ? '' : ` · ${state.staleness === 'outOfSync' ? 'out of sync' : 'stale'}`}`;
 }
 
 export function FaceScreen() {
@@ -222,7 +238,46 @@ export function FaceScreen() {
     });
   }, []);
 
-  const agent = useAgent({ onIssue: log, onUsage: log });
+  // Mounted before useAgent: the tool spec list is built once at bring-up, so
+  // whether there is a camera has to be known by then.
+  const vision = useVision({ onIssue: log });
+
+  // What Eva's other half last sent down about the week. Mounted before
+  // useAgent for the same reason vision is — it hands `bundleText` into the
+  // round. Nothing is fetched on a timer; see the note at the top of useBundle.
+  const bundle = useBundle({ onIssue: log });
+
+  // Questions Eva handed to hermes and walked away from. An answer arrives
+  // minutes later and is spoken through the proactive queue — the same path
+  // her unprompted Slack messages take, with the same wait-for-a-quiet-face
+  // drain — so there is no second delivery mechanism here.
+  //
+  // Mounted before useAgent because `ask_other_half` is only offered when a
+  // hermes is configured, and that list is fixed at bring-up.
+  const errands = useErrands({
+    onIssue: log,
+    onResult: (line) => {
+      const at = Date.now();
+      log(`eva · ${line}`);
+      pushProactive({ ts: `errand.${at}`, threadTs: null, text: line, at });
+    },
+  });
+
+  const agent = useAgent({
+    onIssue: log,
+    onUsage: log,
+    vision: vision.available
+      ? {
+          ensurePermission: vision.ensurePermission,
+          showPreview: vision.showPreview,
+          hidePreview: vision.hidePreview,
+          takePhoto: vision.takePhoto,
+        }
+      : null,
+    resolvePhoto: vision.resolvePhoto,
+    bundleText: bundle.text,
+    errands: errands.configured ? { start: errands.start } : null,
+  });
 
   const echo = useEcho({
     setMode,
@@ -345,8 +400,11 @@ export function FaceScreen() {
     const d = dequeue(backlog.current);
     if (!d.item) return;
     backlog.current = d.queue;
+    // Null for anything that did not come from Slack — an errand answer, or the
+    // overlay's test line. Assigning it anyway would point a follow-up at a
+    // thread that does not exist, and it would go nowhere without a word.
     activeThread.current = d.item.threadTs;
-    holdExchange(d.item.threadTs);
+    if (d.item.threadTs) holdExchange(d.item.threadTs);
     const { text } = d.item;
     startRound(() => echoRef.current.announce(text));
   }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound]);
@@ -457,6 +515,12 @@ export function FaceScreen() {
           entries={entries}
           watching={wake.status === 'watching'}
           connection={slack.status}
+          bundle={bundle.state ? { staleness: bundle.state.staleness, ageMs: Date.now() - bundle.state.generatedAt } : null}
+          vision={
+            vision.available
+              ? { ...vision.state, onCameraReady: vision.onCameraReady }
+              : undefined
+          }
         />
       )}
 
@@ -503,7 +567,7 @@ export function FaceScreen() {
           onProactiveTest={() => {
             const at = Date.now();
             log(`eva · ${PROACTIVE_TEST_LINE}`);
-            pushProactive({ ts: `test.${at}`, threadTs: `test.${at}`, text: PROACTIVE_TEST_LINE, at });
+            pushProactive({ ts: `test.${at}`, threadTs: null, text: PROACTIVE_TEST_LINE, at });
           }}
           onClose={() => setDevVisible(false)}
           wakeEnabled={wakeEnabled}
@@ -517,8 +581,40 @@ export function FaceScreen() {
           onToggleBrain={toggleBrain}
           agentModel={agent.model ?? 'no key'}
           onEndSession={() => void agent.endSession()}
-          onForgetAll={() => void agent.forgetAll()}
+          visionAvailable={vision.available}
+          onLookTest={() => {
+            echo.cancel();
+            // Deliberately the same order as runCameraLook: permission before
+            // anything is spoken, viewfinder before the question so the camera
+            // warms up while it plays, shutter only after a yes.
+            startUserRound(() => {
+              void (async () => {
+                if (!(await vision.ensurePermission())) {
+                  log('vision · camera access denied');
+                  return;
+                }
+                vision.showPreview();
+                try {
+                  await echoRef.current.look(async () => {
+                    const shot = await vision.takePhoto();
+                    log('error' in shot ? `vision · ${shot.error}` : `vision · captured ${shot.photo.id}`);
+                  });
+                } finally {
+                  vision.hidePreview();
+                }
+              })();
+            });
+          }}
+          onForgetAll={() => {
+            // Photos are part of what she remembers, so they go too — and
+            // their cache files with them.
+            vision.forgetPhotos();
+            void agent.forgetAll();
+          }}
           onCycleModel={() => void agent.cycleModel()}
+          bundleLabel={describeBundle(bundle.configured, bundle.state)}
+          onBundleRefresh={bundle.refresh}
+          errandsInFlight={errands.configured ? errands.inFlight : null}
           slackStatus={slack.status}
           onSlackPair={() => setPairingVisible(true)}
           onSlackReconnect={slack.reconnect}

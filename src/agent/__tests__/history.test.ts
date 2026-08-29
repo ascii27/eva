@@ -6,6 +6,7 @@ import {
   estimateTokens,
   historyTokens,
   HISTORY_BUDGET_TOKENS,
+  IMAGE_TOKENS,
   isGap,
   KEEP_RECENT_TURNS,
   newSession,
@@ -217,6 +218,55 @@ describe('buildRequest', () => {
     expect(msgs[0].content).toBe(PERSONA);
   });
 
+  // The bundle from hermes. Its POSITION is the point — see the layout note on
+  // buildRequest: everything is ordered most-stable-first so a change to one
+  // block invalidates only what follows it, and the bundle is deliberately
+  // early rather than late.
+  describe('the hermes bundle', () => {
+    const BUNDLE = { core: 'his week, at length', volatile: 'assembled four minutes ago' };
+
+    it('changes nothing at all when there is none', () => {
+      const withOut = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2), summary: 'shop talk' }));
+      expect(buildRequest(PERSONA, ['a memory'], session({ turns: turns(2), summary: 'shop talk' }), undefined, null)).toEqual(
+        withOut,
+      );
+    });
+
+    it('sits after the summary and before the turns', () => {
+      const msgs = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2), summary: 'shop talk' }), undefined, BUNDLE);
+      expect(msgs[0].content).toContain(PERSONA);
+      expect(msgs[1].content).toContain('shop talk');
+      expect(msgs[2].content).toBe(BUNDLE.core);
+      expect(msgs[3].content).toBe(BUNDLE.volatile);
+      expect(msgs.slice(4)).toEqual(turns(2));
+    });
+
+    it('still sits after the persona when there is no summary to follow', () => {
+      const msgs = buildRequest(PERSONA, [], session({ turns: turns(1) }), undefined, BUNDLE);
+      expect(msgs[0].content).toBe(PERSONA);
+      expect(msgs[1].content).toBe(BUNDLE.core);
+      expect(msgs[2].content).toBe(BUNDLE.volatile);
+    });
+
+    it('keeps the core and the freshness in separate messages', () => {
+      // Two messages, not one, so a refresh that changed nothing rewrites only
+      // the small one and leaves the core inside the cached prefix.
+      const a = buildRequest(PERSONA, [], session({ turns: turns(1) }), undefined, BUNDLE);
+      const b = buildRequest(PERSONA, [], session({ turns: turns(1) }), undefined, {
+        ...BUNDLE,
+        volatile: 'assembled nine minutes ago',
+      });
+      expect(a[1]).toEqual(b[1]);
+      expect(a[2]).not.toEqual(b[2]);
+    });
+
+    it('leaves the leading persona message untouched, whatever the bundle says', () => {
+      const msgs = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2) }), undefined, BUNDLE);
+      const without = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2) }));
+      expect(msgs[0]).toEqual(without[0]);
+    });
+  });
+
   it('folds memories into the leading system message, so the prefix stays cacheable', () => {
     const msgs = buildRequest(PERSONA, ['he prefers mornings', 'the demo is Thursday'], session({ turns: turns(2) }));
     expect(msgs[0].content).toContain('he prefers mornings');
@@ -246,5 +296,78 @@ describe('buildRequest', () => {
     const a = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2) }));
     const b = buildRequest(PERSONA, ['a memory'], session({ turns: turns(8) }));
     expect(a[0].content).toBe(b[0].content);
+  });
+});
+
+describe('buildRequest with photos', () => {
+  const DATA_URL = 'data:image/jpeg;base64,abc';
+  const photoTurn: Turn = {
+    role: 'user',
+    content: 'Here is the photo.',
+    photo: { id: 'p1', caption: 'a USB-C hub with four ports' },
+  };
+  const live = (id: string) => (id === 'p1' ? DATA_URL : null);
+  const gone = () => null;
+
+  it('sends a live photo as image content parts', () => {
+    const msgs = buildRequest(PERSONA, [], session({ turns: [photoTurn] }), live);
+    expect(msgs[1]).toEqual({
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Here is the photo.' },
+        { type: 'image_url', image_url: { url: DATA_URL } },
+      ],
+    });
+  });
+
+  // The whole point of the resolver: an aged-out photo degrades to prose
+  // rather than disappearing, so a later reference back to it still lands.
+  it('falls back to the caption when the photo is no longer live', () => {
+    const msgs = buildRequest(PERSONA, [], session({ turns: [photoTurn] }), gone);
+    expect(msgs[1].role).toBe('user');
+    expect(msgs[1].content).toBe('Here is the photo.\n(photo taken earlier: a USB-C hub with four ports)');
+  });
+
+  it('falls back to the caption when no resolver is supplied at all', () => {
+    // A session rehydrated from disk after a relaunch: the cache is gone, so
+    // every photo it mentions is a caption now.
+    const msgs = buildRequest(PERSONA, [], session({ turns: [photoTurn] }));
+    expect(typeof msgs[1].content).toBe('string');
+  });
+
+  it('leaves turns without photos exactly as they were', () => {
+    const msgs = buildRequest(PERSONA, [], session({ turns: turns(2) }), live);
+    expect(msgs.slice(-2)).toEqual(turns(2));
+  });
+
+  it('keeps the persona prefix byte-identical when a photo is in the history', () => {
+    const a = buildRequest(PERSONA, ['a memory'], session({ turns: turns(2) }), live);
+    const b = buildRequest(PERSONA, ['a memory'], session({ turns: [...turns(2), photoTurn] }), live);
+    expect(a[0].content).toBe(b[0].content);
+  });
+});
+
+describe('historyTokens with photos', () => {
+  const photoTurn: Turn = { role: 'user', content: 'x', photo: { id: 'p1', caption: 'a hub' } };
+
+  it('charges a photo turn for the image on top of its text', () => {
+    const plain = historyTokens(session({ turns: [{ role: 'user', content: 'x' }] }));
+    const withPhoto = historyTokens(session({ turns: [photoTurn] }));
+    expect(withPhoto).toBe(plain + IMAGE_TOKENS);
+  });
+});
+
+describe('planCompaction with photos', () => {
+  it('still never leaves an assistant turn leading the kept block', () => {
+    // Photos ride on user turns, so the pair-splitting guard has to survive
+    // them: the eviction that follows must not orphan an answer.
+    const many: Turn[] = Array.from({ length: KEEP_RECENT_TURNS + 4 }, (_, i) => ({
+      role: i % 2 === 0 ? ('user' as const) : ('assistant' as const),
+      content: 'x'.repeat(4000),
+      ...(i === 2 ? { photo: { id: 'p1', caption: 'a hub' } } : {}),
+    }));
+    const plan = planCompaction(session({ turns: many }));
+    expect(plan).not.toBeNull();
+    expect(plan!.keep[0].role).toBe('user');
   });
 });

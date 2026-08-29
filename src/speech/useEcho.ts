@@ -6,12 +6,29 @@ import { beginAside, decideAside, noteTool, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
+import { CONSENT_QUESTION, CONSENT_RETRY, readConsent, type Consent } from '../vision/consent';
 
 const THINK_BEAT_MS = 300;
 const ALERT_BEAT_MS = 600;
 const PLEASED_BEAT_MS = 600;
 const CONFUSED_BEAT_MS = 1200;
 const LOW_CONFIDENCE = 0.35;
+
+/**
+ * How long Eva waits to be told yes or no before giving up on a consent gate.
+ * Generous — she has just asked a question and someone has to look up from
+ * what they were doing — but bounded, because the round behind it is holding a
+ * tool open and the appliance is deaf until it settles.
+ */
+const CONSENT_TIMEOUT_MS = 15_000;
+
+/**
+ * Longest the gate waits for a preamble to finish playing before opening the
+ * mic anyway. Generous — MAX_REPLY_TOKENS bounds a preamble to a sentence, so
+ * reaching this means the speech engine stopped reporting rather than that Eva
+ * is still talking.
+ */
+const DRAIN_TIMEOUT_MS = 10_000;
 
 // Generic fallbacks. Each transport may supply its own copy on the result —
 // the Slack path's "her reply will show up in the transcript" only makes sense
@@ -81,6 +98,21 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
   const sentences = useRef<SentenceState>(emptySentences());
   /** Text actually handed to the speaker, for onSaid on a failed stream. */
   const spoken = useRef('');
+  /**
+   * One-shot redirect for the open stream's drain. Set by the consent gate,
+   * which ends the stream mid-round to free the audio session for the mic:
+   * without it, `end()` would drain into finishSpoken and settle a round that
+   * is still waiting on an answer — and open the follow-up mic on top of the
+   * consent one.
+   */
+  const drain = useRef<(() => void) | null>(null);
+  /**
+   * Non-null while Eva is waiting to be told yes or no. The mount-once STT
+   * listeners check it *before* the normal routing, because otherwise "yeah go
+   * ahead" would be treated as a new question and start a round that kills the
+   * one waiting on it.
+   */
+  const consent = useRef<{ finish: (answer: Consent) => void } | null>(null);
   // Live handler refs for the mount-once native event subscription.
   const handlers = useRef({ ask, onLatency, conversation, asides });
   handlers.current = { ask, onLatency, conversation, asides };
@@ -104,8 +136,26 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     asideTimer.current = null;
     asideState.current = null;
     speech.current = null;
+    // Release rather than drop: the consent gate may be parked on this,
+    // waiting for the question to finish playing. Dropping it strands the gate,
+    // which strands the tool call behind it — and by then the ask timeout has
+    // been suspended for the gate, so nothing else would ever settle the round.
+    // The woken gate re-checks the epoch and bails.
+    const redirect = drain.current;
+    drain.current = null;
+    redirect?.();
     sentences.current = emptySentences();
     spoken.current = '';
+  }, []);
+
+  /**
+   * Settle any open consent gate as a refusal. Abandoning the round is not a
+   * reason to leave the promise hanging — the tool loop behind it would block
+   * until the ask timeout fired, with the face stuck mid-round.
+   */
+  const closeConsent = useCallback(() => {
+    consent.current?.finish('unclear');
+    consent.current = null;
   }, []);
 
   /**
@@ -149,33 +199,48 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [after, setMode],
   );
 
-  /** Open the mic for one command session; wokeAtMs stamps wake-to-audio latency. */
-  const openMic = useCallback(
-    async (wokeAtMs?: number) => {
-      const round = ++epoch.current;
-      clearRoundSpeech();
-      wokeAt.current = wokeAtMs;
+  /**
+   * Bring the recognizer up for a round that already exists.
+   *
+   * Split out of openMic because the consent gate must open the mic *inside*
+   * the round it is gating — claiming a new epoch there would supersede the
+   * very ask that is waiting on the answer. `blocker: null` means the round
+   * moved on underneath us and the caller should simply stop.
+   */
+  const startMic = useCallback(
+    async (round: number): Promise<{ ok: true } | { ok: false; blocker: string | null }> => {
       const blocker = await ensureReady();
-      if (round !== epoch.current) return;
-      if (blocker) {
-        convWindow.current = null;
-        onIssue?.(blocker);
-        settle('confused', CONFUSED_BEAT_MS);
-        return;
-      }
+      if (round !== epoch.current) return { ok: false, blocker: null };
+      if (blocker) return { ok: false, blocker };
       // Give the TTS audio session time to fully deactivate — starting the
       // recognizer mid-teardown surfaces as an "interrupted" error on iOS.
       stopSpeaking();
       await new Promise((r) => setTimeout(r, 300));
-      if (round !== epoch.current) return;
+      if (round !== epoch.current) return { ok: false, blocker: null };
       transcript.current = '';
       confidence.current = -1;
       active.current = true;
       clearTimer();
       setMode('listening');
       startListening();
+      return { ok: true };
     },
-    [clearRoundSpeech, clearTimer, onIssue, setMode, settle],
+    [clearTimer, setMode],
+  );
+
+  /** Open the mic for one command session; wokeAtMs stamps wake-to-audio latency. */
+  const openMic = useCallback(
+    async (wokeAtMs?: number) => {
+      const round = ++epoch.current;
+      clearRoundSpeech();
+      wokeAt.current = wokeAtMs;
+      const started = await startMic(round);
+      if (started.ok || started.blocker === null) return;
+      convWindow.current = null;
+      onIssue?.(started.blocker);
+      settle('confused', CONFUSED_BEAT_MS);
+    },
+    [clearRoundSpeech, onIssue, settle, startMic],
   );
 
   /**
@@ -235,6 +300,131 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [after, deliver, setMode],
   );
 
+  /** Speak one line and resolve once it has actually finished playing. */
+  const sayAndWait = useCallback(
+    (round: number, line: string) =>
+      new Promise<void>((resolve) => {
+        onSaid?.(line);
+        speak(line, {
+          onStart: () => {
+            if (round === epoch.current) setMode('speaking');
+          },
+          onBoundary: () => {
+            if (round === epoch.current) onPulse?.();
+          },
+          onDone: () => resolve(),
+          onError: () => resolve(),
+        });
+      }),
+    [onPulse, onSaid, setMode],
+  );
+
+  /** One listen whose result goes to the gate instead of becoming a question. */
+  const listenForAnswer = useCallback(
+    (round: number) =>
+      new Promise<Consent>((resolve) => {
+        let settled = false;
+        const finish = (answer: Consent) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          consent.current = null;
+          resolve(answer);
+        };
+        const timeout = setTimeout(() => {
+          // Nobody answered. Silence is never consent.
+          abortListening();
+          finish('unclear');
+        }, CONSENT_TIMEOUT_MS);
+        // Armed before the mic comes up: startMic is async and a fast
+        // recognizer could otherwise end before anything is listening.
+        consent.current = { finish };
+        void startMic(round).then((started) => {
+          if (!started.ok) {
+            if (started.blocker) onIssue?.(started.blocker);
+            finish('unclear');
+          }
+        });
+      }),
+    [onIssue, startMic],
+  );
+
+  /**
+   * Ask the room for permission and wait. Resolves true only on an audible
+   * yes — every other outcome, including a superseded round, a mic that would
+   * not open, and nobody saying anything at all, is a no.
+   *
+   * An open stream is *ended* rather than held: `startMic` calls
+   * `stopSpeaking()`, which would kill a Kokoro stream anyway, and the
+   * question has to finish playing before the mic opens or Eva talks over her
+   * own request. The answer arrives on a fresh stream afterwards, because
+   * `openSpeech` opens one on the next delta.
+   *
+   * Takes the round rather than claiming one: a gate inside an ask must stay
+   * in the round it is gating, or it would supersede the very request waiting
+   * on the answer.
+   */
+  const askForConsent = useCallback(
+    async (round: number): Promise<boolean> => {
+      if (round !== epoch.current) return false;
+
+      // An aside firing into the gate would talk over the question or the
+      // answer. With no preamble spoken, the aside timer is still armed here.
+      if (asideTimer.current) clearInterval(asideTimer.current);
+      asideTimer.current = null;
+      asideState.current = null;
+
+      if (speech.current) {
+        // The preamble already asked. Flush its tail, then let it drain.
+        const tail = flushPending(sentences.current);
+        if (tail) {
+          spoken.current = spoken.current ? `${spoken.current} ${tail}` : tail;
+          speech.current.push(tail);
+        }
+        sentences.current = emptySentences();
+        if (spoken.current) onSaid?.(spoken.current);
+        spoken.current = '';
+        const open = speech.current;
+        speech.current = null;
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const once = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(bound);
+            drain.current = null;
+            resolve();
+          };
+          // A speech engine that never reports done would otherwise park the
+          // gate here for good, holding a tool call open behind it.
+          const bound = setTimeout(once, DRAIN_TIMEOUT_MS);
+          drain.current = once;
+          open.hold(false);
+          open.end();
+        });
+      } else {
+        // Nothing has been asked yet — the model skipped its preamble, or
+        // there is no model in this round at all (the overlay's Look button).
+        await sayAndWait(round, CONSENT_QUESTION);
+      }
+      if (round !== epoch.current) return false;
+
+      let answer = await listenForAnswer(round);
+      if (answer === 'unclear' && round === epoch.current) {
+        await sayAndWait(round, CONSENT_RETRY);
+        if (round !== epoch.current) return false;
+        answer = await listenForAnswer(round);
+      }
+      if (round !== epoch.current) return false;
+
+      // Back to waiting, whichever way it went.
+      setMode('thinking');
+      onIssue?.(`vision · ${answer === 'yes' ? 'allowed' : 'declined'}`);
+      return answer === 'yes';
+    },
+    [listenForAnswer, onIssue, onSaid, sayAndWait, setMode],
+  );
+
   /** The Phase-3 round: post to Eva, hold thinking for the real wait, speak. */
   const askEva = useCallback(
     async (text: string) => {
@@ -287,8 +477,27 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
           onBoundary: () => {
             if (round === epoch.current) onPulse?.();
           },
-          onDone: () => finishSpoken(round, 'pleased'),
-          onError: () => finishSpoken(round, 'confused'),
+          // The consent gate ends this stream itself and needs to know when
+          // the audio has actually stopped — settling the round here instead
+          // would strand the tool call waiting behind it.
+          onDone: () => {
+            const redirect = drain.current;
+            if (redirect) {
+              drain.current = null;
+              redirect();
+              return;
+            }
+            finishSpoken(round, 'pleased');
+          },
+          onError: () => {
+            const redirect = drain.current;
+            if (redirect) {
+              drain.current = null;
+              redirect();
+              return;
+            }
+            finishSpoken(round, 'confused');
+          },
         });
       };
 
@@ -344,7 +553,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       };
 
       try {
-        const result = await doAsk(text, { onDelta, onToolStart });
+        const result = await doAsk(text, { onDelta, onToolStart, onConsent: () => askForConsent(round) });
         if (round !== epoch.current) return; // cancelled or superseded mid-flight
         if (result.kind !== 'reply') {
           convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
@@ -437,6 +646,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       setMode,
       settle,
       speakAside,
+      askForConsent,
     ],
   );
 
@@ -466,6 +676,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       onError: (code, message) => {
         if (!active.current) return;
         active.current = false;
+        // A gate is waiting on this session, and a recognizer that failed told
+        // us nothing — which is not a yes.
+        const gate = consent.current;
+        if (gate) {
+          if (code !== 'aborted' && code !== 'no-speech') onIssue?.(`STT ${code}: ${message}`);
+          gate.finish('unclear');
+          return;
+        }
         // iOS often reports a fully-silent command session as no-speech
         // before end, so the follow-up window branch must exist here too.
         if (code === 'no-speech') {
@@ -481,6 +699,14 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         active.current = false;
         const text = transcript.current.trim();
         const lowConf = confidence.current >= 0 && confidence.current < LOW_CONFIDENCE;
+        // Routed to the gate before anything else: undiverted, "yeah go ahead"
+        // becomes a new question and kills the round waiting on the answer.
+        const gate = consent.current;
+        if (gate) {
+          if (text) onHeard?.(text);
+          gate.finish(!text || lowConf ? 'unclear' : readConsent(text));
+          return;
+        }
         if (!text || lowConf) {
           onNoSpeech();
         } else {
@@ -496,6 +722,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       // bump the epoch first (like cancel()) so deliver's callbacks see a dead
       // round instead of re-arming timers on the unmounting tree.
       epoch.current++;
+      closeConsent();
       clearRoundSpeech();
       convWindow.current = null;
       voiceRound.current = false;
@@ -562,9 +789,37 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     [askEva],
   );
 
+  /**
+   * Run the consent gate on its own, with no model in the loop, and hand the
+   * answer to `onAllowed`.
+   *
+   * This is the overlay's Look button. It exists because every other route to
+   * the gate depends on the model choosing to reach for the camera, and "she
+   * didn't take a photo" looks identical whether the gate is broken or she
+   * simply never called the tool.
+   */
+  const look = useCallback(
+    async (onAllowed: () => Promise<void>): Promise<void> => {
+      const round = ++epoch.current;
+      closeConsent();
+      clearRoundSpeech();
+      voiceRound.current = false;
+      convWindow.current = null;
+      clearTimer();
+      setMode('thinking');
+      const allowed = await askForConsent(round);
+      if (round !== epoch.current) return;
+      if (allowed) await onAllowed();
+      if (round !== epoch.current) return;
+      settle(allowed ? 'pleased' : 'confused', allowed ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+    },
+    [askForConsent, clearRoundSpeech, clearTimer, closeConsent, setMode, settle],
+  );
+
   /** Abandon any in-flight listen/ask/speak and return control to the caller. */
   const cancel = useCallback(() => {
     epoch.current++;
+    closeConsent();
     clearRoundSpeech();
     active.current = false;
     convWindow.current = null;
@@ -572,7 +827,7 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
     clearTimer();
     abortListening();
     stopSpeaking();
-  }, [clearRoundSpeech, clearTimer]);
+  }, [clearRoundSpeech, clearTimer, closeConsent]);
 
-  return { listen, say, ask: askDirect, announce, cancel, noteToolActivity };
+  return { listen, say, ask: askDirect, announce, cancel, noteToolActivity, look };
 }

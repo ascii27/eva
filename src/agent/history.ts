@@ -16,9 +16,26 @@
 
 export type Role = 'user' | 'assistant';
 
+/**
+ * A photo a turn carries, by reference only.
+ *
+ * The bytes live in `src/vision/photos.ts` for as long as the window keeps
+ * them; a turn holds nothing but an id and a caption. That is deliberate and
+ * load-bearing: `store.ts` writes `session.turns` verbatim, so keeping the
+ * base64 out of `Turn` is what stops images reaching disk — no filtering, no
+ * remembering to strip anything.
+ */
+export interface TurnPhoto {
+  /** Looked up through buildRequest's resolver; null there means aged out. */
+  id: string;
+  /** What Eva said it was, so the turn still reads once the image is gone. */
+  caption: string;
+}
+
 export interface Turn {
   role: Role;
   content: string;
+  photo?: TurnPhoto;
 }
 
 export interface Session {
@@ -32,10 +49,23 @@ export interface Session {
   summary: string | null;
 }
 
+/** Multimodal message content. Only photo turns ever use the array form. */
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string;
+  content: string | ContentPart[];
 }
+
+/**
+ * Resolves a photo id to the data URL to send, or null when it is no longer
+ * live. Passed in rather than imported so this file stays pure and testable —
+ * and so a session read back from disk, whose cache is long gone, degrades to
+ * captions simply by having no resolver at all.
+ */
+export type PhotoResolver = (id: string) => string | null;
 
 export interface CompactionPlan {
   /** Oldest turns to summarize away. */
@@ -65,6 +95,17 @@ export const KEEP_RECENT_TURNS = 6;
 
 /** How many archived session summaries to carry as memory. */
 export const MEMORY_LIMIT = 5;
+
+/**
+ * What one photo costs the history budget.
+ *
+ * Charged for every turn that carries a photo, live or aged out, because
+ * `historyTokens` has no resolver and threading one through `planCompaction`
+ * for this would be noise. The error is bounded (one image's worth per stale
+ * photo turn) and points the safe way: compaction fires slightly early, and
+ * the turns being over-counted are the oldest ones — the first to be folded.
+ */
+export const IMAGE_TOKENS = 85;
 
 // The qualifier is not decoration. These notes are written by a past version of
 // Eva and outlive the capabilities she had at the time, so a note recording
@@ -115,7 +156,10 @@ export function appendTurn(session: Session, turn: Turn, now: number): Session {
 
 export function historyTokens(session: Session): number {
   let total = session.summary ? estimateTokens(session.summary) : 0;
-  for (const t of session.turns) total += estimateTokens(t.content);
+  for (const t of session.turns) {
+    total += estimateTokens(t.content);
+    if (t.photo) total += IMAGE_TOKENS;
+  }
   return total;
 }
 
@@ -158,19 +202,88 @@ export function applyCompaction(session: Session, foldCount: number, summary: st
   return { ...session, turns: session.turns.slice(foldCount), summary };
 }
 
+/** How an aged-out photo reads once its bytes are gone. */
+const photoGone = (caption: string) => `(photo taken earlier: ${caption})`;
+
+/**
+ * One turn as the API wants it. A photo turn becomes content parts while its
+ * image is still live, and degrades to prose carrying the caption once it is
+ * not — so the conversation never contains a dangling reference to something
+ * the model cannot see.
+ */
+function turnMessage(turn: Turn, resolve?: PhotoResolver): ChatMessage {
+  if (!turn.photo) return turn;
+
+  const url = resolve?.(turn.photo.id) ?? null;
+  if (!url) {
+    const note = photoGone(turn.photo.caption);
+    return { role: turn.role, content: turn.content ? `${turn.content}\n${note}` : note };
+  }
+
+  return {
+    role: turn.role,
+    content: [
+      { type: 'text', text: turn.content },
+      { type: 'image_url', image_url: { url } },
+    ],
+  };
+}
+
+/**
+ * What hermes-agent knows about Michael's week, already rendered. Two strings
+ * rather than one because they change at different rates — see the ordering
+ * note in buildRequest, and src/hermes/bundle.ts for what is in each.
+ */
+export interface BundleText {
+  core: string;
+  volatile: string;
+}
+
 /**
  * The request message list. See the caching note at the top of this file for
  * why persona+memory and the running summary are separate messages.
  *
  * `memories` is passed already trimmed (the store reads MEMORY_LIMIT of them);
  * this just lays them out.
+ *
+ * `resolve` supplies the bytes for photo turns. Omitting it is meaningful
+ * rather than lazy: it is exactly the state of a session rehydrated from disk,
+ * where the cache did not survive the relaunch, and every photo reads as its
+ * caption.
+ *
+ * `bundle` is the projection from hermes, and its position is the whole reason
+ * it is two strings. Everything here is laid out MOST STABLE FIRST, so that a
+ * change to one block invalidates only what follows it:
+ *
+ *   persona + memories   fixed for the session
+ *   running summary      rewritten on compaction, which is rare
+ *   bundle core          rewritten only when hermes' answer actually changed
+ *   bundle volatile      small; how old the picture is, every refresh
+ *   turns
+ *
+ * The tempting alternative — put the volatile bundle *last*, right before the
+ * newest turn, to protect the prefix — is worse, and worse in a convincing way.
+ * Last means the bundle is never inside the cached prefix at all, so its ~2,500
+ * tokens are billed at full price on every single turn. Early means they are
+ * billed only on the turns where the bundle actually changed. Early wins, and it
+ * wins by more the longer the conversation runs.
  */
-export function buildRequest(persona: string, memories: string[], session: Session): ChatMessage[] {
+export function buildRequest(
+  persona: string,
+  memories: string[],
+  session: Session,
+  resolve?: PhotoResolver,
+  bundle?: BundleText | null,
+): ChatMessage[] {
   const prefix = memories.length
     ? `${persona}\n\n${MEMORY_HEADER}\n${memories.map((m) => `- ${m}`).join('\n')}`
     : persona;
 
   const messages: ChatMessage[] = [{ role: 'system', content: prefix }];
   if (session.summary) messages.push({ role: 'system', content: `${SUMMARY_HEADER} ${session.summary}` });
-  return [...messages, ...session.turns];
+  if (bundle) {
+    messages.push({ role: 'system', content: bundle.core });
+    messages.push({ role: 'system', content: bundle.volatile });
+  }
+  return [...messages, ...session.turns.map((t) => turnMessage(t, resolve))];
 }

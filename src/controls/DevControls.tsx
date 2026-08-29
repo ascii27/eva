@@ -66,8 +66,17 @@ interface DevControlsProps {
   onEndSession: () => void;
   /** Delete every archived conversation and the live session. Irreversible. */
   onForgetAll: () => void;
+  /** Whether the native camera modules loaded at all. */
+  visionAvailable: boolean;
+  /** Drive the consent gate end to end without the model. */
+  onLookTest: () => void;
   /** Step to the next model in MODEL_PRESETS; takes effect on the next round. */
   onCycleModel: () => void;
+  /** Bundle age and cost, or why there isn't one. */
+  bundleLabel: string;
+  onBundleRefresh: () => void;
+  /** Errands out to hermes, or null when none is configured. */
+  errandsInFlight: number | null;
 }
 
 export function DevControls(props: DevControlsProps) {
@@ -204,6 +213,19 @@ export function DevControls(props: DevControlsProps) {
             <Btn label="Model" sub={props.agentModel} onPress={props.onCycleModel} />
           </View>
           <View style={styles.row}>
+            {/* What hermes last sent down, and how old it is. Worth a button:
+                "she doesn't know about the two o'clock" looks identical whether
+                the bundle is stale, unparseable, or was never fetched at all. */}
+            <Btn label="Bundle" sub={props.bundleLabel} onPress={props.onBundleRefresh} />
+          </View>
+          {props.errandsInFlight !== null && (
+            <Text style={styles.note}>
+              {props.errandsInFlight === 0
+                ? 'no errands out'
+                : `${props.errandsInFlight} errand${props.errandsInFlight === 1 ? '' : 's'} out to hermes`}
+            </Text>
+          )}
+          <View style={styles.row}>
             <Btn
               label={forgetArmed ? 'Wipe everything?' : 'Forget all'}
               sub={forgetArmed ? 'tap again' : 'session + memory'}
@@ -230,6 +252,14 @@ export function DevControls(props: DevControlsProps) {
               returnKeyType="send"
             />
             <Btn label="Ask" onPress={submitAsk} />
+          </View>
+
+          <Text style={styles.sectionLabel}>VISION · {props.visionAvailable ? 'camera' : 'none'}</Text>
+          {/* Runs the whole consent gate — question, mic, shutter, thumbnail —
+              without going near the model, which is the only way to exercise
+              it when the model declines to reach for the camera. */}
+          <View style={styles.row}>
+            <Btn label="Look" sub="asks first" onPress={props.onLookTest} />
           </View>
 
           <Text style={styles.sectionLabel}>SLACK</Text>
@@ -299,6 +329,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     color: '#5c625c',
     marginTop: 10,
+  },
+  /** A read-only line under a row — status, not an affordance. */
+  note: {
+    fontFamily: 'JetBrainsMono_400Regular',
+    fontSize: 9,
+    letterSpacing: 0.6,
+    color: '#5c625c',
+    marginTop: 6,
   },
   row: {
     flexDirection: 'row',

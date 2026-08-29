@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ascii27/eva/hermes/schemas/bundle.schema.json",
+  "title": "Eva context bundle",
+  "description": "The projection hermes-agent sends down to the Eva device so it can answer spoken turns without a round trip. Every section is prose written for a small model to read and speak from — no ids, no URLs, no markdown. Sections are strings or arrays of strings on purpose: the device renders and truncates them deterministically, so a shape that is easy to emit correctly beats a shape that is expressive.",
+  "type": "object",
+  "required": ["generatedAt"],
+  "additionalProperties": true,
+  "properties": {
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this bundle was assembled, ISO 8601 with a timezone. The device renders staleness from its own clock against this, so it must be honest — stamp it when the material was gathered, not when the response was written."
+    },
+    "identity": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "How Eva should be showing up right now: current mode, how to refer to people, anything about tone this particular day calls for. NOT her personality — that lives in the device's persona.ts and is not yours to set."
+    },
+    "temporal": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "timezone": { "type": "string", "description": "IANA name, e.g. America/Denver." },
+        "dayContext": { "type": "string", "description": "One short phrase: workday, weekend, travelling, holiday, on PTO." }
+      }
+    },
+    "goals": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Active goals and this week's commitments, one per entry, each carrying its own status. This is the section that lets Eva frame an answer against what he is trying to do rather than just answering it."
+    },
+    "calendar": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "next12h": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "In detail, in time order. Say times the way a person says them out loud — 'two o'clock', not '14:00'."
+        },
+        "next72h": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "In summary, one line per day."
+        }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "today": { "type": "array", "items": { "type": "string" } },
+        "overdue": { "type": "array", "items": { "type": "string" } },
+        "deferred": { "type": "array", "items": { "type": "string" }, "description": "Explicitly deferred only — things he decided to put off, not everything that isn't due." }
+      }
+    },
+    "people": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Frequent contacts with role and the open thread with each, one per entry. Nothing here is private to that person — it is read aloud in a room where anyone might be standing."
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Decisions from roughly the last week, each with its rationale. The rationale is the point — Eva re-deciding something already settled is worse than not knowing about it."
+    },
+    "openLoops": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "waitingOn": { "type": "array", "items": { "type": "string" }, "description": "Things Eva or Michael are waiting on someone else for." },
+        "owes": { "type": "array", "items": { "type": "string" }, "description": "Things Michael owes someone else." }
+      }
+    },
+    "pendingOps": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Reserved. Always empty until the device has an outbox — it will be derived from that, so Eva can honestly answer 'did that go through?'. Named now so the shape does not change later.",
+      "maxItems": 0
+    }
+  }
+}

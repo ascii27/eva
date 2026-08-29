@@ -23,8 +23,15 @@ export const ADOPTION_MAX = 20;
 export interface ProactiveItem {
   /** Slack ts of the message — the identity used to drop it if it settles an ask. */
   ts: string;
-  /** Thread root to answer into. */
-  threadTs: string;
+  /**
+   * Thread root to answer into, or null when there is nothing to answer into.
+   *
+   * Null is the honest state for anything that did not arrive over Slack — an
+   * errand answer from hermes, or the overlay's test line. Without it a
+   * follow-up on the Slack brain would be posted into a thread that does not
+   * exist, and silently go nowhere.
+   */
+  threadTs: string | null;
   /** Already flattened for speech. */
   text: string;
   at: number;
