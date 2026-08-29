@@ -11,6 +11,9 @@ import { useFonts } from 'expo-font';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAgent } from '../agent/useAgent';
+import { useRealtime } from '../realtime/useRealtime';
+import { playEarcon } from '../speech/tts';
+import { HEARD } from '../speech/earcon';
 import { useBundle, type BundleState } from '../hermes/useBundle';
 import { useErrands } from '../hermes/useErrands';
 import { DevControls } from '../controls/DevControls';
@@ -48,6 +51,23 @@ const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
 const ASIDES_ENABLED_KEY = 'eva.asidesEnabled.v1';
 const PROACTIVE_ENABLED_KEY = 'eva.proactiveEnabled.v1';
 const BRAIN_LOCAL_KEY = 'eva.brainLocal.v1';
+/** Three brains rather than two, so the old boolean key is migrated once. */
+const BRAIN_KEY = 'eva.brain.v2';
+
+/**
+ * How long a lapsed conversation keeps its realtime socket.
+ *
+ * The face reaches 'idle' only once the follow-up window has actually closed —
+ * during a follow-up it cycles pleased → listening → thinking → speaking and
+ * never touches idle — so this is a grace period on top of a conversation that
+ * is already over, not a second copy of the follow-up policy. It buys the
+ * common case where someone thinks of one more thing: a re-wake inside it
+ * reuses the live session and pays no handshake at all.
+ */
+const SOCKET_GRACE_MS = 45_000;
+
+/** Which brain answers a round. */
+type Brain = 'local' | 'realtime' | 'slack';
 
 /**
  * Single source for the Kokoro engine's user-facing wording: the transcript
@@ -99,6 +119,10 @@ export function FaceScreen() {
 
   const [mode, setMode] = useState<FaceMode>('idle');
   const [output, setOutput] = useState<MouthOutput>('mouth');
+  // Whether sound is actually coming out. The mode says 'speaking' across the
+  // gaps inside a reply too, so this is what keeps the mouth from miming
+  // through a synthesis pause or a tool call.
+  const [voicing, setVoicing] = useState(true);
   const [colOn, setColOn] = useState(true);
   const [eyeColor, setEyeColor] = useState<string>(DEFAULT_EYE_COLOR);
   const [frozen, setFrozen] = useState<VisemeKey | null>(null);
@@ -220,21 +244,32 @@ export function FaceScreen() {
     });
   }, []);
 
-  // Which brain answers: the local agent loop (default) or the remote Eva over
-  // Slack. Kept switchable so the two can be compared on the same device — and
-  // because Slack is still the only route to Eva's real tools. Persisted.
-  const [brainLocal, setBrainLocal] = useState(true);
+  // Which brain answers: the local chat loop (default), the realtime session,
+  // or the remote Eva over Slack. Kept switchable so they can be compared on
+  // the same device — and because Slack is still the only route to Eva's real
+  // tools. Persisted.
+  const [brain, setBrain] = useState<Brain>('local');
 
   useEffect(() => {
-    AsyncStorage.getItem(BRAIN_LOCAL_KEY).then((v) => {
-      if (v === '0') setBrainLocal(false);
-    });
+    void (async () => {
+      const stored = await AsyncStorage.getItem(BRAIN_KEY);
+      if (stored === 'local' || stored === 'realtime' || stored === 'slack') {
+        setBrain(stored);
+        return;
+      }
+      // Migrate the two-brain boolean once. Nothing writes it any more, so a
+      // device that has never seen the realtime brain still comes up where it
+      // was left rather than reset to the default.
+      const legacy = await AsyncStorage.getItem(BRAIN_LOCAL_KEY);
+      if (legacy === '0') setBrain('slack');
+    })();
   }, []);
 
   const toggleBrain = useCallback(() => {
-    setBrainLocal((v) => {
-      void AsyncStorage.setItem(BRAIN_LOCAL_KEY, v ? '0' : '1');
-      return !v;
+    setBrain((b) => {
+      const next: Brain = b === 'local' ? 'realtime' : b === 'realtime' ? 'slack' : 'local';
+      void AsyncStorage.setItem(BRAIN_KEY, next);
+      return next;
     });
   }, []);
 
@@ -260,10 +295,18 @@ export function FaceScreen() {
       const at = Date.now();
       log(`eva · ${line}`);
       pushProactive({ ts: `errand.${at}`, threadTs: null, text: line, at });
+      // Record it as something Eva said, so the conversation does not have a
+      // hole where she answered a question she then has no memory of asking.
+      // Only the brain that owns the session writes to it: both local brains
+      // hold a copy of the same file, and two writers would diverge.
+      if (brainRef.current === 'realtime') void realtimeRef.current.note(line);
     },
   });
 
-  const agent = useAgent({
+  // Both local brains are offered the same tools and the same memory; they
+  // differ only in how they talk to OpenAI. Sharing the handles keeps that
+  // true by construction rather than by two lists staying in step.
+  const brainOptions = {
     onIssue: log,
     onUsage: log,
     vision: vision.available
@@ -277,7 +320,13 @@ export function FaceScreen() {
     resolvePhoto: vision.resolvePhoto,
     bundleText: bundle.text,
     errands: errands.configured ? { start: errands.start } : null,
-  });
+  };
+
+  const agent = useAgent(brainOptions);
+
+  // The same round contract over a socket that only exists while someone is
+  // talking. Mounted always, dialled only on a wake and only when selected.
+  const realtime = useRealtime(brainOptions);
 
   const echo = useEcho({
     setMode,
@@ -287,17 +336,23 @@ export function FaceScreen() {
       log(`said · ${text}`);
     },
     onIssue: (message) => log(message),
+    onVoicing: setVoicing,
     // Local brain answers directly. On the Slack brain, answers to a proactive
     // message go back into its thread; anything the user starts posts at
     // channel level, as before. Undefined (unpaired, no local key) is
     // load-bearing: it drops useEcho back to the Phase-1 echo.
-    ask: brainLocal
-      ? agent.status === 'unconfigured'
-        ? undefined
-        : agent.ask
-      : slack.status === 'unpaired'
-        ? undefined
-        : (text: string) => slack.ask(text, activeThread.current ?? undefined),
+    ask:
+      brain === 'local'
+        ? agent.status === 'unconfigured'
+          ? undefined
+          : agent.ask
+        : brain === 'realtime'
+          ? realtime.status === 'unconfigured'
+            ? undefined
+            : realtime.ask
+          : slack.status === 'unpaired'
+            ? undefined
+            : (text: string) => slack.ask(text, activeThread.current ?? undefined),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -363,10 +418,25 @@ export function FaceScreen() {
     // follow-up window before its thread counts as quiet again.
     const live = exchange.current;
     if (live && live.until === null) exchange.current = { ...live, until: Date.now() + FOLLOWUP_WINDOW_MS };
-  }, [mode]);
+
+    // The conversation has actually lapsed: during a follow-up the face cycles
+    // pleased → listening → thinking → speaking and never reaches idle, so
+    // arriving here means the window closed. Let the socket go after a grace,
+    // and cancel that on the way back out — a re-wake inside it keeps the
+    // session, and with it everything already said.
+    if (brain !== 'realtime') return;
+    const timer = setTimeout(() => realtimeRef.current.disconnect(), SOCKET_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [mode, brain]);
 
   const echoRef = useRef(echo);
   echoRef.current = echo;
+  // Read by callbacks that must not re-subscribe when the brain changes — the
+  // wake handler above all, since re-creating it restarts the wake watcher.
+  const realtimeRef = useRef(realtime);
+  realtimeRef.current = realtime;
+  const brainRef = useRef(brain);
+  brainRef.current = brain;
   const devVisibleRef = useRef(false);
 
   // Every round starter — dev buttons, wake detections, and Phase 3's
@@ -412,6 +482,14 @@ export function FaceScreen() {
   const onWake = useCallback(
     (snippet: string) => {
       log(`wake · ${snippet}`);
+      // "I heard you", before anything else — the recognizer still has to tear
+      // down and restart, and that ramp-up is otherwise a second of nothing.
+      playEarcon(HEARD);
+      // Dial before the mic opens. The handshake, the session config and the
+      // seed all land while the question is still being spoken, so by the time
+      // there is anything to ask the socket is already up — which is the whole
+      // reason the realtime brain is faster to first word.
+      if (brainRef.current === 'realtime') realtimeRef.current.connect();
       startUserRound(() => void echoRef.current.listen(Date.now()));
       // Count refresh is cosmetic; skip the storage read unless the overlay
       // is showing (it re-reads on every open anyway).
@@ -498,6 +576,7 @@ export function FaceScreen() {
         mode={mode}
         eyeColor={eyeColor}
         output={output}
+        voicing={voicing}
         frozen={frozen}
         width={faceW}
         height={height}
@@ -577,10 +656,11 @@ export function FaceScreen() {
           onClearWakeLog={() => {
             void clearWakeEvents().then(() => setWakeEvents([]));
           }}
-          brainLocal={brainLocal}
+          brain={brain}
           onToggleBrain={toggleBrain}
-          agentModel={agent.model ?? 'no key'}
-          onEndSession={() => void agent.endSession()}
+          realtimeConnection={brain === 'realtime' ? realtime.connection : null}
+          agentModel={(brain === 'realtime' ? realtime.model : agent.model) ?? 'no key'}
+          onEndSession={() => void (brain === 'realtime' ? realtime.endSession() : agent.endSession())}
           visionAvailable={vision.available}
           onLookTest={() => {
             echo.cancel();
@@ -609,9 +689,9 @@ export function FaceScreen() {
             // Photos are part of what she remembers, so they go too — and
             // their cache files with them.
             vision.forgetPhotos();
-            void agent.forgetAll();
+            void (brain === 'realtime' ? realtime.forgetAll() : agent.forgetAll());
           }}
-          onCycleModel={() => void agent.cycleModel()}
+          onCycleModel={() => void (brain === 'realtime' ? realtime.cycleModel() : agent.cycleModel())}
           bundleLabel={describeBundle(bundle.configured, bundle.state)}
           onBundleRefresh={bundle.refresh}
           errandsInFlight={errands.configured ? errands.inFlight : null}

@@ -5,7 +5,8 @@ import { emptySentences, flushPending, pushText, type SentenceState } from '../r
 import { beginAside, decideAside, noteTool, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
-import { speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
+import { playEarcon, speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
+import { LIVE } from './earcon';
 import { CONSENT_QUESTION, CONSENT_RETRY, readConsent, type Consent } from '../vision/consent';
 
 const THINK_BEAT_MS = 300;
@@ -50,6 +51,13 @@ export interface EchoHandlers {
   onSaid?: (text: string) => void;
   /** Word-boundary pulse while speaking. */
   onPulse?: () => void;
+  /**
+   * Whether sound is actually audible, moment to moment, while the face is in
+   * 'speaking'. False across a synthesis gap or a tool call, true again when
+   * audio resumes — the mouth should be still whenever this is false, since
+   * the mode alone cannot tell a pause from speech.
+   */
+  onVoicing?: (voicing: boolean) => void;
   /** Human-readable failures (permissions, no on-device support, …). */
   onIssue?: (message: string) => void;
   /**
@@ -72,7 +80,18 @@ export interface EchoHandlers {
  * The speech round choreographer: listen on demand, then either echo the
  * transcript back (Phase 1, no `ask`) or ask Eva and speak her reply.
  */
-export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLatency, conversation, asides }: EchoHandlers) {
+export function useEcho({
+  setMode,
+  onHeard,
+  onSaid,
+  onPulse,
+  onVoicing,
+  onIssue,
+  ask,
+  onLatency,
+  conversation,
+  asides,
+}: EchoHandlers) {
   const active = useRef(false);
   const transcript = useRef('');
   const confidence = useRef(-1);
@@ -114,8 +133,8 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
    */
   const consent = useRef<{ finish: (answer: Consent) => void } | null>(null);
   // Live handler refs for the mount-once native event subscription.
-  const handlers = useRef({ ask, onLatency, conversation, asides });
-  handlers.current = { ask, onLatency, conversation, asides };
+  const handlers = useRef({ ask, onLatency, conversation, asides, onVoicing });
+  handlers.current = { ask, onLatency, conversation, asides, onVoicing };
 
   const clearTimer = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -215,6 +234,11 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       // Give the TTS audio session time to fully deactivate — starting the
       // recognizer mid-teardown surfaces as an "interrupted" error on iOS.
       stopSpeaking();
+      // "Go ahead." Played inside the settle window rather than after it: the
+      // recognizer is on-device and would happily transcribe our own cue.
+      // Only for a round someone woke — a follow-up reopens the mic every turn,
+      // and a beep on each one would nag rather than reassure.
+      if (wokeAt.current !== undefined) playEarcon(LIVE);
       await new Promise((r) => setTimeout(r, 300));
       if (round !== epoch.current) return { ok: false, blocker: null };
       transcript.current = '';
@@ -277,6 +301,10 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
       speak(text, {
         onStart: () => {
           if (!live()) return;
+          // The system voice has no visibility inside an utterance, and the
+          // one-shot Kokoro path plays straight through, so both are voicing
+          // for their whole duration.
+          handlers.current.onVoicing?.(true);
           setMode('speaking');
           onStarted?.();
         },
@@ -467,8 +495,16 @@ export function useEcho({ setMode, onHeard, onSaid, onPulse, onIssue, ask, onLat
         asideState.current = null;
         stopSpeaking();
         speech.current = speakStream({
+          // Sound has actually started, or resumed after a gap: the mouth may
+          // move again. Set here as well as in onFlowing because the system
+          // voice never reports flow at all, and a mouth that never opens
+          // would be a worse regression than one that flaps.
+          onFlowing: (on) => {
+            if (round === epoch.current) handlers.current.onVoicing?.(on);
+          },
           onStart: () => {
             if (round !== epoch.current) return;
+            handlers.current.onVoicing?.(true);
             setMode('speaking');
             handlers.current.onLatency?.(
               formatLatency({ ...marks, postedAt, replyAt: firstDeltaAt, spokeAt: Date.now() }),
