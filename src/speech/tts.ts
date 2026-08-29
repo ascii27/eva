@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import { getTtsStatus, initKokoro, speakStreamWithKokoro, speakWithKokoro, stopKokoro } from './kokoro';
+import type { ToneSpec } from './earcon';
 
 // v2: v1 wrongly persisted auto-picks; bumping the key discards those.
 const VOICE_KEY = 'eva.voiceId.v2';
@@ -46,6 +47,16 @@ export interface SpeakCallbacks {
   onBoundary?: (charIndex: number) => void;
   onDone?: () => void;
   onError?: (error: unknown) => void;
+  /**
+   * Whether sound is actually audible right now. Goes false across the gaps
+   * inside an utterance — synthesis falling behind, a tool running — and true
+   * again when audio resumes, so the face can still the mouth instead of
+   * miming through the silence.
+   *
+   * Kokoro only. The system voice speaks a whole utterance at once and has no
+   * visibility inside it, so it reports flowing from start to finish.
+   */
+  onFlowing?: (flowing: boolean) => void;
 }
 
 interface Utterance {
@@ -192,6 +203,9 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
     onStart: () => {
       if (isCurrent(u)) cb.onStart?.();
     },
+    onFlowing: (on) => {
+      if (isCurrent(u)) cb.onFlowing?.(on);
+    },
     onDone: () => settleUtterance(u, () => cb.onDone?.()),
     onError: (e, audioStarted) => {
       if (u.settled) return;
@@ -228,6 +242,24 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
       else stream.end();
     },
   };
+}
+
+/**
+ * Play one short wake cue.
+ *
+ * audioOut is required lazily for the same reason kokoro.ts requires it that
+ * way: importing react-native-audio-api without its native module throws, and
+ * the face has to keep running in Expo Go. No cue there, and nothing else
+ * changes — which is the right trade for a courtesy sound.
+ */
+export function playEarcon(spec: ToneSpec): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const audioOut = require('./audioOut') as typeof import('./audioOut');
+    audioOut.playCue(spec);
+  } catch {
+    // No native audio engine here; the cue is simply not played.
+  }
 }
 
 export function stopSpeaking(): void {

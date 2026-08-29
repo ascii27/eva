@@ -7,6 +7,8 @@
 // Loaded lazily from kokoro.ts only after the native availability probe —
 // importing react-native-audio-api without its native module throws.
 import { AudioContext, AudioManager } from 'react-native-audio-api';
+import { tone, type ToneSpec } from './earcon';
+import { drain, emptyJitter, offer, underrun, type JitterState } from './jitter';
 
 const KOKORO_SAMPLE_RATE = 24000;
 
@@ -52,6 +54,16 @@ export interface UtteranceCallbacks {
   onFirstAudio: () => void;
   /** All input chunks have been played to the end. */
   onDrained: () => void;
+  /**
+   * Whether sound is actually coming out right now.
+   *
+   * False while a lead is being built and whenever the queue has run dry with
+   * more still to come — which is also exactly what a tool gap looks like from
+   * here. The face reads this to still the mouth: `mode` stays 'speaking'
+   * throughout, so without it the visemes flap through every synthesis gap and
+   * through the whole of every tool call.
+   */
+  onFlowing?: (flowing: boolean) => void;
 }
 
 export interface UtteranceSink {
@@ -68,6 +80,34 @@ export interface UtteranceSink {
   stop: () => void;
 }
 
+/**
+ * Play one short generated cue — a wake acknowledgement — and return.
+ *
+ * A plain buffer source rather than the queue node an utterance uses: this is
+ * fire-and-forget, nothing waits on it, and it must never interact with the
+ * utterance lifecycle. It also deliberately does not stop anything already
+ * playing; the cues only fire when the face is idle or about to listen.
+ */
+export function playCue(spec: ToneSpec): void {
+  try {
+    const context = getContext();
+    if (context.state === 'suspended') void context.resume();
+    const pcm = tone(spec, KOKORO_SAMPLE_RATE);
+    if (pcm.length === 0) return;
+    const buffer = context.createBuffer(1, pcm.length, KOKORO_SAMPLE_RATE);
+    buffer.copyToChannel(pcm as Float32Array<ArrayBuffer>, 0);
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(context.destination);
+    source.start(0, 0);
+  } catch (e) {
+    // A cue is a courtesy: losing one must never take a round down with it.
+    // But a cue that silently never plays is indistinguishable from one that
+    // was never wired up, so say so rather than swallowing it whole.
+    if (__DEV__) console.log('[audioOut] cue failed:', e);
+  }
+}
+
 export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   const context = getContext();
   // An audio-session interruption (phone call, Siri) can leave the long-lived
@@ -80,6 +120,16 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   let inputDone = false;
   let started = false;
   let finished = false;
+  // Chunks deliberately held back to build a lead; see jitter.ts.
+  let jitter: JitterState = emptyJitter();
+  let flowing = false;
+  const openedAt = Date.now();
+
+  const setFlowing = (next: boolean) => {
+    if (next === flowing || finished) return;
+    flowing = next;
+    cb.onFlowing?.(next);
+  };
 
   // Every utterance must terminally report even if playback silently dies
   // (e.g. the context stays suspended after an interruption and bufferEnded
@@ -104,7 +154,9 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
       ? HOLD_TIMEOUT_S
       : awaitingFirstAudio
         ? FIRST_AUDIO_TIMEOUT_S
-        : remainingSeconds + 5;
+        : // Audio held back to rebuild a lead is real audio that is about to
+          // play, so it counts toward how long this may legitimately be quiet.
+          remainingSeconds + jitter.heldSeconds + 5;
     watchdog = setTimeout(
       () => {
         if (__DEV__) console.log('[audioOut] watchdog: playback stalled, forcing done');
@@ -116,6 +168,7 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
 
   const finish = (drained: boolean) => {
     if (finished) return;
+    setFlowing(false);
     finished = true;
     if (watchdog) clearTimeout(watchdog);
     try {
@@ -135,7 +188,38 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
       finish(true);
       return;
     }
+    if (pending <= 0) {
+      // The queue emptied with more still coming: synthesis has fallen behind,
+      // or a tool is running. Either way nothing is audible, and resuming on
+      // the next single chunk would only starve again a moment later.
+      if (__DEV__) console.log('[audioOut] underrun — rebuilding the lead');
+      jitter = underrun(jitter);
+      setFlowing(false);
+    }
     rearmWatchdog();
+  };
+
+  /** Hand one chunk to the player. Everything upstream of this is held back. */
+  const schedule = (chunk: Float32Array) => {
+    awaitingFirstAudio = false;
+    const buffer = context.createBuffer(1, chunk.length, KOKORO_SAMPLE_RATE);
+    buffer.copyToChannel(chunk as Float32Array<ArrayBuffer>, 0);
+    pending += 1;
+    chunkSeconds.push(buffer.duration);
+    remainingSeconds += buffer.duration;
+    node.enqueueBuffer(buffer);
+    if (!started) {
+      started = true;
+      // What the lead actually cost, so PREBUFFER_SECONDS can be tuned against
+      // the device rather than guessed at. This is the delay it adds to the
+      // first word — the price paid for not stuttering through the rest.
+      if (__DEV__) console.log(`[audioOut] lead built in ${Date.now() - openedAt}ms`);
+      // Explicit (when, offset): the library's bare start() defaults offset
+      // to -1 and then rejects it (react-native-audio-api 0.13.2 bug).
+      node.start(0, 0);
+      cb.onFirstAudio();
+    }
+    setFlowing(true);
   };
 
   // Cover the pre-playback window too: every other rearm site needs a chunk or a
@@ -145,25 +229,17 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   return {
     enqueue: (chunk) => {
       if (finished || chunk.length === 0) return;
-      // A real chunk is being scheduled: remainingSeconds is meaningful from
-      // here on, so hand the watchdog back to it.
-      awaitingFirstAudio = false;
-      const buffer = context.createBuffer(1, chunk.length, KOKORO_SAMPLE_RATE);
-      buffer.copyToChannel(chunk as Float32Array<ArrayBuffer>, 0);
-      pending += 1;
-      chunkSeconds.push(buffer.duration);
-      remainingSeconds += buffer.duration;
-      node.enqueueBuffer(buffer);
+      const r = offer(jitter, chunk, chunk.length / KOKORO_SAMPLE_RATE);
+      jitter = r.state;
+      for (const ready of r.flush) schedule(ready);
       rearmWatchdog();
-      if (!started) {
-        started = true;
-        // Explicit (when, offset): the library's bare start() defaults offset
-        // to -1 and then rejects it (react-native-audio-api 0.13.2 bug).
-        node.start(0, 0);
-        cb.onFirstAudio();
-      }
     },
     finishInput: () => {
+      // Whatever is still held plays now, however short of a lead it is: a
+      // two-word reply must not wait for audio that is never coming.
+      const r = drain(jitter);
+      jitter = r.state;
+      for (const ready of r.flush) schedule(ready);
       inputDone = true;
       // Nothing more is coming, so nothing is being waited for: a hold left
       // standing here would only stretch the stall window for no reason.

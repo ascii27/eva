@@ -65,9 +65,20 @@ export const SEQ: VisemeKey[] = [
   'DT', 'MBP', 'OO', 'AH', 'L', 'EE', 'TH', 'sil', 'OH', 'K', 'AA', 'DT', 'sil',
 ];
 
-export function pickViseme(mode: FaceMode, t: number, frozen: VisemeKey | null): VisemeKey {
+/**
+ * `voicing` is whether sound is actually coming out. It is separate from the
+ * mode because the mode cannot tell: she stays in 'speaking' across the gaps
+ * inside a reply — synthesis falling behind, a tool running — and a mouth that
+ * keeps miming through those reads as a glitch rather than as thinking.
+ */
+export function pickViseme(
+  mode: FaceMode,
+  t: number,
+  frozen: VisemeKey | null,
+  voicing = true,
+): VisemeKey {
   if (frozen) return frozen;
-  if (mode === 'speaking') return SEQ[Math.floor(t / VISEME_FRAME_MS) % SEQ.length];
+  if (mode === 'speaking') return voicing ? SEQ[Math.floor(t / VISEME_FRAME_MS) % SEQ.length] : 'sil';
   if (mode === 'alert') return 'OH';
   if (mode === 'confused') return 'K';
   return 'sil';
@@ -86,11 +97,14 @@ export function teethHeight(v: Viseme): number {
 export const TONGUE = { w: 34, h: 22, overhang: 6 };
 
 /** Waveform bar amplitude, 0..~1, ported from the design's amp(). */
-export function amp(i: number, n: number, t: number, mode: FaceMode): number {
+export function amp(i: number, n: number, t: number, mode: FaceMode, voicing = true): number {
   'worklet';
   const u = i / (n - 1);
   const mid = 1 - Math.abs(u - 0.5) * 2;
   if (mode === 'speaking') {
+    // Silent stretch inside a reply: hold the bars at the speaking floor so
+    // they stop moving without collapsing to a different resting shape.
+    if (!voicing) return 0.05;
     return Math.max(
       0.05,
       mid * (0.35 + 0.65 * Math.abs(Math.sin(t / 190 + i * 0.55) * Math.sin(t / 640 + i * 0.2))),

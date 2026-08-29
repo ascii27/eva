@@ -44,6 +44,8 @@ interface FaceProps {
   mode: FaceMode;
   eyeColor: string;
   output: MouthOutput;
+  /** Whether sound is actually audible; a still mouth when false. */
+  voicing?: boolean;
   frozen: VisemeKey | null;
   width: number;
   height: number;
@@ -68,6 +70,7 @@ export function Face({
   mode,
   eyeColor,
   output,
+  voicing = true,
   frozen,
   width,
   height,
@@ -141,10 +144,10 @@ export function Face({
         <Eye side={-1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} />
         <Eye side={1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} />
         {output === 'mouth' && (
-          <Mouth mode={mode} eyeColor={eyeColor} frozen={frozen} k={k} cx={cx} height={height} />
+          <Mouth mode={mode} eyeColor={eyeColor} frozen={frozen} voicing={voicing} k={k} cx={cx} height={height} />
         )}
         {output === 'wave' && (
-          <Waveform mode={mode} eyeColor={eyeColor} k={k} cx={cx} height={height} clock={clock} />
+          <Waveform mode={mode} eyeColor={eyeColor} voicing={voicing} k={k} cx={cx} height={height} clock={clock} />
         )}
       </Group>
     </Canvas>
@@ -207,15 +210,19 @@ interface MouthProps {
   mode: FaceMode;
   eyeColor: string;
   frozen: VisemeKey | null;
+  voicing: boolean;
   k: number;
   cx: number;
   height: number;
 }
 
-function Mouth({ mode, eyeColor, frozen, k, cx, height }: MouthProps) {
+function Mouth({ mode, eyeColor, frozen, voicing, k, cx, height }: MouthProps) {
   // Visemes hard-swap on a 112ms clock while speaking; everything else is static.
   const [tick, setTick] = useState(0);
-  const speaking = mode === 'speaking' && !frozen;
+  // Not voicing means the reply is still coming but nothing is audible — a
+  // synthesis gap, or a tool running. Dropping out of the interval closes the
+  // mouth and, just as importantly, stops the 112ms re-render while she waits.
+  const speaking = mode === 'speaking' && !frozen && voicing;
   useEffect(() => {
     if (!speaking) return;
     setTick(0);
@@ -224,7 +231,7 @@ function Mouth({ mode, eyeColor, frozen, k, cx, height }: MouthProps) {
   }, [speaking]);
 
   const smiling = isSmiling(mode, frozen);
-  const key = pickViseme(mode, tick * VISEME_FRAME_MS, frozen);
+  const key = pickViseme(mode, tick * VISEME_FRAME_MS, frozen, voicing);
   const shape = smiling ? SMILE : VIS[key];
 
   const path = useMemo(
@@ -274,6 +281,7 @@ function Mouth({ mode, eyeColor, frozen, k, cx, height }: MouthProps) {
 
 interface WaveformProps {
   mode: FaceMode;
+  voicing: boolean;
   eyeColor: string;
   k: number;
   cx: number;
@@ -281,7 +289,7 @@ interface WaveformProps {
   clock: SV<number>;
 }
 
-function Waveform({ mode, eyeColor, k, cx, height, clock }: WaveformProps) {
+function Waveform({ mode, eyeColor, voicing, k, cx, height, clock }: WaveformProps) {
   const rowW = (WAVE_BARS * WAVE_BAR_W + (WAVE_BARS - 1) * WAVE_BAR_GAP) * k;
   const cyRow = height - (WAVE_BOTTOM + WAVE_ROW_H / 2) * k;
   const x0 = cx - rowW / 2;
@@ -294,6 +302,7 @@ function Waveform({ mode, eyeColor, k, cx, height, clock }: WaveformProps) {
       cy={cyRow}
       mode={mode}
       eyeColor={eyeColor}
+      voicing={voicing}
       k={k}
       clock={clock}
     />
@@ -302,6 +311,7 @@ function Waveform({ mode, eyeColor, k, cx, height, clock }: WaveformProps) {
 }
 
 interface WaveBarProps {
+  voicing: boolean;
   i: number;
   x: number;
   cy: number;
@@ -311,9 +321,9 @@ interface WaveBarProps {
   clock: SV<number>;
 }
 
-function WaveBar({ i, x, cy, mode, eyeColor, k, clock }: WaveBarProps) {
+function WaveBar({ i, x, cy, mode, eyeColor, voicing, k, clock }: WaveBarProps) {
   const h = useDerivedValue(
-    () => (WAVE_BASE_H + amp(i, WAVE_BARS, clock.value, mode) * WAVE_AMP_H) * k,
+    () => (WAVE_BASE_H + amp(i, WAVE_BARS, clock.value, mode, voicing) * WAVE_AMP_H) * k,
     [i, mode, k],
   );
   const y = useDerivedValue(() => cy - h.value / 2, [cy]);

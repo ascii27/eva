@@ -91,3 +91,39 @@ describe('amp', () => {
     expect(mid).toBeGreaterThan(edge);
   });
 });
+
+describe('voicing', () => {
+  it('closes the mouth while speaking but silent', () => {
+    // Same instant, same mode — only whether sound is actually coming out.
+    const moving = pickViseme('speaking', 3 * VISEME_FRAME_MS, null);
+    expect(moving).not.toBe('sil');
+    expect(pickViseme('speaking', 3 * VISEME_FRAME_MS, null, false)).toBe('sil');
+  });
+
+  it('still honours a frozen viseme, which is a dev override', () => {
+    expect(pickViseme('speaking', 0, 'OH', false)).toBe('OH');
+  });
+
+  it('leaves every other mode alone — only speaking has silent gaps', () => {
+    for (const mode of ['idle', 'listening', 'thinking'] as const) {
+      expect(pickViseme(mode, 0, null, false)).toBe(pickViseme(mode, 0, null, true));
+    }
+  });
+
+  it('defaults to voicing, so existing callers are unchanged', () => {
+    expect(pickViseme('speaking', 0, null)).toBe(pickViseme('speaking', 0, null, true));
+  });
+
+  it('holds the waveform still at the speaking floor', () => {
+    const bars = [0, 3, 7];
+    for (const i of bars) {
+      const still = amp(i, 12, 1234, 'speaking', false);
+      expect(still).toBe(amp(i, 12, 9999, 'speaking', false)); // time no longer moves it
+      expect(still).toBeCloseTo(0.05);
+    }
+  });
+
+  it('lets the waveform move again once sound resumes', () => {
+    expect(amp(3, 12, 1234, 'speaking', true)).not.toBeCloseTo(0.05);
+  });
+});
