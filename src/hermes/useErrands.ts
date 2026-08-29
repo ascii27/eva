@@ -5,16 +5,22 @@
 // work happens off to the side, which is the whole point: an answer measured at
 // 88.7s cannot live inside a spoken turn, so it does not try to.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { chat } from '../agent/openai';
 import {
+  actionFailureLine,
+  actionRequest,
   canAccept,
   deliveryLine,
+  doneLine,
   errandRequest,
   failureLine,
   nextToRun,
+  unfinishedLine,
   type Errand,
+  type ErrandKind,
 } from './errands';
+import { record, settle as settleOutbox, takeUnfinished } from './outbox';
 import { envHermesConfig, hermesHeaders, SESSION_KEY } from './config';
 
 /**
@@ -76,7 +82,15 @@ export function useErrands({ onResult, onIssue }: UseErrandsOptions) {
         const res = await chat({
           apiKey: cfg.apiKey,
           model: cfg.model,
-          messages: [{ role: 'user', content: errandRequest(errand.question, errand.needsLookup) }],
+          messages: [
+            {
+              role: 'user',
+              content:
+                errand.kind === 'action'
+                  ? actionRequest(errand.question)
+                  : errandRequest(errand.question, errand.needsLookup),
+            },
+          ],
           baseUrl: cfg.baseUrl,
           // Its own transcript scope per errand, so unrelated questions minutes
           // apart do not read to hermes as one rambling conversation. The
@@ -90,19 +104,33 @@ export function useErrands({ onResult, onIssue }: UseErrandsOptions) {
         settle(errand, 'done');
         if (__DEV__) {
           console.log(
-            `[hermes] errand ${errand.id} answered in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (lookup ${errand.needsLookup})`,
+            `[hermes] ${errand.kind} ${errand.id} came back in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (lookup ${errand.needsLookup})`,
           );
         }
-        callbacks.current.onResult(deliveryLine(errand.question, answer));
+        callbacks.current.onResult(
+          errand.kind === 'action'
+            ? doneLine(errand.question, answer)
+            : deliveryLine(errand.question, answer),
+        );
       } catch (e) {
         settle(errand, 'failed');
         const why = e instanceof Error ? e.message : String(e);
-        callbacks.current.onIssue?.(`hermes · errand failed: ${why}`);
+        callbacks.current.onIssue?.(`hermes · ${errand.kind} failed: ${why}`);
         // Spoken, not swallowed. She said she would come back to him, and
         // silence is the one outcome that makes her untrustworthy rather than
         // merely unlucky.
-        callbacks.current.onResult(failureLine(errand.question));
+        //
+        // The two lines differ in what they are allowed to claim: a question
+        // that failed did not happen, while an action may have landed and
+        // completed with only the report lost, so that one says she does not
+        // know rather than that it failed.
+        callbacks.current.onResult(
+          errand.kind === 'action' ? actionFailureLine(errand.question) : failureLine(errand.question),
+        );
       } finally {
+        // Heard back either way, so there is nothing for a later launch to
+        // report. Questions were never written, and settling one is a no-op.
+        if (errand.kind === 'action') void settleOutbox(errand.id);
         clearTimeout(timer);
         pumpRef.current();
       }
@@ -130,19 +158,26 @@ export function useErrands({ onResult, onIssue }: UseErrandsOptions) {
   pumpRef.current = pump;
 
   /**
-   * Hand a question to hermes and return at once.
+   * Hand hermes either kind of errand and return at once.
    *
    * Synchronous by design — the tool that calls this must not block, or the
    * round it is inside stops being a local round. Returns null when she is
    * already carrying as many as she can, so the tool can have her decline
    * rather than promise something that will not happen.
+   *
+   * `record` is safe to fire and forget here: it writes before its first await,
+   * so a dispatch cannot outrun its own journal entry and settle it first.
    */
-  const start = useCallback(
-    (question: string, needsLookup: boolean): string | null => {
+  const enqueue = useCallback(
+    (question: string, kind: ErrandKind, needsLookup: boolean): string | null => {
       if (!config.current) return null;
       if (!canAccept(errands.current)) return null;
       const id = `${Date.now().toString(36)}-${seq.current++}`;
-      errands.current = [...errands.current, { id, question, needsLookup, startedAt: Date.now(), state: 'queued' }];
+      const sentAt = Date.now();
+      errands.current = [...errands.current, { id, question, kind, needsLookup, startedAt: sentAt, state: 'queued' }];
+      // Journalled before the pump, so a process that dies between the two
+      // still leaves the trace. Questions are not journalled at all.
+      if (kind === 'action') void record({ id, action: question, sentAt });
       publish();
       pump();
       return id;
@@ -150,11 +185,48 @@ export function useErrands({ onResult, onIssue }: UseErrandsOptions) {
     [publish, pump],
   );
 
+  /** A question: nothing changes, and a lost one costs only asking again. */
+  const start = useCallback(
+    (question: string, needsLookup: boolean): string | null => enqueue(question, 'question', needsLookup),
+    [enqueue],
+  );
+
+  /**
+   * Hand hermes something to *do* and return at once, exactly as `start` does.
+   *
+   * Always a lookup: doing the thing is the point, so there is no version of
+   * this that should run without tools.
+   */
+  const send = useCallback((action: string): string | null => enqueue(action, 'action', true), [enqueue]);
+
+  /**
+   * Actions the last process never heard back on, said once at bring-up.
+   *
+   * Runs whether or not hermes is configured now — the records were written by
+   * a process that had it, and an unreported change is unreported either way.
+   */
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const pending = await takeUnfinished();
+      if (cancelled) return;
+      const line = unfinishedLine(pending.map((p) => p.action));
+      if (line) {
+        callbacks.current.onIssue?.(`hermes · ${pending.length} action(s) unsettled from a previous run`);
+        callbacks.current.onResult(line);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return {
-    /** Whether hermes is configured at all — decides if the tool is offered. */
+    /** Whether hermes is configured at all — decides if the tools are offered. */
     configured: config.current !== null,
-    /** Queued plus running, for the overlay. */
+    /** Queued plus running, both kinds, for the overlay. */
     inFlight,
     start,
+    send,
   };
 }

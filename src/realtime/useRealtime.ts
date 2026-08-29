@@ -528,7 +528,7 @@ export function useRealtime({
           for (const { call } of out.calls) {
             const startedAt = Date.now();
             const answered = await tools.current.run(call, {
-              onConsent: opts?.onConsent ? () => gated(opts.onConsent!) : undefined,
+              onConsent: opts?.onConsent ? (q?: string) => gated(() => opts.onConsent!(q)) : undefined,
             });
             if (gen !== askGen.current) return { kind: 'error', message: 'realtime · superseded' };
             if (__DEV__) {

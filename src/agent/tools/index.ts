@@ -13,7 +13,7 @@
 
 import type { ToolCall, ToolMessage, ToolSpec } from '../openai';
 import type { Photo } from '../../vision/photos';
-import { BUSY, STARTED } from '../../hermes/errands';
+import { BUSY, DECLINED, readbackLine, SENT, STARTED } from '../../hermes/errands';
 import { formatClock } from './clock';
 import { runMemorySearch } from './memory';
 import { runSearch } from './search';
@@ -29,7 +29,7 @@ export interface VisionHandles {
   takePhoto(): Promise<{ photo: Photo } | { error: string }>;
 }
 
-/** What `ask_other_half` needs from `useErrands`, and nothing more. */
+/** What the two other-half tools need from `useErrands`, and nothing more. */
 export interface ErrandHandles {
   /**
    * Hand a question to hermes and return AT ONCE — an id, or null when she is
@@ -37,6 +37,8 @@ export interface ErrandHandles {
    * 88.7s must not be inside the round that asked for it.
    */
   start(question: string, needsLookup: boolean): string | null;
+  /** The same, for something to be done rather than found out. */
+  send(action: string): string | null;
 }
 
 export interface ToolConfig {
@@ -53,11 +55,16 @@ export interface ToolRunOptions {
   signal?: AbortSignal;
   /**
    * Ask the room out loud and wait. Absent on transports that cannot run a
-   * spoken gate — in which case the camera declines rather than firing, which
-   * is the whole guarantee. The wording belongs to the speech layer, so there
-   * is nothing to pass in.
+   * spoken gate — in which case the tool declines rather than firing, which is
+   * the whole guarantee.
+   *
+   * `question` is only the fallback for when the model emitted no preamble of
+   * its own; when it did, that already asked and this just waits for the
+   * answer. The camera omits it and gets CONSENT_QUESTION, which is fixed
+   * wording. An action cannot: what is being agreed to is the action itself, so
+   * it has to be read back.
    */
-  onConsent?: () => Promise<boolean>;
+  onConsent?: (question?: string) => Promise<boolean>;
 }
 
 /**
@@ -145,6 +152,43 @@ async function runCameraLook(
   }
 }
 
+/**
+ * Hand hermes something to do — after asking the room, when it would change
+ * something that is already there.
+ *
+ * Like the errand path this returns the moment it is dispatched; unlike it,
+ * there is a gate in front. Two details are load-bearing:
+ *
+ * - The gate is checked BEFORE anything is sent, so a refusal means nothing
+ *   happened rather than something happened and was regretted.
+ * - A missing or unreadable `changes_existing` is treated as destructive,
+ *   which is the opposite of how `needs_lookup` defaults next door. They get
+ *   the benefit of the doubt in opposite directions on purpose: a lookup Eva
+ *   didn't need costs seconds, an unasked confirmation costs a meeting.
+ */
+async function runTellOtherHalf(
+  call: ToolCall,
+  args: Record<string, unknown>,
+  errands: ErrandHandles | null,
+  onConsent: ToolRunOptions['onConsent'],
+): Promise<ToolResult> {
+  if (!errands) return error(call, 'you have no way to reach your other half from this device.');
+  const action = typeof args.action === 'string' ? args.action.trim() : '';
+  if (!action) return error(call, 'tell_other_half needs to know what to do.');
+
+  if (args.changes_existing !== false) {
+    // No gate available means no way to ask, and unasked is not allowed —
+    // the same guarantee the camera makes, for the same reason.
+    if (!onConsent) {
+      return error(call, 'you cannot ask him to confirm a change like this one right now, so do not send it.');
+    }
+    if (!(await onConsent(readbackLine(action)))) return answer(call, DECLINED);
+  }
+
+  const id = errands.send(action);
+  return answer(call, id ? SENT : BUSY);
+}
+
 export function buildToolKit({ tavilyKey, vision, errands }: ToolConfig): ToolKit {
   const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null, errands !== null);
 
@@ -173,6 +217,9 @@ export function buildToolKit({ tavilyKey, vision, errands }: ToolConfig): ToolKi
 
         case 'camera_look':
           return runCameraLook(call, vision, opts?.onConsent);
+
+        case 'tell_other_half':
+          return runTellOtherHalf(call, args, errands, opts?.onConsent);
 
         case 'ask_other_half': {
           if (!errands) return error(call, 'you have no way to reach your other half from this device.');

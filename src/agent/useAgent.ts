@@ -379,7 +379,7 @@ export function useAgent({ onIssue, onUsage, vision = null, errands = null, reso
             const startedAt = Date.now();
             const answered = await tools.current.run(call, {
               signal: controller.signal,
-              onConsent: opts?.onConsent ? () => gated(opts.onConsent!) : undefined,
+              onConsent: opts?.onConsent ? (q?: string) => gated(() => opts.onConsent!(q)) : undefined,
             });
             if (__DEV__) {
               // The gap this prints is the one the speech hold has to cover.

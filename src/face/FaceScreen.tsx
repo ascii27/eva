@@ -319,7 +319,7 @@ export function FaceScreen() {
       : null,
     resolvePhoto: vision.resolvePhoto,
     bundleText: bundle.text,
-    errands: errands.configured ? { start: errands.start } : null,
+    errands: errands.configured ? { start: errands.start, send: errands.send } : null,
   };
 
   const agent = useAgent(brainOptions);
