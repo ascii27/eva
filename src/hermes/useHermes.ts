@@ -36,6 +36,7 @@ import { SESSION_GAP_MS } from '../agent/history';
 import { chatStream, type ChatUsage, formatUsage } from '../agent/openai';
 import { addSpend, emptySpend, formatSpend, type Spend } from '../agent/spend';
 import { brainSessionId, envHermesConfig, type HermesConfig, hermesHeaders } from './config';
+import { DESK_PREAMBLE } from './prompt';
 import { startedTools } from './progress';
 
 /**
@@ -148,8 +149,13 @@ export function useHermes({ onIssue, onUsage }: UseHermesOptions = {}) {
       const res = await chatStream({
         apiKey: cfg.apiKey,
         model: cfg.model,
-        // One message. The transcript lives on the server, keyed by the header.
-        messages: [{ role: 'user', content: text }],
+        // Two messages: which door this is, and what he said. The transcript
+        // itself lives on the server, keyed by the header. See DESK_PREAMBLE
+        // for why it rides every turn rather than seeding the session once.
+        messages: [
+          { role: 'system', content: DESK_PREAMBLE },
+          { role: 'user', content: text },
+        ],
         baseUrl: cfg.baseUrl,
         headers: hermesHeaders(sessionId),
         signal: controller.signal,

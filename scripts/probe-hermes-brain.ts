@@ -68,13 +68,42 @@
 // another one and unfixable from the client because the tool is server-side.
 // And X-Hermes-Session-Id really does hold history — case 2 recalled case 1's
 // question with an empty messages array, so history.ts would be vestigial here.
+//
+// ── MEASURED 2026-10-02, DESK_PREAMBLE (cases 6-8)
+//
+// Telling hermes it is speaking through the desk, and asking it to keep talking
+// while it works, DOES NOT produce interim speech on this transport. Measured
+// three times at increasing length, every one a single burst:
+//
+//   6 · calendar, preamble     first word  9,628 / 11,449ms   1 burst
+//   7 · memory, preamble       first word  4,028ms            1 burst
+//   8 · long multi-tool        first word 22,119ms            1 burst
+//       (8 tool calls, 16 progress frames, 20,219ms of silence to cover)
+//
+// PROBE_RAW=1 shows why: the wire carries hermes.tool.progress frames and the
+// final answer, and nothing else. hermes' interim commentary is real and on by
+// default (`display.interim_assistant_messages`), but it only materialises on
+// the surfaces with an explicit event for it — `"phase": "commentary"` on
+// /v1/responses, `assistant.commentary` on /api/sessions/*/chat/stream,
+// `message.interim` on /v1/runs/*/events. Chat completions has no such event,
+// so there is nothing for a prompt to switch on. Do not re-argue this from the
+// prompt side; it is a transport limit.
+//
+// Answer length barely moved, so don't claim the ear rules fixed it either:
+// calendar 188 → 158 chars, memory 325 → 307. Within noise.
+//
+// What the same runs DO show is the material for device-side narration. The
+// progress frames arrive live from 1,900ms and carry a human-readable `label`:
+// "google-workspace", "todoist", "date -Is", "Todoist find tasks current today
+// overdue; calendar list events". Nine distinct moments across case 8's 22
+// seconds. If Eva is to say small things while hermes works, that is where they
+// come from — the device, not the model.
 
 import { readFileSync } from 'node:fs';
 import { envHermesConfig, hermesHeaders } from '../src/hermes/config.ts';
-import { PERSONA } from '../src/agent/persona.ts';
-import { appendTurn, buildRequest, newSession } from '../src/agent/history.ts';
 import { emptySse, parseSse, type SseEvent, type SseState } from '../src/agent/sse.ts';
 import { startedTools } from '../src/hermes/progress.ts';
+import { DESK_PREAMBLE } from '../src/hermes/prompt.ts';
 // Type-only: openai.ts cannot be imported at runtime from node, because its
 // own `./sse` import is extensionless and node's ESM resolver will not follow
 // it. Types are erased, so they cost nothing. formatUsage is three lines and is
@@ -158,6 +187,8 @@ interface Turnout {
   started: string[];
   /** When the first tool was reported, i.e. when the gap's cover can start. */
   firstToolMs: number | null;
+  /** Every content delta with its arrival time, so bursts can be separated. */
+  timeline: { at: number; text: string }[];
   status: number;
   error: string | null;
 }
@@ -174,9 +205,16 @@ async function streamTurn(opts: {
   question: string;
   sessionId: string;
   tools?: ToolSpec[];
+  /** Send DESK_PREAMBLE, exactly as the shipped brain does. */
+  preamble?: boolean;
 }): Promise<Turnout> {
-  const session = appendTurn(newSession(Date.now()), { role: 'user', content: opts.question }, Date.now());
-  const messages = buildRequest(PERSONA, [], session);
+  // Exactly what useHermes sends — no persona and no history, because hermes
+  // brings its own and holds the transcript server-side. The probe drives the
+  // shipped shape so it cannot keep passing after the brain drifts.
+  const messages = [
+    ...(opts.preamble ? [{ role: 'system', content: DESK_PREAMBLE }] : []),
+    { role: 'user', content: opts.question },
+  ];
 
   const frames: Frames = { comments: 0, events: [], reasoning: 0, offShape: 0, dataFrames: 0, first: null };
   const out: Turnout = {
@@ -191,6 +229,7 @@ async function streamTurn(opts: {
     frames,
     started: [],
     firstToolMs: null,
+    timeline: [],
     status: 0,
     error: null,
   };
@@ -274,6 +313,7 @@ async function streamTurn(opts: {
       const step = parseSse(state, incoming);
       state = step.state;
       if (step.chunk.deltas.length && out.firstDeltaMs === null) out.firstDeltaMs = Date.now() - startedAt;
+      for (const d of step.chunk.deltas) out.timeline.push({ at: Date.now() - startedAt, text: d });
       out.text += step.chunk.deltas.join('');
       if (step.chunk.usage) out.usage = step.chunk.usage;
       if (step.chunk.toolCalls.length) out.toolCalls = step.chunk.toolCalls;
@@ -311,6 +351,26 @@ function report(t: Turnout): void {
     `   wire: ${f.dataFrames} data, ${f.comments} comment, ${f.reasoning} reasoning, ` +
       `${f.offShape} not-chat-shaped${f.events.length ? `, events[${f.events.join(' ')}]` : ''}`,
   );
+  // Anything separated by a real pause is a separate thing said out loud. That
+  // is the whole question here: one burst means she was silent until the answer.
+  const BURST_GAP_MS = 2_000;
+  // Gap measured from the PREVIOUS DELTA, not from the burst's start — a long
+  // answer streaming slowly is one burst, not several.
+  const bursts: { at: number; lastAt: number; text: string }[] = [];
+  for (const d of t.timeline) {
+    const last = bursts[bursts.length - 1];
+    if (!last || d.at - last.lastAt > BURST_GAP_MS) bursts.push({ at: d.at, lastAt: d.at, text: d.text });
+    else {
+      last.text += d.text;
+      last.lastAt = d.at;
+    }
+  }
+  if (bursts.length > 1) {
+    console.log(`   ${bursts.length} bursts — she talked through the gap:`);
+    for (const b of bursts) console.log(`      ${ms(b.at).padStart(9)}  ${b.text.trim().slice(0, 90)}`);
+  } else if (bursts.length === 1) {
+    console.log(`   1 burst at ${ms(bursts[0].at)} — silent until the answer`);
+  }
   if (t.started.length) {
     const cover = t.firstToolMs === null ? '?' : ms(t.firstToolMs);
     const gap = t.firstDeltaMs === null ? '?' : ms(t.firstDeltaMs - (t.firstToolMs ?? 0));
@@ -393,6 +453,47 @@ const CASES: { n: number; run: () => Promise<Turnout> }[] = [
       }),
   },
 ];
+
+CASES.push(
+  {
+    // Does DESK_PREAMBLE actually change behaviour on this transport? Compare
+    // against case 4: same question, 8,796ms of unbroken silence.
+    n: 6,
+    run: () =>
+      streamTurn({
+        label: '6 · calendar WITH preamble',
+        question: 'What is on my calendar for the rest of today?',
+        sessionId: `${RUN}-pre-calendar`,
+        preamble: true,
+      }),
+  },
+  {
+    // The worst case measured: 16,349ms silent on case 3.
+    n: 7,
+    run: () =>
+      streamTurn({
+        label: '7 · memory WITH preamble',
+        question: 'What do you remember about what I am working on?',
+        sessionId: `${RUN}-pre-memory`,
+        preamble: true,
+      }),
+  },
+);
+
+CASES.push({
+  // The fairest test of the preamble's "keep talking" paragraph: a task long
+  // enough that staying silent through it is obviously wrong. If interim
+  // commentary ever reaches chat completions, it reaches it here.
+  n: 8,
+  run: () =>
+    streamTurn({
+      label: '8 · long multi-tool WITH preamble',
+      question:
+        'Look at my calendar and my tasks, then tell me what I should focus on for the rest of the afternoon.',
+      sessionId: `${RUN}-pre-long`,
+      preamble: true,
+    }),
+});
 
 const picked = process.argv.slice(2).map(Number).filter((n) => !Number.isNaN(n));
 const cases = picked.length ? CASES.filter((c) => picked.includes(c.n)) : CASES;
