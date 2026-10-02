@@ -224,3 +224,68 @@ describe('parseSse tool calls', () => {
     expect(parseSse(emptySse(), raw + finishFrame('tool_calls')).chunk.toolCalls).toEqual([]);
   });
 });
+
+/**
+ * Named events — the shape hermes-agent's API server adds to an otherwise
+ * OpenAI-compatible stream. Measured payloads, verbatim from
+ * `PROBE_RAW=1 npm run probe:brain -- 5`:
+ *
+ *   event: hermes.tool.progress
+ *   data: {"tool":"terminal","label":"date …","toolCallId":"call_x","status":"running"}
+ *   event: hermes.tool.progress
+ *   data: {"tool":"terminal","toolCallId":"call_x","status":"completed"}
+ *
+ * Until now these sailed past the `data:` guard and were parsed as chat frames.
+ * Harmless, because they carry no `choices` — but only by luck, and the reply
+ * needs them to drive onToolStart rather than be discarded.
+ */
+describe('parseSse, named events', () => {
+  const progress = (body: Record<string, unknown>) =>
+    `event: hermes.tool.progress\ndata: ${JSON.stringify(body)}\n\n`;
+
+  it('surfaces a named event’s payload instead of reading it as a chat frame', () => {
+    const raw = progress({ tool: 'terminal', toolCallId: 'call_x', status: 'running' });
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.events).toEqual([
+      { name: 'hermes.tool.progress', data: JSON.stringify({ tool: 'terminal', toolCallId: 'call_x', status: 'running' }) },
+    ]);
+    expect(chunk.deltas).toEqual([]);
+  });
+
+  it('keeps the reply flowing around a named event', () => {
+    const raw = frame('Let me ') + progress({ tool: 'terminal', status: 'running' }) + frame('check.');
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.deltas).toEqual(['Let me ', 'check.']);
+    expect(chunk.events).toHaveLength(1);
+  });
+
+  it('attributes a data frame split from its event line across two reads', () => {
+    // The reader hands us whatever arrived; an `event:` line can be the last
+    // complete line of one read and its payload the first of the next.
+    const first = parseSse(emptySse(), 'event: hermes.tool.progress\n');
+    expect(first.chunk.events).toEqual([]);
+    const second = parseSse(first.state, `data: ${JSON.stringify({ status: 'running' })}\n\n`);
+    expect(second.chunk.events).toEqual([{ name: 'hermes.tool.progress', data: '{"status":"running"}' }]);
+  });
+
+  it('scopes the event name to one frame, so the next data line is chat again', () => {
+    const raw = progress({ status: 'running' }) + frame('Hello');
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.deltas).toEqual(['Hello']);
+    expect(chunk.events).toHaveLength(1);
+  });
+
+  it('treats `event: message` as no event at all, since that is the SSE default', () => {
+    // Some OpenAI-compatible servers label every chat frame this way. Diverting
+    // it would mute the reply rather than error.
+    const raw = `event: message\n${frame('Hello')}`;
+    const { chunk } = parseSse(emptySse(), raw);
+    expect(chunk.deltas).toEqual(['Hello']);
+    expect(chunk.events).toEqual([]);
+  });
+
+  it('reports no events on an ordinary OpenAI stream', () => {
+    const { chunk } = parseSse(emptySse(), frame('Hi') + finishFrame('stop'));
+    expect(chunk.events).toEqual([]);
+  });
+});
