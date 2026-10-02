@@ -40,11 +40,13 @@
 // gap on cases 3 and 4 — no preamble, so TOOL_LINES would have to cover 8–16s
 // of silence off hermes.tool.progress.
 //
-// Cost, and this is the finding that bites: 20,570 input tokens for a
-// one-sentence hello, 87,432 for the memory question, 115,269 for the calendar
-// one — at a 0% cache hit rate, every single turn. history.ts's whole
-// most-stable-first layout exists to earn that discount; hermes earns none of
-// it, because the prefix it bills for is its own, not ours.
+// Tokens: 20,570 input for a one-sentence hello, 87,432 for the memory
+// question, 115,269 for the calendar one — at a 0% cache hit rate, every turn.
+// Read these as LATENCY, not cost. hermes runs on Michael's OpenAI
+// subscription rather than a per-token key, so none of it is billed; the ~20k
+// uncached prefix is simply why a turn starts at ~2.1s instead of sub-second.
+// history.ts's most-stable-first layout earns nothing here — but it is not
+// pointless, because it still earns the discount on Eva's own metered key.
 //
 // sse.ts survives unmodified. All three documented hazards were already handled
 // by the `startsWith('data:')` guard at sse.ts:63: zero reasoning_content
