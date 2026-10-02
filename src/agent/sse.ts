@@ -16,9 +16,26 @@ interface PartialCall {
   args: string;
 }
 
+/**
+ * A `data:` frame that arrived under a named `event:` line rather than as part
+ * of the chat stream. OpenAI never sends these; hermes-agent's API server uses
+ * them for `hermes.tool.progress`, which is how a hermes round learns a tool
+ * started. Kept as the raw payload — framing is this module's job, and what the
+ * payload *means* is the sender's business (see src/hermes/progress.ts).
+ */
+export interface SseEvent {
+  name: string;
+  data: string;
+}
+
 export interface SseState {
   /** Text after the last complete line — a frame we have not fully received. */
   buffer: string;
+  /**
+   * Name from the most recent `event:` line, waiting for the `data:` line it
+   * labels. Carried in state because the two can land in different reads.
+   */
+  event: string | null;
   /**
    * Tool calls under construction, keyed by the `index` the API assigns them.
    * A call is only complete once the stream says it has finished, so these
@@ -36,10 +53,12 @@ export interface SseChunk {
    * finish. Empty on every other read — a half-built call is not a call.
    */
   toolCalls: ToolCall[];
+  /** Named-event payloads from this read; always empty on an OpenAI stream. */
+  events: SseEvent[];
 }
 
 export function emptySse(): SseState {
-  return { buffer: '', tools: {} };
+  return { buffer: '', event: null, tools: {} };
 }
 
 export function parseSse(state: SseState, incoming: string): { state: SseState; chunk: SseChunk } {
@@ -49,8 +68,11 @@ export function parseSse(state: SseState, incoming: string): { state: SseState; 
   const buffer = lines.pop() ?? '';
 
   const deltas: string[] = [];
+  const events: SseEvent[] = [];
   let usage: ChatUsage | null = null;
   let done = false;
+  // Pending `event:` name, resumed from the previous read.
+  let event = state.event;
   // Copied rather than mutated in place: parseSse is pure, and its state is
   // threaded through the XHR reader one read at a time.
   const tools: Record<number, PartialCall> = { ...state.tools };
@@ -60,8 +82,24 @@ export function parseSse(state: SseState, incoming: string): { state: SseState; 
 
   for (const raw of lines) {
     const line = raw.trim(); // also strips the \r of a CRLF stream
-    if (!line.startsWith('data:')) continue; // blank separators, ': ' comments, 'event:' lines
+    if (line.startsWith('event:')) {
+      const name = line.slice(6).trim();
+      // `message` is the SSE default event type, i.e. the same as no event line
+      // at all. Diverting it would mute the reply of any OpenAI-compatible
+      // server that labels its chat frames — silently, which is the worst way.
+      event = name === 'message' ? null : name;
+      continue;
+    }
+    if (!line.startsWith('data:')) continue; // blank separators and ': ' keepalive comments
     const payload = line.slice(5).trim();
+    // A payload under a named event is not a chat frame. Today hermes' progress
+    // frames carry no `choices` and would no-op anyway, but that is luck rather
+    // than contract, and the round needs them rather than discards them.
+    if (event !== null) {
+      events.push({ name: event, data: payload });
+      event = null;
+      continue;
+    }
     if (payload === '[DONE]') {
       done = true;
       finished = true;
@@ -107,8 +145,8 @@ export function parseSse(state: SseState, incoming: string): { state: SseState; 
   // follows it don't dispatch the same tool twice.
   const toolCalls = finished ? drain(tools) : [];
   return {
-    state: { buffer, tools: finished ? {} : tools },
-    chunk: { deltas, usage, done, toolCalls },
+    state: { buffer, event, tools: finished ? {} : tools },
+    chunk: { deltas, usage, done, toolCalls, events },
   };
 }
 

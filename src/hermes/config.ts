@@ -41,6 +41,25 @@ export const SESSION_KEY = 'eva-device';
  */
 export const BUNDLE_SESSION_ID = 'eva-bundle';
 
+/**
+ * Transcript scope for one spoken session on the hermes brain.
+ *
+ * Distinct from both of the above on purpose. The bundle's scope is machinery,
+ * and SESSION_KEY is the long-term memory scope that deliberately spans every
+ * session — the server keys *history* on this one, so it has to turn over when
+ * a session does and stay put while one is running. A new id mid-conversation
+ * is Eva forgetting the previous turn, because on this brain the device sends
+ * no history of its own and the server's copy is the only copy.
+ */
+export function brainSessionId(startedAt: number): string {
+  // The stamp mirrors history.ts's sessionId and is deliberately NOT imported
+  // from it. A runtime import here is extensionless, which node's ESM resolver
+  // will not follow, and every probe in scripts/ reaches envHermesConfig()
+  // through this file. One line of duplication buys seven working probes.
+  const stamp = new Date(startedAt).toISOString().slice(0, 19).replace(/:/g, '-');
+  return `${SESSION_KEY}-desk-${stamp}`;
+}
+
 export function hermesHeaders(sessionId: string): Record<string, string> {
   return { 'X-Hermes-Session-Key': SESSION_KEY, 'X-Hermes-Session-Id': sessionId };
 }

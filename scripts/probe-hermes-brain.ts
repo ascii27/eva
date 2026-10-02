@@ -218,6 +218,8 @@ async function streamTurn(opts: {
 
     let state: SseState = emptySse();
     let tail = '';
+    /** Name from the most recent `event:` line, so its data frame can be attributed. */
+    let named: string | null = null;
     const decoder = new TextDecoder();
     for await (const bytes of res.body as unknown as AsyncIterable<Uint8Array>) {
       const incoming = decoder.decode(bytes, { stream: true });
@@ -233,6 +235,8 @@ async function streamTurn(opts: {
         if (line.startsWith('event:')) {
           const name = line.slice(6).trim();
           if (!frames.events.includes(name)) frames.events.push(name);
+          if (process.env.PROBE_RAW) console.log(`      [raw] ${line}`);
+          named = name;
         } else if (line.startsWith(':')) {
           frames.comments += 1;
         } else if (line.startsWith('data:')) {
@@ -240,6 +244,10 @@ async function streamTurn(opts: {
           if (payload === '[DONE]') continue;
           frames.dataFrames += 1;
           if (frames.first === null) frames.first = payload.slice(0, 400);
+          // The payload a named event carries is the thing onToolStart has to
+          // read, and it is not in the docs. Dump it rather than guess.
+          if (process.env.PROBE_RAW && named) console.log(`      [raw] ${named} → ${payload.slice(0, 300)}`);
+          named = null;
           try {
             const frame = JSON.parse(payload) as {
               choices?: { delta?: { reasoning_content?: unknown } }[];
