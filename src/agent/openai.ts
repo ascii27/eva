@@ -7,7 +7,7 @@
 // is the whole transport story for the bridge — there is no second HTTP layer.
 
 import type { ChatMessage } from './history';
-import { emptySse, parseSse } from './sse';
+import { emptySse, parseSse, type SseEvent } from './sse';
 
 export const OPENAI_BASE = 'https://api.openai.com/v1';
 
@@ -176,6 +176,13 @@ const MANAGED_HEADERS = new Set(['authorization', 'content-type', 'accept']);
 export interface ChatStreamOptions extends ChatOptions {
   /** Called with each content delta as it arrives, in order. */
   onDelta: (text: string) => void;
+  /**
+   * Called with any named-event payloads from a read, as they arrive. OpenAI
+   * never sends these and never calls this; hermes-agent's API server narrates
+   * its server-side tool runs with them, and on that brain they are the only
+   * warning a round gets before a silent gap. See src/hermes/progress.ts.
+   */
+  onEvent?: (events: SseEvent[]) => void;
 }
 
 /**
@@ -198,6 +205,7 @@ export function chatStream({
   baseUrl = OPENAI_BASE,
   headers,
   onDelta,
+  onEvent,
 }: ChatStreamOptions): Promise<ChatReply> {
   return new Promise<ChatReply>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -226,6 +234,16 @@ export function chatStream({
       // Emitted on exactly one read (the one that sees the stream finish), so
       // this assigns rather than appends.
       if (r.chunk.toolCalls.length) toolCalls = r.chunk.toolCalls;
+      // Before the deltas: a progress frame and the content after it can share
+      // one read, and the hold has to be in place before that content speaks.
+      if (r.chunk.events.length && onEvent) {
+        try {
+          onEvent(r.chunk.events);
+        } catch {
+          // Same reason as onDelta below — a throw here escapes the XHR handler
+          // before finish() and leaves the promise permanently unsettled.
+        }
+      }
       for (const delta of r.chunk.deltas) {
         text += delta;
         try {

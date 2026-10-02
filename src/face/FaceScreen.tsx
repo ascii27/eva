@@ -15,6 +15,7 @@ import { useRealtime } from '../realtime/useRealtime';
 import { playEarcon } from '../speech/tts';
 import { HEARD } from '../speech/earcon';
 import { useBundle, type BundleState } from '../hermes/useBundle';
+import { useHermes } from '../hermes/useHermes';
 import { useErrands } from '../hermes/useErrands';
 import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
@@ -51,7 +52,7 @@ const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
 const ASIDES_ENABLED_KEY = 'eva.asidesEnabled.v1';
 const PROACTIVE_ENABLED_KEY = 'eva.proactiveEnabled.v1';
 const BRAIN_LOCAL_KEY = 'eva.brainLocal.v1';
-/** Three brains rather than two, so the old boolean key is migrated once. */
+/** More than two brains, so the old boolean key is migrated once. */
 const BRAIN_KEY = 'eva.brain.v2';
 
 /**
@@ -67,7 +68,7 @@ const BRAIN_KEY = 'eva.brain.v2';
 const SOCKET_GRACE_MS = 45_000;
 
 /** Which brain answers a round. */
-type Brain = 'local' | 'realtime' | 'slack';
+type Brain = 'local' | 'realtime' | 'hermes' | 'slack';
 
 /**
  * Single source for the Kokoro engine's user-facing wording: the transcript
@@ -253,7 +254,7 @@ export function FaceScreen() {
   useEffect(() => {
     void (async () => {
       const stored = await AsyncStorage.getItem(BRAIN_KEY);
-      if (stored === 'local' || stored === 'realtime' || stored === 'slack') {
+      if (stored === 'local' || stored === 'realtime' || stored === 'hermes' || stored === 'slack') {
         setBrain(stored);
         return;
       }
@@ -267,7 +268,8 @@ export function FaceScreen() {
 
   const toggleBrain = useCallback(() => {
     setBrain((b) => {
-      const next: Brain = b === 'local' ? 'realtime' : b === 'realtime' ? 'slack' : 'local';
+      const next: Brain =
+        b === 'local' ? 'realtime' : b === 'realtime' ? 'hermes' : b === 'hermes' ? 'slack' : 'local';
       void AsyncStorage.setItem(BRAIN_KEY, next);
       return next;
     });
@@ -328,6 +330,20 @@ export function FaceScreen() {
   // talking. Mounted always, dialled only on a wake and only when selected.
   const realtime = useRealtime(brainOptions);
 
+  // Eva's other half answering the spoken turn herself. Takes the same options
+  // object and uses almost none of it: no client tools means no vision, no
+  // errands and no photos, and hermes is where a bundle comes from rather than
+  // something it reads. See useHermes for why each absence is measured.
+  const hermesBrain = useHermes(brainOptions);
+
+  /**
+   * Handles of whichever brain is selected. All of them return the same shape,
+   * so the overlay's buttons read from one place instead of a ternary each —
+   * which is also what keeps a fourth brain from needing a fifth edit.
+   * Slack has no session or model of its own and shares the agent's.
+   */
+  const selected = brain === 'realtime' ? realtime : brain === 'hermes' ? hermesBrain : agent;
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -350,9 +366,13 @@ export function FaceScreen() {
           ? realtime.status === 'unconfigured'
             ? undefined
             : realtime.ask
-          : slack.status === 'unpaired'
-            ? undefined
-            : (text: string) => slack.ask(text, activeThread.current ?? undefined),
+          : brain === 'hermes'
+            ? hermesBrain.status === 'unconfigured'
+              ? undefined
+              : hermesBrain.ask
+            : slack.status === 'unpaired'
+              ? undefined
+              : (text: string) => slack.ask(text, activeThread.current ?? undefined),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -659,8 +679,8 @@ export function FaceScreen() {
           brain={brain}
           onToggleBrain={toggleBrain}
           realtimeConnection={brain === 'realtime' ? realtime.connection : null}
-          agentModel={(brain === 'realtime' ? realtime.model : agent.model) ?? 'no key'}
-          onEndSession={() => void (brain === 'realtime' ? realtime.endSession() : agent.endSession())}
+          agentModel={selected.model ?? 'no key'}
+          onEndSession={() => void selected.endSession()}
           visionAvailable={vision.available}
           onLookTest={() => {
             echo.cancel();
@@ -689,9 +709,9 @@ export function FaceScreen() {
             // Photos are part of what she remembers, so they go too — and
             // their cache files with them.
             vision.forgetPhotos();
-            void (brain === 'realtime' ? realtime.forgetAll() : agent.forgetAll());
+            void selected.forgetAll();
           }}
-          onCycleModel={() => void (brain === 'realtime' ? realtime.cycleModel() : agent.cycleModel())}
+          onCycleModel={() => void selected.cycleModel()}
           bundleLabel={describeBundle(bundle.configured, bundle.state)}
           onBundleRefresh={bundle.refresh}
           errandsInFlight={errands.configured ? errands.inFlight : null}

@@ -11,6 +11,14 @@ import { hhmm } from '../util/time';
 
 const WAKE_LOG_SHOWN = 30;
 
+/** Button face per brain. A table rather than a nest of ternaries. */
+const BRAIN_LABELS: Record<'local' | 'realtime' | 'hermes' | 'slack', string> = {
+  local: 'Local',
+  realtime: 'Realtime',
+  hermes: 'Hermes',
+  slack: 'Slack',
+};
+
 const MODES: Array<{ id: FaceMode; label: string; trigger: string }> = [
   { id: 'idle', label: 'Idle', trigger: 'default' },
   { id: 'listening', label: 'Listening', trigger: 'wake word' },
@@ -57,10 +65,13 @@ interface DevControlsProps {
   onSlackReconnect: () => void;
   /** Typed question → full Eva round trip (the simulator path — no STT needed). */
   onAsk: (text: string) => void;
-  /** Which brain answers: the local agent loop, or the remote Eva over Slack. */
-  brain: 'local' | 'realtime' | 'slack';
+  /**
+   * Which brain answers: the local agent loop, the realtime socket, hermes
+   * answering the spoken turn directly, or the remote Eva over Slack.
+   */
+  brain: 'local' | 'realtime' | 'hermes' | 'slack';
   onToggleBrain: () => void;
-  /** Live socket state on the realtime brain; null on the other two. */
+  /** Live socket state on the realtime brain; null on the others. */
   realtimeConnection: 'closed' | 'connecting' | 'open' | null;
   /** Active local model id, or why there isn't one. */
   agentModel: string;
@@ -203,7 +214,7 @@ export function DevControls(props: DevControlsProps) {
           </Text>
           <View style={styles.row}>
             <Btn
-              label={props.brain === 'local' ? 'Local' : props.brain === 'realtime' ? 'Realtime' : 'Slack'}
+              label={BRAIN_LABELS[props.brain]}
               sub="tap to switch"
               active={props.brain !== 'slack'}
               onPress={props.onToggleBrain}

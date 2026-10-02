@@ -226,3 +226,85 @@ describe('chatStream', () => {
     });
   });
 });
+
+/**
+ * Named events on the stream. OpenAI never sends them; hermes-agent's API
+ * server narrates its server-side tool runs with `hermes.tool.progress`, and on
+ * that brain the model streams no preamble before a tool — so this callback is
+ * the only warning a round gets before 8-16s of silence.
+ */
+describe('chatStream, named events', () => {
+  const original = global.XMLHttpRequest;
+
+  beforeEach(() => {
+    FakeXhr.last = null;
+    (global as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXhr;
+  });
+
+  afterEach(() => {
+    (global as { XMLHttpRequest: unknown }).XMLHttpRequest = original;
+  });
+
+  const progressFrame = (body: Record<string, unknown>) =>
+    `event: hermes.tool.progress\ndata: ${JSON.stringify(body)}\n\n`;
+
+  const startWithEvents = (onEvent?: (events: { name: string; data: string }[]) => void) => {
+    const deltas: string[] = [];
+    const promise = chatStream({
+      apiKey: 'sk-test',
+      model: 'hermes-agent',
+      messages: [{ role: 'user', content: 'what time is it' }],
+      onDelta: (d) => deltas.push(d),
+      onEvent,
+    });
+    const xhr = FakeXhr.last;
+    if (!xhr) throw new Error('chatStream did not open a request');
+    return { promise, xhr, deltas };
+  };
+
+  it('hands a named event to onEvent as it arrives', async () => {
+    const seen: { name: string; data: string }[][] = [];
+    const { promise, xhr, deltas } = startWithEvents((e) => seen.push(e));
+
+    xhr.emit(progressFrame({ tool: 'terminal', status: 'running' }));
+    expect(seen).toEqual([[{ name: 'hermes.tool.progress', data: '{"tool":"terminal","status":"running"}' }]]);
+    // The point of arriving early: nothing has been spoken yet.
+    expect(deltas).toEqual([]);
+
+    xhr.emit(contentFrame('Half past two.') + finishFrame('stop'));
+    xhr.finish();
+    await expect(promise).resolves.toMatchObject({ text: 'Half past two.' });
+  });
+
+  it('is not called at all on an ordinary OpenAI stream', async () => {
+    let calls = 0;
+    const { promise, xhr } = startWithEvents(() => {
+      calls += 1;
+    });
+    xhr.emit(contentFrame('Hi') + finishFrame('stop'));
+    xhr.finish();
+    await promise;
+    expect(calls).toBe(0);
+  });
+
+  it('settles the reply even when onEvent throws', async () => {
+    // Same guard onDelta already has: a bad consumer must not be able to leave
+    // the promise pending forever, which would wedge the face in `thinking`
+    // and leave the wake watcher suspended.
+    const { promise, xhr } = startWithEvents(() => {
+      throw new Error('consumer blew up');
+    });
+    xhr.emit(progressFrame({ tool: 'terminal', status: 'running' }));
+    xhr.emit(contentFrame('ok') + finishFrame('stop'));
+    xhr.finish();
+    await expect(promise).resolves.toMatchObject({ text: 'ok' });
+  });
+
+  it('streams fine with no onEvent supplied', async () => {
+    const { promise, xhr } = startWithEvents(undefined);
+    xhr.emit(progressFrame({ tool: 'terminal', status: 'running' }));
+    xhr.emit(contentFrame('ok') + finishFrame('stop'));
+    xhr.finish();
+    await expect(promise).resolves.toMatchObject({ text: 'ok' });
+  });
+});

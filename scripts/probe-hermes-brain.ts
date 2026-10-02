@@ -73,7 +73,8 @@ import { readFileSync } from 'node:fs';
 import { envHermesConfig, hermesHeaders } from '../src/hermes/config.ts';
 import { PERSONA } from '../src/agent/persona.ts';
 import { appendTurn, buildRequest, newSession } from '../src/agent/history.ts';
-import { emptySse, parseSse, type SseState } from '../src/agent/sse.ts';
+import { emptySse, parseSse, type SseEvent, type SseState } from '../src/agent/sse.ts';
+import { startedTools } from '../src/hermes/progress.ts';
 // Type-only: openai.ts cannot be imported at runtime from node, because its
 // own `./sse` import is extensionless and node's ESM resolver will not follow
 // it. Types are erased, so they cost nothing. formatUsage is three lines and is
@@ -153,6 +154,10 @@ interface Turnout {
   usage: ChatUsage | null;
   toolCalls: ToolCall[];
   frames: Frames;
+  /** What the SHIPPED interpreter made of the real frames, in arrival order. */
+  started: string[];
+  /** When the first tool was reported, i.e. when the gap's cover can start. */
+  firstToolMs: number | null;
   status: number;
   error: string | null;
 }
@@ -184,6 +189,8 @@ async function streamTurn(opts: {
     usage: null,
     toolCalls: [],
     frames,
+    started: [],
+    firstToolMs: null,
     status: 0,
     error: null,
   };
@@ -270,6 +277,13 @@ async function streamTurn(opts: {
       out.text += step.chunk.deltas.join('');
       if (step.chunk.usage) out.usage = step.chunk.usage;
       if (step.chunk.toolCalls.length) out.toolCalls = step.chunk.toolCalls;
+      // Drive the real interpreter on the real frames, so the unit tests'
+      // synthetic payloads cannot quietly diverge from what arrives.
+      const started = startedTools(step.chunk.events as SseEvent[]).filter((t) => !out.started.includes(t));
+      if (started.length) {
+        if (out.firstToolMs === null) out.firstToolMs = Date.now() - startedAt;
+        out.started.push(...started);
+      }
     }
   } catch (e) {
     out.error = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
@@ -297,6 +311,11 @@ function report(t: Turnout): void {
     `   wire: ${f.dataFrames} data, ${f.comments} comment, ${f.reasoning} reasoning, ` +
       `${f.offShape} not-chat-shaped${f.events.length ? `, events[${f.events.join(' ')}]` : ''}`,
   );
+  if (t.started.length) {
+    const cover = t.firstToolMs === null ? '?' : ms(t.firstToolMs);
+    const gap = t.firstDeltaMs === null ? '?' : ms(t.firstDeltaMs - (t.firstToolMs ?? 0));
+    console.log(`   startedTools → [${t.started.join(', ')}] at ${cover}; silence it has to cover ${gap}`);
+  }
   if (t.toolCalls.length) {
     console.log(`   tool_calls: ${t.toolCalls.map((c) => `${c.name}(${c.arguments.slice(0, 60)})`).join(', ')}`);
   }
