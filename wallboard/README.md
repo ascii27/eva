@@ -83,6 +83,12 @@ stops polling.
 `occasion` is the server's too: the countdown tile's default when nothing has
 pushed `countdowns` — the nearest birthday in the calendar or major JP/US holiday
 (`server/occasions.ts`). A pushed `countdowns` panel takes over the tile.
+Each countdown is `{id, label, date, kind?, headline?, who?}` (`date` is
+`YYYY-MM-DD`; a bare `days` number also works). The tile shows the nearest one
+and drops past ones. `kind` is `visit` (default), `birthday` or `holiday` and
+picks the tap celebration; `headline` is the first line when tapped (e.g.
+"Grandma comes", "Sarina turns 9"; defaults to `label`); `who` colours a
+birthday tile.
 
 `schedule`, `tomorrow`, `leave-by` and `bedtime` are the server's too: the fixed routine
 (`server/routine.ts` — weekday 7:55 school run, bedtime 20:30 / 21:00 Fri–Sat,

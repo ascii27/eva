@@ -36,7 +36,7 @@ export function dummy(start = new Date()) {
     dinner: { at: '18:30', text: 'Curry rice' },
 
     countdowns: [
-      { label: 'Grandma visits', days: 12, icon: 'gift' },
+      { label: 'Grandma', headline: 'Grandma comes', days: 12, icon: 'gift', kind: 'visit' },
       { label: 'Winter break', days: 38 },
     ],
 

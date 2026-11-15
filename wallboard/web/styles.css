@@ -21,7 +21,8 @@
   --card-shadow: none;
   --toast-shadow: 0 20px 50px rgba(0,0,0,0.6);
   --veil: rgba(7, 9, 12, 0.62);
-  --strip-line: transparent;   /* day edges its strip cards; the dark boards don't */
+  --strip-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 16px 40px rgba(0,0,0,0.45);   /* Main's --elevation-1 */
+  --ma-ink: #c4a4ff; --sa-ink: #ff9cc0;   /* a girl's colour as text on a card (birthday countdown) */
   --hint: var(--ink-faint);
   --halo: none;   /* day: cream halo on text over the photo (v3) */
   --ma-bg: #c4a4ff; --ma-fg: #1b1030;
@@ -43,7 +44,8 @@
   --card-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 4px rgba(50,35,15,0.16), 0 16px 36px rgba(50,35,15,0.24);
   --toast-shadow: 0 16px 40px rgba(60,40,20,0.18);
   --veil: rgba(214, 199, 174, 0.35);
-  --strip-line: var(--line);
+  --strip-shadow: var(--card-shadow);
+  --ma-ink: #4a3480; --sa-ink: #8c2a4f;
   --hint: var(--ink);
   --halo: 0 0 2px #fffaf1, 0 0 6px #fffaf1, 0 0 22px rgba(255, 250, 241, 0.95);
   --ma-bg: #e7defa; --ma-fg: #4a3480;
@@ -81,7 +83,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 
 /* ---------- 1 · Ambient ---------- */
 
-.ambient { padding: 88px 104px 72px; flex-direction: column; overflow: hidden; }
+.ambient { padding: 80px 104px 52px; flex-direction: column; overflow: hidden; }
 .memory { position: absolute; inset: 0; opacity: 0; transition: opacity 2.5s ease; overflow: hidden; }
 /* Layout per photo (DESIGN.md "Memory photos"): landscape full-bleed; a
    portrait (or square-ish photo) alone in the left half, the right half plain
@@ -100,7 +102,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .memory-dim { position: absolute; inset: 0; background: var(--veil); }
 
 /* Burn-in: the whole block drifts ±16 px on a 10-minute cycle. */
-.amb-drift { position: relative; flex: 1; display: flex; flex-direction: column; gap: 48px; min-height: 0; animation: drift 600s ease-in-out infinite; }
+.amb-drift { position: relative; flex: 1; display: flex; flex-direction: column; gap: 40px; min-height: 0; animation: drift 600s ease-in-out infinite; }
 @keyframes drift {
   0%, 100% { transform: translate(0, 0); }
   25% { transform: translate(16px, -12px); }
@@ -138,32 +140,16 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .later-row .w { font-weight: 500; }
 .later-row .p { color: var(--ink-muted); }
 
-.amb-strip { display: flex; gap: 20px; height: 112px; flex: none; }
-.strip-card { padding: 0 28px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--strip-line); box-shadow: var(--card-shadow); display: flex; align-items: center; gap: 18px; }
-.strip-kid { flex: 1; }
-.strip-kid .info { flex: 1; display: flex; flex-direction: column; gap: 10px; }
-.strip-kid .row { display: flex; align-items: baseline; gap: 12px; }
-.strip-kid .name { font-size: 26px; line-height: 32px; font-weight: 600; }
-.strip-kid .status { font-size: 22px; line-height: 28px; color: var(--ink-muted); }
-.strip-kid .status.all { color: var(--accent); }
-.strip-kid .owed { margin-left: auto; font-size: 20px; line-height: 26px; color: var(--warm); }
 .segs { display: flex; gap: 6px; }
 .segs span { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-300); transition: background .24s ease; }
 .segs span.on { background: var(--accent); }
-.strip-bath { width: 360px; flex: none; gap: 16px; }
-.strip-count { width: 340px; flex: none; }
-.strip-label { display: flex; flex-direction: column; }
-.strip-label .k { font-size: 22px; line-height: 28px; color: var(--ink-muted); }
-.strip-label .v { font-size: 30px; line-height: 36px; font-weight: 600; }
 
-.amb-hint { position: absolute; right: 104px; bottom: 24px; font-size: 22px; line-height: 28px; color: var(--hint); }
+.amb-hint { position: absolute; right: 104px; bottom: 12px; font-size: 22px; line-height: 28px; color: var(--hint); }
 
 /* Day calm view · v3 halo (PaperV3HaloLandscape.dc.html; PaperV3Halo for a
    portrait). Text over the photo gets a cream halo and full ink; the caption
-   sits on a solid pill; the strip is icon-led and 168 px tall. */
+   sits on a solid pill. */
 .amb-date, .amb-clock, .amb-temp, .amb-wtext b, .amb-wtext span, .later .eyebrow, .later-row span, .amb-hint { text-shadow: var(--halo); }
-[data-theme="day"] .ambient { padding: 80px 104px 52px; }
-[data-theme="day"] .amb-drift { gap: 40px; }
 [data-theme="day"] .amb-date { font-weight: 700; color: var(--ink); }
 [data-theme="day"] .amb-clock, [data-theme="day"] .amb-temp { font-weight: 400; }
 [data-theme="day"] .amb-wtext b { font-weight: 600; }
@@ -173,10 +159,10 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 [data-theme="day"] .later .eyebrow { font-weight: 700; color: var(--ink); }
 [data-theme="day"] .later-row .t, [data-theme="day"] .later-row .p { color: var(--ink); }
 [data-theme="day"] .later-row .w { font-weight: 600; }
-[data-theme="day"] .amb-hint { bottom: 12px; }
 
-[data-theme="day"] .amb-strip { gap: 24px; height: 168px; }
-.sd-kid, .sd-bath, .sd-count { border-radius: 28px; }
+/* Calm strip, both themes (v3 day board; Main.dc.html in the evening). */
+.amb-strip { display: flex; gap: 24px; height: 168px; flex: none; }
+.strip-card { border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--strip-shadow); display: flex; align-items: center; }
 .sd-kid { flex: 1; min-width: 0; padding: 0 24px; gap: 20px; }
 .sd-bath { width: 300px; flex: none; padding: 0 26px; gap: 22px; }
 .sd-count { width: 330px; flex: none; padding: 0 26px; gap: 18px; }
@@ -192,9 +178,49 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .sd-disc { width: 96px; height: 96px; flex: none; border-radius: 50%; display: grid; place-items: center; }
 .sd-cool { background: var(--cool-soft); color: var(--cool); }
 .sd-warm { background: var(--warm-soft); color: var(--warm); }
-.sd-cd { display: flex; flex-direction: column; min-width: 0; }
 .sd-num { font-family: var(--font-display); font-size: 88px; line-height: 88px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--warm); }
 .sd-lbl { font-size: 22px; line-height: 26px; font-weight: 700; }
+.sd-what { font-size: 20px; line-height: 24px; font-weight: 600; color: var(--ink-muted); }
+.sd-head { font-size: 18px; line-height: 24px; font-weight: 700; }
+.sd-date { font-family: var(--font-display); font-size: 32px; line-height: 40px; font-weight: 500; }
+.sd-sleeps { font-size: 20px; line-height: 26px; font-weight: 700; }
+
+/* Countdown celebrations: rules copied verbatim from design/EventTiles.dc.html
+   (--elevation-1 is --strip-shadow here). The sky is #amb-sky, over the whole
+   calm view. */
+.wb-event{cursor:pointer;overflow:visible}
+.wb-gift{position:relative}
+.wb-event{transition:transform .12s ease,box-shadow .24s ease;-webkit-tap-highlight-color:transparent}
+.wb-event:active{transform:scale(.97)}
+.wb-event.is-party{box-shadow:0 0 0 3px var(--warm),var(--strip-shadow)}
+.wb-lid{transform-box:fill-box;transform-origin:0% 100%;transition:transform .35s cubic-bezier(.3,.7,.2,1.4)}
+.wb-event.is-party .wb-lid{transform:translate(-1px,-4px) rotate(-18deg)}
+.wb-event.is-party .wb-gift{animation:wb-wiggle .6s ease}
+@keyframes wb-wiggle{0%,100%{transform:rotate(0)}20%{transform:rotate(-10deg) scale(1.08)}40%{transform:rotate(9deg) scale(1.08)}60%{transform:rotate(-6deg)}80%{transform:rotate(3deg)}}
+.wb-bit{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);opacity:0;animation:wb-burst 1.7s cubic-bezier(.15,.7,.3,1) forwards;pointer-events:none}
+@keyframes wb-burst{0%{opacity:1;transform:translate(-50%,-50%) rotate(0)}55%{opacity:1;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) rotate(calc(var(--r) * .6))}100%{opacity:0;transform:translate(calc(-50% + var(--dx2)),calc(-50% + var(--dy2))) rotate(var(--r))}}
+.wb-party-text{animation:wb-in .3s ease-out}
+@keyframes wb-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.wb-bit{display:none}.wb-event.is-party .wb-gift{animation:none}.wb-lid{transition:none}}
+.wb-balloon{position:absolute;left:50%;top:30%;opacity:0;animation:wb-rise 3s cubic-bezier(.25,.6,.35,1) forwards;pointer-events:none}
+.wb-balloon::after{content:"";position:absolute;left:50%;top:100%;width:2px;height:34px;background:rgba(29,23,18,.35)}
+@keyframes wb-rise{0%{opacity:0;transform:translate(-50%,10px) scale(.4)}12%{opacity:1;transform:translate(calc(-50% + var(--x0)),-30px) scale(1)}100%{opacity:0;transform:translate(calc(-50% + var(--x1)),var(--y1)) rotate(var(--r))}}
+.wb-flake{position:absolute;left:50%;top:50%;opacity:0;animation:wb-fall 2.8s linear forwards;pointer-events:none;color:#3a6fc0}
+@keyframes wb-fall{0%{opacity:0;transform:translate(calc(-50% + var(--x0)),-340px) rotate(0)}15%{opacity:1}80%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--x1)),30px) rotate(var(--r))}}
+@media (prefers-reduced-motion:reduce){.wb-balloon,.wb-flake{display:none}}
+.wb-event .wb-gift{transition:width .24s ease,height .24s ease}
+.wb-event.is-party .wb-gift{width:72px!important;height:72px!important}
+.wb-event.is-party .wb-gift svg{width:44px;height:44px}
+.wb-fit{display:flex;flex-direction:column;flex:1;min-width:0}
+.wb-fit>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-sky{position:absolute;inset:0;z-index:4;pointer-events:none;overflow:hidden}
+.wb-rain{position:absolute;top:-60px;opacity:0;animation:wb-rain var(--d) cubic-bezier(.35,.1,.6,1) var(--dl) forwards}
+@keyframes wb-rain{0%{opacity:1;transform:translate(0,0) rotate(0)}85%{opacity:1}100%{opacity:0;transform:translate(var(--sx),var(--h)) rotate(var(--r))}}
+.wb-up{position:absolute;bottom:-90px;opacity:0;animation:wb-up var(--d) cubic-bezier(.3,.5,.5,1) var(--dl) forwards}
+.wb-up::after{content:"";position:absolute;left:50%;top:100%;width:2px;height:40px;background:rgba(29,23,18,.3)}
+@keyframes wb-up{0%{opacity:1;transform:translate(0,0)}80%{opacity:1}100%{opacity:0;transform:translate(var(--sx),var(--h)) rotate(var(--r))}}
+.wb-snow{position:absolute;top:-40px;opacity:0;color:#3a6fc0;animation:wb-rain var(--d) linear var(--dl) forwards}
+@media (prefers-reduced-motion:reduce){.wb-sky{display:none}}
 
 /* ---------- 2 · Active ---------- */
 

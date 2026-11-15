@@ -6,8 +6,23 @@
 // Decided 2026-11-15. The holiday list is deliberately short — days the family
 // actually looks forward to, not every national holiday.
 
-export interface Occasion { label: string; days: number; icon: string; date: string }
-export interface Birthday { date: string; title: string }
+/**
+ * One countdown. `kind` picks the tile's celebration (design/EventTiles):
+ * visit = gift + confetti (also what an Eva push without a kind gets),
+ * birthday = cake + balloons in the person's colours, holiday = snowflake + snow.
+ */
+export interface Occasion {
+  label: string;
+  days: number;
+  icon: string;
+  date: string;
+  kind: 'birthday' | 'holiday';
+  /** Birthdays of someone in the household: their id, for the tile's colours. */
+  who?: string;
+  /** The first line when the tile is tapped, e.g. "Sarina's birthday". */
+  headline: string;
+}
+export interface Birthday { date: string; title: string; who?: string }
 
 const pad = (n: number) => String(n).padStart(2, '0');
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`;
@@ -52,14 +67,26 @@ const dayNum = (date: string) => Date.parse(`${date}T00:00:00Z`) / 86_400_000;
  */
 export function nextOccasion(today: string, birthdays: Birthday[]): Occasion {
   const y = Number(today.slice(0, 4));
-  const cands = [
-    ...birthdays.map((b) => ({ date: b.date, label: b.title, rank: 0 })),
-    ...[...holidays(y), ...holidays(y + 1)].map((h) => ({ ...h, rank: 1 })),
+  type Cand = { date: string; rank: number; o: Omit<Occasion, 'days' | 'date'> };
+  const cands: Cand[] = [
+    ...birthdays.map((b) => {
+      // A household birthday is labelled with just the name ("days · Sarina").
+      const name = b.who ? NAMES[b.who] : undefined;
+      const o: Cand['o'] = name
+        ? { label: name, icon: 'cake', kind: 'birthday', who: b.who, headline: `${name}'s birthday` }
+        : { label: b.title, icon: 'cake', kind: 'birthday', headline: b.title };
+      return { date: b.date, rank: 0, o };
+    }),
+    ...[...holidays(y), ...holidays(y + 1)].map((h) => ({
+      date: h.date, rank: 1, o: { label: h.label, icon: 'snow', kind: 'holiday' as const, headline: h.label },
+    })),
   ].filter((c) => c.date > today);
   cands.sort((a, b) => a.date.localeCompare(b.date) || a.rank - b.rank);
   const c = cands[0];   // never empty: next year's holidays are always ahead
-  return { label: c.label, days: dayNum(c.date) - dayNum(today), icon: 'gift', date: c.date };
+  return { ...c.o, days: dayNum(c.date) - dayNum(today), date: c.date };
 }
+
+const NAMES: Record<string, string> = { mariko: 'Mariko', sarina: 'Sarina', nozomi: 'Nozomi', michael: 'Michael' };
 
 /** A calendar event counts as a birthday by its title. */
 export const isBirthday = (title: string) => /birthday|b-?day|誕生日/i.test(title);

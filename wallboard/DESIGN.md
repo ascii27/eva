@@ -38,7 +38,14 @@ Read from across the kitchen, so icons, not text. 168 px tall, four cards (radiu
 - **Each girl:** 84 px avatar with her name under it (22 px bold), then one 64 px circle per chore with the chore's icon — teal with a small check badge when done, an empty ring when not. A teal star badge on the avatar when everything is done. More than four chores shrink the circles to fit. No counts, chore names or pay (those are in the active view).
 - **Bath:** 96 px blue disc with a bathtub, then the avatar of whoever goes first with a "1st" pill.
 - **Countdown:** 96 px amber disc with the gift, the number at 88 px, then "days · Label". A long label wraps to a second line.
-- The evening strip (`Main`) keeps its own layout: counts, progress bars, pay.
+- The evening board (`Main`) uses the same strip with the dark tokens.
+
+### Countdown tile celebrations (`design/EventTiles.dc.html`)
+At rest the tile reads number / "days" / label, each line single with an ellipsis. Tap it (it doesn't open the active view): the icon wiggles and shrinks 96 → 72 px, a small burst comes out of it, the effect fills the whole screen, and the text swaps to a headline, the day ("Sat 28", or "Thu 24 Dec" in another month) and "N sleeps to go" (18 / 32 / 20 px). Back after 4.8 s (5.6 s for balloons and snow); tapping again restarts it. One effect per kind:
+- **visit** (default for an Eva push): gift whose lid pops, confetti from the gift and raining over the screen, amber.
+- **birthday**: cake whose flame flickers, balloons rising across the screen, in the person's colours ("Sarina turns 9").
+- **holiday**: snowflake, snow drifting down the screen, blue. The server's holiday default always uses this one, Halloween and July 4th included.
+- Particles are copied from the design file into `web/celebrate.js` and removed when the effect ends. Reduced motion hides them; the text swap stays.
 
 ## Routine (decided 2026-11-15, `server/routine.ts`)
 - Leave for school: Mariko & Sarina, **7:55 every weekday** (Mon–Fri), even on school holidays in the calendar. The card shows in the 45 min before.

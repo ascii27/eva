@@ -13,11 +13,14 @@ test('moving holidays land on the right dates', () => {
 });
 
 test('the nearest occasion strictly after today; birthdays win ties; wraps the year', () => {
-  assert.deepEqual(nextOccasion('2026-11-15', []), { label: 'Thanksgiving', days: 11, icon: 'gift', date: '2026-11-26' });
+  assert.deepEqual(nextOccasion('2026-11-15', []), { label: 'Thanksgiving', days: 11, icon: 'snow', date: '2026-11-26', kind: 'holiday', headline: 'Thanksgiving' });
   assert.equal(nextOccasion('2026-11-26', []).label, 'Christmas');            // on the day, it has moved on
-  assert.deepEqual(nextOccasion('2026-12-25', []), { label: 'New Year', days: 7, icon: 'gift', date: '2027-01-01' });
+  assert.equal(nextOccasion('2026-12-25', []).date, '2027-01-01');
+  assert.equal(nextOccasion('2026-12-25', []).days, 7);
   const bd = [{ date: '2026-11-20', title: "Sarina's birthday" }];
-  assert.equal(nextOccasion('2026-11-15', bd).label, "Sarina's birthday");
+  assert.equal(nextOccasion('2026-11-15', bd).label, "Sarina's birthday");   // no who: the title
+  assert.deepEqual(nextOccasion('2026-11-15', [{ ...bd[0], who: 'sarina' }]),
+    { label: 'Sarina', icon: 'cake', kind: 'birthday', who: 'sarina', headline: "Sarina's birthday", days: 5, date: '2026-11-20' });
   assert.equal(nextOccasion('2026-11-15', [{ date: '2026-11-26', title: 'まりこ誕生日' }]).label, 'まりこ誕生日');
   assert.ok(isBirthday('Mariko Birthday') && isBirthday('さりな誕生日') && !isBirthday('Birds day out'));
 });
@@ -30,7 +33,7 @@ test('a yearly birthday in the calendar beats a later holiday', () => {
     'END:VCALENDAR',
   ].join('\r\n');
   const p = calendarPanels(ics, new Date('2027-03-10T09:00:00+09:00'));
-  assert.deepEqual(p.occasion, { label: "Sarina's Birthday", days: 8, icon: 'gift', date: '2027-03-18' });
+  assert.deepEqual(p.occasion, { label: 'Sarina', icon: 'cake', kind: 'birthday', who: 'sarina', headline: "Sarina's birthday", days: 8, date: '2027-03-18' });
   // A one-off birthday years ago doesn't recur; Hinamatsuri (3 Mar) is ahead here.
   assert.equal(calendarPanels(ics, new Date('2027-02-10T09:00:00+09:00')).occasion.label, 'Hinamatsuri');
 });

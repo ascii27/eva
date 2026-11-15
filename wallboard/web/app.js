@@ -8,6 +8,7 @@
 //   ?debug=1                     show Silk's viewport size — DESIGN.md asks to confirm it
 
 import { icon, star, weatherIcon } from './icons.js';
+import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from './celebrate.js';
 import { ORDER, person } from './household.js';
 import { dummy } from './dummy.js';
 
@@ -105,9 +106,17 @@ function content(key) {
  * major holiday, server/occasions.ts), else the dummy ones.
  */
 function countdowns() {
-  if (server?.panels?.countdowns) return server.panels.countdowns.data ?? [];
-  const occ = server?.panels?.occasion?.data;
-  return occ ? [occ] : DUMMY.countdowns;
+  let list;
+  if (server?.panels?.countdowns) list = server.panels.countdowns.data ?? [];
+  else list = server?.panels?.occasion?.data ? [server.panels.occasion.data] : DUMMY.countdowns;
+  // Eva pushes `{id, label, date, kind, who?}`; the day count comes from the
+  // date when there is one. Nearest first; anything already past is dropped.
+  const d = now();
+  const today = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  return list
+    .map((c) => (/^\d{4}-\d{2}-\d{2}$/.test(c?.date ?? '') ? { ...c, days: Math.round((Date.parse(`${c.date}T00:00:00Z`) - today) / 86_400_000) } : c))
+    .filter((c) => Number.isFinite(Number(c?.days)) && Number(c.days) >= 0)
+    .sort((a, b) => a.days - b.days);
 }
 
 function chores() {
@@ -249,41 +258,22 @@ function renderAmbient() {
   }</div>`);
   $('amb-right').innerHTML = right.join('');
 
-  $('amb-strip').innerHTML = ($('stage').dataset.theme === 'day' ? stripDay() : stripEvening()).join('');
+  // Mid-celebration, leave the strip alone: a re-render would restart the burst.
+  if (Date.now() >= partyUntil) $('amb-strip').innerHTML = strip().join('');
 }
 
-/** Evening calm strip (Main.dc.html): counts, segments and pay. */
-function stripEvening() {
-  const strip = choreGroups().filter((g) => person(g.id).kid).map((g) => {
-    const owe = owedDays(g.id);
-    return `<div class="strip-card strip-kid">${avatar(g.id, 56, 22)}
-      <div class="info"><div class="row"><span class="name">${esc(g.p.name)}</span>
-        <span class="status ${g.all ? 'all' : ''}">${g.all ? 'All done' : `${g.n} of ${g.items.length}`}</span>
-        ${owe > 0 ? `<span class="owed">${days(owe)} to pay</span>` : ''}</div>
-        <div class="segs">${g.items.map((c) => `<span class="${c.done ? 'on' : ''}"></span>`).join('')}</div></div></div>`;
-  });
-  strip.push(`<div class="strip-card strip-bath"><span style="display:flex;color:var(--cool)">${icon('drop', 32)}</span>
-    <div class="strip-label"><span class="k">Bath first tonight</span><span class="v">${esc(bathFirst())}</span></div>
-    <span style="margin-left:auto">${avatar(local.bath.tonight, 48, 18)}</span></div>`);
-  const cd = countdowns()[0];
-  if (cd) {
-    strip.push(`<div class="strip-card strip-count"><span style="display:flex;color:var(--warm)">${icon(cd.icon ?? 'gift', 40)}</span>
-      <div class="strip-label"><span class="k">${esc(cd.label)} in</span><span class="v"><span class="num" style="font-weight:400">${esc(cd.days)}</span> days</span></div></div>`);
-  }
-  return strip;
-}
-
-// Day calm strip (PaperV3HaloLandscape.dc.html): big signals readable from
-// across the kitchen — one icon per chore, who bathes first, one countdown.
-// Counts, chore names and pay live in the active view.
+// Calm strip, both themes (PaperV3HaloLandscape.dc.html by day, Main.dc.html in
+// the evening): big signals readable from across the kitchen — one icon per
+// chore, who bathes first, one countdown. Counts, chore names and pay live in
+// the active view.
 const DOT_ROOM = 345;   // px for the chore dots in a kid tile at 1920 wide
 
-function stripDay() {
+function strip() {
   const who = (id, badge = '') => {
     const p = person(id);
     return `<div class="sd-who"><span class="avatar sd-av" style="background:${p.bg};color:${p.fg}">${esc(p.ini)}${badge}</span><span class="sd-name">${esc(p.name)}</span></div>`;
   };
-  const strip = choreGroups().filter((g) => person(g.id).kid).map((g) => {
+  const out = choreGroups().filter((g) => person(g.id).kid).map((g) => {
     const n = g.items.length;
     // Four fit at the design's 64 px; more shrink to share the room.
     const size = Math.min(64, Math.floor((DOT_ROOM - 12 * (n - 1)) / Math.max(n, 1)));
@@ -292,15 +282,75 @@ function stripDay() {
     const badge = g.all ? `<span class="sd-star">${star(24)}</span>` : '';
     return `<div class="strip-card sd-kid">${who(g.id, badge)}<div class="sd-dots">${dots}</div></div>`;
   });
-  strip.push(`<div class="strip-card sd-bath" aria-label="Bath first tonight: ${esc(bathFirst())}">
+  out.push(`<div class="strip-card sd-bath" aria-label="Bath first tonight: ${esc(bathFirst())}">
     <span class="sd-disc sd-cool">${icon('bath', 56, 1.9)}</span>${who(local.bath.tonight, '<span class="sd-first">1st</span>')}</div>`);
   const cd = countdowns()[0];
-  if (cd) {
-    strip.push(`<div class="strip-card sd-count" aria-label="${esc(cd.label)} in ${esc(days(cd.days))}">
-      <span class="sd-disc sd-warm">${icon(cd.icon ?? 'gift', 56, 1.9)}</span>
-      <div class="sd-cd"><span class="sd-num">${esc(cd.days)}</span><span class="sd-lbl">${cd.days === 1 ? 'day' : 'days'} · ${esc(cd.label)}</span></div></div>`);
+  if (cd) out.push(countTile(cd, Date.now() < partyUntil));
+  return out;
+}
+
+// The countdown tile and its celebration (design/EventTiles.dc.html): tap it
+// and the icon wiggles, a burst plays, the text swaps to the day and how many
+// sleeps; back after 4 s. The burst depends on the kind of event: a visit (an
+// Eva push without a kind) gets the gift and confetti, a birthday balloons in
+// the person's colours, a holiday snow.
+// How long each kind's party lasts: EventTiles' sky runs longer for balloons and snow.
+const PARTY_MS = { visit: 4800, birthday: 5600, holiday: 5600 };
+let partyUntil = 0;
+let partyTimer = null;
+
+const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function countTile(cd, party) {
+  const kind = kindOf(cd);
+  const p = kind === 'birthday' && cd.who ? person(cd.who) : null;
+  const look = {
+    visit: { svg: TILE_ICONS.gift, disc: 'var(--warm-soft)', fg: 'var(--warm)', ink: 'var(--warm)' },
+    birthday: p ? { svg: TILE_ICONS.cake, disc: p.bg, fg: p.fg, ink: `var(--${cd.who.slice(0, 2)}-ink, ${p.fg})` }
+      : { svg: TILE_ICONS.cake, disc: 'var(--warm-soft)', fg: 'var(--warm)', ink: 'var(--warm)' },
+    holiday: { svg: TILE_ICONS.snow, disc: 'var(--cool-soft)', fg: 'var(--cool)', ink: 'var(--cool)' },
+  }[kind];
+  let burst = '';
+  if (party) {
+    burst = kind === 'visit' ? BITS.map((st) => `<span class="wb-bit" style="${st}"></span>`).join('')
+      : kind === 'birthday' ? BALLOONS.map((st) => `<span class="wb-balloon" style="${st}"></span>`).join('')
+      : FLAKES.map((st) => `<span class="wb-flake" style="${st}">${FLAKE_SVG}</span>`).join('');
   }
-  return strip;
+  const n = Number(cd.days);
+  const d = now();
+  const when = new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const date = `${SHORT_DAYS[when.getDay()]} ${when.getDate()}${when.getMonth() === d.getMonth() ? '' : ` ${SHORT_MONTHS[when.getMonth()]}`}`;
+  const text = party
+    ? `<span class="wb-party-text wb-fit"><span class="sd-head" style="color:${look.ink}">${esc(cd.headline ?? cd.label)}</span><span class="sd-date">${esc(date)}</span><span class="sd-sleeps">${n} ${n === 1 ? 'sleep' : 'sleeps'} to go</span></span>`
+    : `<span class="wb-fit"><span class="sd-num" style="color:${look.ink}">${esc(cd.days)}</span><span class="sd-lbl">${n === 1 ? 'day' : 'days'}</span><span class="sd-what">${esc(cd.label)}</span></span>`;
+  return `<div class="strip-card sd-count wb-event${party ? ' is-party' : ''}" data-action="celebrate" role="button" aria-label="${esc(cd.label)} in ${esc(days(n))}. Tap to celebrate.">
+    <span class="sd-disc wb-gift" style="background:${look.disc};color:${look.fg}"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="overflow:visible">${look.svg}</svg>${burst}</span>${text}</div>`;
+}
+
+const kindOf = (cd) => (cd?.kind === 'birthday' || cd?.kind === 'holiday' ? cd.kind : 'visit');
+
+/** The whole-screen part of the party (EventTiles' .wb-sky). */
+function sky(kind) {
+  if (kind === 'birthday') return UP.map((st) => `<span class="wb-up" style="${st}"></span>`).join('');
+  if (kind === 'holiday') return SNOW.map((st) => `<span class="wb-snow" style="${st}">${FLAKE_SVG}</span>`).join('');
+  return RAIN.map((st) => `<span class="wb-rain" style="${st}"></span>`).join('');
+}
+
+function celebrate() {
+  const kind = kindOf(countdowns()[0]);
+  clearTimeout(partyTimer);
+  partyUntil = Date.now() + PARTY_MS[kind];
+  // Fresh elements every time, so a second tap replays from the start.
+  $('amb-strip').innerHTML = strip().join('');
+  $('amb-sky').innerHTML = sky(kind);
+  $('amb-sky').hidden = false;
+  partyTimer = setTimeout(() => {
+    partyUntil = 0;
+    $('amb-sky').hidden = true;
+    $('amb-sky').innerHTML = '';                         // particles removed when the party ends
+    renderAmbient();
+  }, PARTY_MS[kind]);
 }
 
 // Memories: two stacked layers, crossfaded, each drifting very slowly.
@@ -665,6 +715,7 @@ $('stage').addEventListener('click', (e) => {
   if (!el) return;
   switch (el.dataset.action) {
     case 'wake': return show('active', { dim: view === 'night' });
+    case 'celebrate': return celebrate();
     case 'home': return show(resting());
     case 'chore': return tapChore(el.dataset.id);
     case 'pay': return pay(el.dataset.who);

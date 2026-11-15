@@ -167,7 +167,10 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
   if (leaveTomorrow) cands.push({ at: leaveTomorrow.at, title: 'Tomorrow · leave for school' });
   cands.sort((a, b) => hmKey(a.at) - hmKey(b.at));
 
-  const birthdays = occ.filter((o) => isBirthday(o.title)).map((o) => ({ date: o.startDate, title: o.title }));
+  const birthdays = occ.filter((o) => isBirthday(o.title)).map((o) => {
+    const w = whoOf(o.title);
+    return { date: o.startDate, title: o.title, who: w.length === 1 ? w[0] : undefined };
+  });
 
   return {
     schedule,
