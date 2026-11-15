@@ -1,0 +1,18 @@
+[Unit]
+Description=Eva wallboard: chores from Apple Reminders (sync/reminders_sync.py)
+After=wallboard.service network-online.target
+Wants=network-online.target
+# Starts only once an iCloud session has been copied in (README "Chores").
+ConditionPathExists=/home/exedev/.wallboard-icloud
+
+[Service]
+User=exedev
+WorkingDirectory=/home/exedev/wallboard
+EnvironmentFile=/etc/wallboard.env
+Environment=SYNC_STATE=/home/exedev/wallboard/data/reminders-sync.json
+ExecStart=/usr/local/bin/uv run --script sync/reminders_sync.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

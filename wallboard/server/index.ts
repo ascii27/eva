@@ -155,8 +155,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (pathname === '/api/eva/state' && method === 'GET') return json(res, 200, state);
 
     if (pathname === '/api/eva/chores' && method === 'PUT') {
-      const chores = parseChores(await body(req));
+      const b = await body(req);
+      const chores = parseChores(b);
       if (typeof chores === 'string') return json(res, 400, { error: chores });
+      // Optimistic concurrency for a pusher that read the state first (the
+      // Reminders sync): if anything changed since — a kid's tap — it re-reads
+      // rather than overwrite that tap with a stale list.
+      const ifVersion = (b as { ifVersion?: unknown }).ifVersion;
+      if (typeof ifVersion === 'number' && ifVersion !== state.version) return json(res, 409, { error: 'state changed', version: state.version });
       dispatch({ type: 'chores.replace', chores, at });
       return json(res, 200, { ok: true, version: state.version });
     }

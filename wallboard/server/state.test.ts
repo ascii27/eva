@@ -75,3 +75,17 @@ test('reviveState fills in fields an older file predates', () => {
   assert.equal(s.chores[0].icon, null);
   assert.equal(s.chores[0].who, null);
 });
+
+test('a pushed done wins and keeps its doneAt until it changes; omitted done keeps the tick', () => {
+  let s = apply(emptyState(), { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null }], at: 1 })!;
+  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null, done: true }], at: 2 })!;
+  assert.deepEqual([s.chores[0].done, s.chores[0].doneAt], [true, 2]);
+  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null, done: true }], at: 3 })!;
+  assert.equal(s.chores[0].doneAt, 2);
+  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null }], at: 4 })!;
+  assert.equal(s.chores[0].done, true);
+  assert.ok(!('done' in (parseChores({ chores: [{ id: 'a', title: 'A' }] }) as object[])[0]));
+  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null, done: false }], at: 5 })!;
+  assert.deepEqual([s.chores[0].done, s.chores[0].doneAt], [false, null]);
+  assert.match(parseChores({ chores: [{ id: 'a', title: 'A', done: 'yes' }] }) as string, /done/);
+});

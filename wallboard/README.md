@@ -64,7 +64,7 @@ Both are generated into `/etc/wallboard.env` on the first deploy:
 |---|---|---|---|
 | `PUT` | `/api/eva/panels/<name>` | `{"data": <any JSON>}` | Set a panel. `name` matches `^[a-z][a-z0-9-]{0,31}$`. |
 | `DELETE` | `/api/eva/panels/<name>` | — | Remove a panel. |
-| `PUT` | `/api/eva/chores` | `{"chores": [{"id", "title", "who"?, "icon"?}]}` | Replace the chore list. Chores that keep their `id` keep their done state. `who` is a household id (`mariko`, `sarina`, …); `icon` is a key in `web/icons.js` (`bed`, `bag`, `table`, `shoes`, `laundry`, `plants`). |
+| `PUT` | `/api/eva/chores` | `{"chores": [{"id", "title", "who"?, "icon"?, "done"?}], "ifVersion"?}` | Replace the chore list. Chores that keep their `id` keep their done state unless the push sends `done`. With `ifVersion`, 409 if the state moved on. The Reminders sync owns this list (see "Chores"). `who` is a household id (`mariko`, `sarina`, …); `icon` is a key in `web/icons.js` (`bed`, `bag`, `table`, `shoes`, `laundry`, `plants`). |
 | `GET` | `/api/eva/state` | — | Read everything, including what the family ticked. |
 
 **Absent vs empty**, as on the desk: a panel that was never pushed means "Eva
@@ -119,6 +119,44 @@ the older `at` field and the old `tomorrow: {at, title}`.
   A new `build` means a redeploy, and the page reloads.
 - `PUT /api/chores/<id>` `{"done": true|false}` — a set, not a toggle, so undo
   and retries can't flip a chore the wrong way.
+
+## Chores (Apple Reminders)
+
+The chore list comes from the family's shared **Family** list in Apple
+Reminders: every reminder tagged **#Chore**, titled `Chore - Name` (`Dishes -
+Mariko`; the name after the last " - " becomes `who`, same spellings as the
+calendar). `sync/reminders_sync.py` runs beside the board
+(`wallboard-reminders.service`) and owns the chore list: it pushes
+`PUT /api/eva/chores` with `done` and an `ifVersion`, so a tap made while it
+was talking to iCloud is never overwritten (409, retried).
+
+- **What shows:** chores due today or overdue (to do), and chores that were due
+  today and have since moved on (done, until midnight). Policy and tests:
+  `sync/chores.py`, `sync/test_chores.py` (`npm run test:sync`).
+- **Ticking is what the iPhone does.** The chores repeat, and ticking a
+  repeating reminder on a phone moves its due date to the next occurrence: no
+  completed flag, no completed copy. A tap on the board does the same (past
+  today, if it was overdue); Undo puts the old date back. A tick on a phone
+  shows on the board within `ICLOUD_POLL` (120 s); a tap on the board reaches
+  Reminders within a few seconds.
+- **Icons** are guessed from the chore's name (`table`, `bath`, …); a chore
+  with no icon of its own gets the board's generic one.
+
+**Login.** No password lives on the VM. Log in on a Mac (password + 2FA,
+prompted, never stored), then copy the session:
+
+```bash
+uv run scripts/probe-reminders.py    # in a real terminal, from wallboard/
+scp -r ~/.wallboard-icloud eva-board.exe.xyz:
+ssh eva-board.exe.xyz 'chmod -R go-rwx ~/.wallboard-icloud && sudo systemctl restart wallboard-reminders'
+```
+
+The session's file name stands in for the Apple ID, so the address isn't in
+`/etc/wallboard.env` either. When Apple expires the session the sync stops
+touching iCloud, keeps the last list on the board, logs "login needed", and
+publishes the `chores-sync` panel as `{ok: false, reason: "login"}` (`{ok:
+true}` otherwise) — repeat the three lines above. `scripts/probe-reminder-tick.py`
+ticks or un-ticks one reminder titled "Test…" by hand.
 
 ## Memories (iCloud shared albums)
 

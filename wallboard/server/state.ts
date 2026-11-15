@@ -28,6 +28,11 @@ export interface ChoreInput {
   title: string;
   who: string | null;
   icon: string | null;
+  /**
+   * Set by a pusher that owns done-ness (the Reminders sync: a tick on a phone
+   * shows here). Omitted, the board keeps whatever the family ticked.
+   */
+  done?: boolean;
 }
 
 export interface Panel {
@@ -68,11 +73,14 @@ export function apply(s: BoardState, a: Action): BoardState | null {
     }
     case 'chores.replace': {
       // Keep done-ness for chores that survive the replace: Eva re-sending the
-      // list must not un-tick what a kid just ticked.
+      // list must not un-tick what a kid just ticked. A pusher that sends `done`
+      // owns it (the Reminders sync), and its `doneAt` only moves on a change.
       const prev = new Map(s.chores.map((c) => [c.id, c]));
-      const chores = a.chores.map((c) => {
+      const chores = a.chores.map(({ done: pushed, ...c }) => {
         const old = prev.get(c.id);
-        return { ...c, done: old?.done ?? false, doneAt: old?.doneAt ?? null };
+        if (pushed === undefined) return { ...c, done: old?.done ?? false, doneAt: old?.doneAt ?? null };
+        const doneAt = pushed ? (old?.done ? old.doneAt : a.at) : null;
+        return { ...c, done: pushed, doneAt };
       });
       return { ...s, version: s.version + 1, chores };
     }
@@ -108,12 +116,14 @@ export function parseChores(body: unknown): ChoreInput[] | string {
     if (typeof c.title !== 'string' || !c.title.trim()) return `chores[${i}].title: required`;
     if (c.who != null && typeof c.who !== 'string') return `chores[${i}].who: must be a string`;
     if (c.icon != null && typeof c.icon !== 'string') return `chores[${i}].icon: must be a string`;
+    if (c.done != null && typeof c.done !== 'boolean') return `chores[${i}].done: must be true or false`;
     seen.add(c.id);
     out.push({
       id: c.id,
       title: c.title.trim(),
       who: (c.who as string | undefined) ?? null,
       icon: (c.icon as string | undefined) ?? null,
+      ...(typeof c.done === 'boolean' ? { done: c.done } : {}),
     });
   }
   return out;
