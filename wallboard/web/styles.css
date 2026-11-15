@@ -14,6 +14,7 @@
   --accent: #3ee0d0; --accent-soft: #0f2f2d; --on-accent: #04201d;
   --warm: #ffb054; --warm-soft: #33240f; --on-warm: #2a1600;
   --cool: #6aa8ff; --cool-soft: #13233d; --on-cool: #06142b;
+  --green: #7ccf8f; --green-soft: #12261a;   /* not in a design yet: dark pair made like --cool/--cool-soft */
   --success: #4fd18b; --alert: #ff6b6b;
   --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -39,6 +40,7 @@
   --accent: #0b6760; --accent-soft: #cfe9e1; --on-accent: #ffffff;
   --warm: #934606; --warm-soft: #f8e1c6; --on-warm: #ffffff;
   --cool: #24559e; --cool-soft: #d9e4f4; --on-cool: #ffffff;
+  --green: #2f6b3c; --green-soft: #dcebd9;   /* Christmas countdown (EventIcons) */
   --success: #276b3c; --alert: #a92b22;
   --glow-accent: 0 0 0 3px rgba(11,103,96,0.7), 0 16px 36px rgba(50,35,15,0.24);
   --card-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 4px rgba(50,35,15,0.16), 0 16px 36px rgba(50,35,15,0.24);
@@ -239,6 +241,9 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .wb-up::after{content:"";position:absolute;left:50%;top:100%;width:2px;height:40px;background:rgba(29,23,18,.3)}
 @keyframes wb-up{0%{opacity:1;transform:translate(0,0)}80%{opacity:1}100%{opacity:0;transform:translate(var(--sx),var(--h)) rotate(var(--r))}}
 .wb-snow{position:absolute;top:-40px;opacity:0;color:#3a6fc0;animation:wb-rain var(--d) linear var(--dl) forwards}
+/* Rise/fall variants (hearts, notes, lanterns, leaves, petals, stars, beans) ride the balloon and snow paths, without a balloon string. */
+.wb-nostr::after{display:none}
+.wb-nostr>svg{display:block}
 @media (prefers-reduced-motion:reduce){.wb-sky{display:none}}
 
 /* ---------- 2 · Active ---------- */

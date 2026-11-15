@@ -85,8 +85,14 @@ pushed `countdowns` — the nearest birthday in the calendar or major JP/US holi
 (`server/occasions.ts`). A pushed `countdowns` panel takes over the tile.
 Each countdown is `{id, label, date, kind?, headline?, who?}` (`date` is
 `YYYY-MM-DD`; a bare `days` number also works). The tile shows the nearest one
-and drops past ones. `kind` is `visit` (default), `birthday` or `holiday` and
-picks the tap celebration; `headline` is the first line when tapped (e.g.
+and drops past ones. `kind` picks the tile's icon, colour and tap celebration —
+one of `holiday`, `visit`, `birthday`, `trip`, `move`, `anniversary`, `recital`,
+`sports`, `ceremony`, `school`, `new-year`, `setsubun`, `hinamatsuri`, `hanami`,
+`kodomo`, `tanabata`, `obon`, `tsukimi`, `valentine`, `easter`, `parents-day`,
+`july4`, `halloween`, `thanksgiving`, `christmas`, `summer`, `autumn`, `winter`,
+`spring` (table in `CLAUDE.md` "Countdown kinds"). No `kind` means `visit`; an
+unknown one falls back to `holiday` (star, confetti). The server's default
+gives each built-in holiday its own kind. `headline` is the first line when tapped (e.g.
 "Grandma comes", "Sarina turns 9"; defaults to `label`); `who` colours a
 birthday tile.
 

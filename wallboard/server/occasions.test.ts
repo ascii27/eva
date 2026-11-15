@@ -13,8 +13,9 @@ test('moving holidays land on the right dates', () => {
 });
 
 test('the nearest occasion strictly after today; birthdays win ties; wraps the year', () => {
-  assert.deepEqual(nextOccasion('2026-11-15', []), { label: 'Thanksgiving', days: 11, icon: 'snow', date: '2026-11-26', kind: 'holiday', headline: 'Thanksgiving' });
+  assert.deepEqual(nextOccasion('2026-11-15', []), { label: 'Thanksgiving', days: 11, icon: 'pie', date: '2026-11-26', kind: 'thanksgiving', headline: 'Thanksgiving' });
   assert.equal(nextOccasion('2026-11-26', []).label, 'Christmas');            // on the day, it has moved on
+  assert.equal(nextOccasion('2026-11-26', []).kind, 'christmas');
   assert.equal(nextOccasion('2026-12-25', []).date, '2027-01-01');
   assert.equal(nextOccasion('2026-12-25', []).days, 7);
   const bd = [{ date: '2026-11-20', title: "Sarina's birthday" }];

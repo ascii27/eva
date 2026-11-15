@@ -7,16 +7,17 @@
 // actually looks forward to, not every national holiday.
 
 /**
- * One countdown. `kind` picks the tile's celebration (design/EventTiles):
- * visit = gift + confetti (also what an Eva push without a kind gets),
- * birthday = cake + balloons in the person's colours, holiday = snowflake + snow.
+ * One countdown. `kind` picks the tile's icon, colour and celebration (CLAUDE.md
+ * "Countdown kinds", design/EventIcons): each built-in holiday has its own
+ * kind (christmas = tree + snow, halloween = pumpkin + orange/purple confetti, …).
+ * `icon` mirrors the board's choice for that kind; the board decides from `kind`.
  */
 export interface Occasion {
   label: string;
   days: number;
   icon: string;
   date: string;
-  kind: 'birthday' | 'holiday';
+  kind: string;
   /** Birthdays of someone in the household: their id, for the tile's colours. */
   who?: string;
   /** The first line when the tile is tapped, e.g. "Sarina's birthday". */
@@ -44,18 +45,18 @@ function easter(y: number): string {
   return ymd(y, month, ((h + l - 7 * m + 114) % 31) + 1);
 }
 
-export function holidays(y: number): { date: string; label: string }[] {
+export function holidays(y: number): { date: string; label: string; kind: string; icon: string }[] {
   return [
-    { date: ymd(y, 1, 1), label: 'New Year' },
-    { date: ymd(y, 3, 3), label: 'Hinamatsuri' },
-    { date: easter(y), label: 'Easter' },
-    { date: ymd(y, 5, 5), label: "Children's Day" },
-    { date: nthWeekday(y, 5, 0, 2), label: "Mother's Day" },   // same day in JP and US
-    { date: nthWeekday(y, 6, 0, 3), label: "Father's Day" },   // same day in JP and US
-    { date: ymd(y, 7, 4), label: 'July 4th' },
-    { date: ymd(y, 10, 31), label: 'Halloween' },
-    { date: nthWeekday(y, 11, 4, 4), label: 'Thanksgiving' },
-    { date: ymd(y, 12, 25), label: 'Christmas' },
+    { date: ymd(y, 1, 1), label: 'New Year', kind: 'new-year', icon: 'sunrise' },
+    { date: ymd(y, 3, 3), label: 'Hinamatsuri', kind: 'hinamatsuri', icon: 'dolls' },
+    { date: easter(y), label: 'Easter', kind: 'easter', icon: 'egg' },
+    { date: ymd(y, 5, 5), label: "Children's Day", kind: 'kodomo', icon: 'carp' },
+    { date: nthWeekday(y, 5, 0, 2), label: "Mother's Day", kind: 'parents-day', icon: 'flower' },   // same day in JP and US
+    { date: nthWeekday(y, 6, 0, 3), label: "Father's Day", kind: 'parents-day', icon: 'flower' },   // same day in JP and US
+    { date: ymd(y, 7, 4), label: 'July 4th', kind: 'july4', icon: 'firework' },
+    { date: ymd(y, 10, 31), label: 'Halloween', kind: 'halloween', icon: 'pumpkin' },
+    { date: nthWeekday(y, 11, 4, 4), label: 'Thanksgiving', kind: 'thanksgiving', icon: 'pie' },
+    { date: ymd(y, 12, 25), label: 'Christmas', kind: 'christmas', icon: 'tree' },
   ];
 }
 
@@ -78,7 +79,7 @@ export function nextOccasion(today: string, birthdays: Birthday[]): Occasion {
       return { date: b.date, rank: 0, o };
     }),
     ...[...holidays(y), ...holidays(y + 1)].map((h) => ({
-      date: h.date, rank: 1, o: { label: h.label, icon: 'snow', kind: 'holiday' as const, headline: h.label },
+      date: h.date, rank: 1, o: { label: h.label, icon: h.icon, kind: h.kind, headline: h.label },
     })),
   ].filter((c) => c.date > today);
   cands.sort((a, b) => a.date.localeCompare(b.date) || a.rank - b.rank);

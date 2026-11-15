@@ -7,7 +7,7 @@
 //   ?time=21:45                  pretend it's this time (the clock still ticks)
 //   ?debug=1                     show Silk's viewport size — DESIGN.md asks to confirm it
 
-import { icon, star, weatherIcon } from './icons.js';
+import { icon, glyph, star, weatherIcon } from './icons.js';
 import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from './celebrate.js';
 import { ORDER, person } from './household.js';
 import { dummy } from './dummy.js';
@@ -513,11 +513,110 @@ function strip() {
 
 // The countdown tile and its celebration (design/EventTiles.dc.html): tap it
 // and the icon wiggles, a burst plays, the text swaps to the day and how many
-// sleeps; back after 4 s. The burst depends on the kind of event: a visit (an
-// Eva push without a kind) gets the gift and confetti, a birthday balloons in
-// the person's colours, a holiday snow.
-// How long each kind's party lasts: EventTiles' sky runs longer for balloons and snow.
-const PARTY_MS = { visit: 4800, birthday: 5600, holiday: 5600 };
+// sleeps; back after 4 s. What it looks like and how it celebrates depends on
+// the countdown's `kind` (CLAUDE.md "Countdown kinds", design/EventIcons.dc.html).
+
+/** kind → [icon, colour, effect]. Unknown kinds are `holiday`; no kind at all is a visit. */
+const KINDS = {
+  holiday: ['star', 'warm', 'confetti'],
+  visit: ['gift', 'warm', 'confetti'],
+  birthday: ['cake', 'pink', 'balloons'],
+  trip: ['plane', 'cool', 'confetti'],
+  move: ['box', 'warm', 'confetti'],
+  anniversary: ['heart', 'pink', 'hearts'],
+  recital: ['music', 'violet', 'notes'],
+  sports: ['medal', 'warm', 'confetti'],
+  ceremony: ['cap', 'violet', 'confetti'],
+  school: ['bag', 'teal', 'confetti'],
+  'new-year': ['sunrise', 'warm', 'confetti'],
+  setsubun: ['oni', 'warm', 'beans'],
+  hinamatsuri: ['dolls', 'pink', 'petals'],
+  hanami: ['sakura', 'pink', 'petals'],
+  kodomo: ['carp', 'cool', 'confetti'],
+  tanabata: ['tanabata', 'violet', 'stars'],
+  obon: ['lantern', 'warm', 'lanterns'],
+  tsukimi: ['tsukimi', 'violet', 'stars'],
+  valentine: ['heart', 'pink', 'hearts'],
+  easter: ['egg', 'violet', 'confetti'],
+  'parents-day': ['flower', 'pink', 'hearts'],
+  july4: ['firework', 'cool', 'confetti'],
+  halloween: ['pumpkin', 'warm', 'halloween'],
+  thanksgiving: ['pie', 'warm', 'leaves'],
+  christmas: ['tree', 'green', 'snow'],
+  summer: ['sun', 'warm', 'confetti'],
+  autumn: ['leaf', 'warm', 'leaves'],
+  winter: ['snow', 'cool', 'snow'],
+  spring: ['sakura', 'pink', 'petals'],
+};
+const kindOf = (cd) => (!cd?.kind ? 'visit' : Object.hasOwn(KINDS, cd.kind) ? cd.kind : 'holiday');
+
+/** Pink and violet are the girls' colours, so they follow the theme like their avatars. */
+const TONES = {
+  warm: { disc: 'var(--warm-soft)', fg: 'var(--warm)', ink: 'var(--warm)' },
+  cool: { disc: 'var(--cool-soft)', fg: 'var(--cool)', ink: 'var(--cool)' },
+  teal: { disc: 'var(--accent-soft)', fg: 'var(--accent)', ink: 'var(--accent)' },
+  pink: { disc: 'var(--sa-bg)', fg: 'var(--sa-fg)', ink: 'var(--sa-ink)' },
+  violet: { disc: 'var(--ma-bg)', fg: 'var(--ma-fg)', ink: 'var(--ma-ink)' },
+  green: { disc: 'var(--green-soft)', fg: 'var(--green)', ink: 'var(--green)' },
+};
+
+// Three motions, many particles (CLAUDE.md: rain/burst, rise, fall). Rise and
+// fall reuse the balloon and snow paths from EventTiles with another shape on
+// them, trimmed to ≤ 40 elements per party (tile burst + sky). Colours are the
+// board's own particle palette (celebrate.js).
+const FILLED = (body) => `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${body}</svg>`;
+const SHAPES = {
+  hearts: { colors: ['#f5b3c8', '#8c2a4f'], scale: 0.7, svg: FILLED(glyph('heart')) },
+  notes: { colors: ['#c9b6f5', '#4a3480'], scale: 0.7,
+    svg: `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${glyph('music')}</svg>` },
+  lanterns: { colors: ['#f2c27a'], scale: 0.8, css: 'border-radius: 50%; box-shadow: inset -6px -8px 0 rgba(0,0,0,0.08)' },
+  leaves: { colors: ['#934606', '#f2c27a'], scale: 0.9, svg: FILLED('<path d="M5 19C5 10 10 4 20 4c0 10-6 15-15 15z"/>') },
+  petals: { colors: ['#f5b3c8', '#fbdde6'], scale: 0.8, aspect: 0.75, css: 'border-radius: 70% 0 70% 0' },
+  stars: { colors: ['#c9b6f5', '#4a3480', '#f2c27a'], scale: 0.7, svg: FILLED(glyph('star')) },
+  beans: { colors: ['#934606', '#5f5345'], scale: 0.45, css: 'border-radius: 50%' },
+};
+const RISE = new Set(['hearts', 'notes', 'lanterns']);
+const FALL = new Set(['leaves', 'petals', 'stars', 'beans']);
+const FALL_SKY = 26;                                  // + 14 at the tile = 40
+const HALLOWEEN = ['#934606', '#f2c27a', '#4a3480', '#c9b6f5'];   // orange + purple confetti
+
+/** A particle's path and timing without its look, so another shape can ride it. */
+const motion = (st) => st.split(';').map((x) => x.trim())
+  .filter((x) => x && !/^(background|border-radius|box-shadow|width|height)\s*:/.test(x)).join('; ');
+const widthOf = (st) => Number(/(?:^|;)\s*width:\s*(\d+)px/.exec(st)?.[1] ?? 20);
+
+function particle(cls, st, fx, i) {
+  const sh = SHAPES[fx];
+  const c = sh.colors[i % sh.colors.length];
+  const w = Math.round(widthOf(st) * sh.scale);
+  const h = Math.round(w * (sh.aspect ?? 1));
+  const look = sh.svg ? `color: ${c}` : `background: ${c}; ${sh.css}`;
+  return `<span class="${cls} wb-nostr" style="${motion(st)}; width: ${w}px; height: ${h}px; ${look}">${sh.svg ?? ''}</span>`;
+}
+const recolor = (st, i, pal) => st.replace(/background: #[0-9a-f]{6}/i, `background: ${pal[i % pal.length]}`);
+
+/** The burst at the tile's icon. */
+function burstAt(fx) {
+  if (fx === 'confetti') return BITS.map((st) => `<span class="wb-bit" style="${st}"></span>`).join('');
+  if (fx === 'halloween') return BITS.map((st, i) => `<span class="wb-bit" style="${recolor(st, i, HALLOWEEN)}"></span>`).join('');
+  if (fx === 'balloons') return BALLOONS.map((st) => `<span class="wb-balloon" style="${st}"></span>`).join('');
+  if (fx === 'snow') return FLAKES.map((st) => `<span class="wb-flake" style="${st}">${FLAKE_SVG}</span>`).join('');
+  if (RISE.has(fx)) return BALLOONS.map((st, i) => particle('wb-balloon', st, fx, i)).join('');
+  return FLAKES.map((st, i) => particle('wb-flake', st, fx, i)).join('');
+}
+
+/** The whole-screen part of the party (EventTiles' .wb-sky). */
+function sky(fx) {
+  if (fx === 'balloons') return UP.map((st) => `<span class="wb-up" style="${st}"></span>`).join('');
+  if (fx === 'snow') return SNOW.map((st) => `<span class="wb-snow" style="${st}">${FLAKE_SVG}</span>`).join('');
+  if (fx === 'halloween') return RAIN.map((st, i) => `<span class="wb-rain" style="${recolor(st, i, HALLOWEEN)}"></span>`).join('');
+  if (RISE.has(fx)) return UP.map((st, i) => particle('wb-up', st, fx, i)).join('');
+  if (FALL.has(fx)) return SNOW.slice(0, FALL_SKY).map((st, i) => particle('wb-snow', st, fx, i)).join('');
+  return RAIN.map((st) => `<span class="wb-rain" style="${st}"></span>`).join('');
+}
+
+/** How long a party lasts: EventTiles' sky runs longer for things that rise or fall. */
+const partyMs = (fx) => (fx === 'confetti' || fx === 'halloween' ? 4800 : 5600);
 let partyUntil = 0;
 let partyTimer = null;
 
@@ -526,19 +625,12 @@ const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 function countTile(cd, party) {
   const kind = kindOf(cd);
+  const [ic, tone, fx] = KINDS[kind];
+  // A birthday in the household takes the birthday person's colours.
   const p = kind === 'birthday' && cd.who ? person(cd.who) : null;
-  const look = {
-    visit: { svg: TILE_ICONS.gift, disc: 'var(--warm-soft)', fg: 'var(--warm)', ink: 'var(--warm)' },
-    birthday: p ? { svg: TILE_ICONS.cake, disc: p.bg, fg: p.fg, ink: `var(--${cd.who.slice(0, 2)}-ink, ${p.fg})` }
-      : { svg: TILE_ICONS.cake, disc: 'var(--warm-soft)', fg: 'var(--warm)', ink: 'var(--warm)' },
-    holiday: { svg: TILE_ICONS.snow, disc: 'var(--cool-soft)', fg: 'var(--cool)', ink: 'var(--cool)' },
-  }[kind];
-  let burst = '';
-  if (party) {
-    burst = kind === 'visit' ? BITS.map((st) => `<span class="wb-bit" style="${st}"></span>`).join('')
-      : kind === 'birthday' ? BALLOONS.map((st) => `<span class="wb-balloon" style="${st}"></span>`).join('')
-      : FLAKES.map((st) => `<span class="wb-flake" style="${st}">${FLAKE_SVG}</span>`).join('');
-  }
+  const look = p ? { disc: p.bg, fg: p.fg, ink: `var(--${cd.who.slice(0, 2)}-ink, ${p.fg})` } : TONES[tone];
+  const svg = TILE_ICONS[ic] ?? glyph(ic);           // gift and cake have a lid/flame that moves
+  const burst = party ? burstAt(fx) : '';
   const n = Number(cd.days);
   const d = now();
   const when = new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -547,32 +639,24 @@ function countTile(cd, party) {
     ? `<span class="wb-party-text wb-fit"><span class="sd-head" style="color:${look.ink}">${esc(cd.headline ?? cd.label)}</span><span class="sd-date">${esc(date)}</span><span class="sd-sleeps">${n} ${n === 1 ? 'sleep' : 'sleeps'} to go</span></span>`
     : `<span class="wb-fit"><span class="sd-num" style="color:${look.ink}">${esc(cd.days)}</span><span class="sd-lbl">${n === 1 ? 'day' : 'days'}</span><span class="sd-what">${esc(cd.label)}</span></span>`;
   return `<div class="strip-card sd-count wb-event${party ? ' is-party' : ''}" data-action="celebrate" role="button" aria-label="${esc(cd.label)} in ${esc(days(n))}. Tap to celebrate.">
-    <span class="sd-disc wb-gift" style="background:${look.disc};color:${look.fg}"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="overflow:visible">${look.svg}</svg>${burst}</span>${text}</div>`;
-}
-
-const kindOf = (cd) => (cd?.kind === 'birthday' || cd?.kind === 'holiday' ? cd.kind : 'visit');
-
-/** The whole-screen part of the party (EventTiles' .wb-sky). */
-function sky(kind) {
-  if (kind === 'birthday') return UP.map((st) => `<span class="wb-up" style="${st}"></span>`).join('');
-  if (kind === 'holiday') return SNOW.map((st) => `<span class="wb-snow" style="${st}">${FLAKE_SVG}</span>`).join('');
-  return RAIN.map((st) => `<span class="wb-rain" style="${st}"></span>`).join('');
+    <span class="sd-disc wb-gift" style="background:${look.disc};color:${look.fg}"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="overflow:visible">${svg}</svg>${burst}</span>${text}</div>`;
 }
 
 function celebrate() {
-  const kind = kindOf(countdowns()[0]);
+  const fx = KINDS[kindOf(countdowns()[0])][2];
+  const ms = partyMs(fx);
   clearTimeout(partyTimer);
-  partyUntil = Date.now() + PARTY_MS[kind];
+  partyUntil = Date.now() + ms;
   // Fresh elements every time, so a second tap replays from the start.
   $('amb-strip').innerHTML = strip().join('');
-  $('amb-sky').innerHTML = sky(kind);
+  $('amb-sky').innerHTML = sky(fx);
   $('amb-sky').hidden = false;
   partyTimer = setTimeout(() => {
     partyUntil = 0;
     $('amb-sky').hidden = true;
     $('amb-sky').innerHTML = '';                         // particles removed when the party ends
     renderAmbient();
-  }, PARTY_MS[kind]);
+  }, ms);
 }
 
 // Memories: two stacked layers, crossfaded, each drifting very slowly.

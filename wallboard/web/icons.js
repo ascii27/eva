@@ -50,7 +50,42 @@ const SCHEDULE = {
   recorder: '<path d="M14 3l7 7-11 11-3-1-1-3z"/><circle cx="13" cy="9" r=".8" fill="currentColor"/><circle cx="10.5" cy="11.5" r=".8" fill="currentColor"/><circle cx="8" cy="14" r=".8" fill="currentColor"/>',
 };
 
-const ALL = { ...HAVEN, ...GLYPHS, ...CHORES, ...SCHEDULE };
+
+// Countdown kinds (design/EventIcons.dc.html, CLAUDE.md "Countdown kinds"),
+// copied verbatim; keys are the table's Icon column. gift, bag and music were
+// already here with the same art. Two exceptions: Haven's `moon` (bedtime,
+// night) and `sun` (weather) keep their art, so Tsukimi's moon-and-dango is
+// `tsukimi`, and Summer uses Haven's sun.
+const EVENTS = {
+  star: '<path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/>',
+  cake: '<path d="M4 21h16M5 21v-7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7M5 16.5c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0M12 12V8.5M12 6.5c.9-.9.9-2 0-3-.9 1-.9 2.1 0 3z"/>',
+  plane: '<path d="M21 12.5c0-.8-.7-1.5-1.5-1.5H15L10 3H8l2.5 8H6L4.5 9H3l1 3.5L3 16h1.5L6 14h4.5L8 22h2l5-8h4.5c.8 0 1.5-.7 1.5-1.5z"/>',
+  box: '<path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5"/>',
+  heart: '<path d="M12 20s-7-4.4-8.5-9A4.5 4.5 0 0 1 12 6.5 4.5 4.5 0 0 1 20.5 11C19 15.6 12 20 12 20z"/>',
+  medal: '<path d="M7 3l3.5 7.5M17 3l-3.5 7.5"/><circle cx="12" cy="15.5" r="5.5"/><path d="M12 13v5M10.5 14l1.5-1"/>',
+  cap: '<path d="M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5M22 9v6"/>',
+  sunrise: '<path d="M2.5 17h19M6 17a6 6 0 0 1 12 0M12 5v3M5.6 8.6l2 2M18.4 8.6l-2 2M5 21h14"/>',
+  oni: '<path d="M5.5 11a6.5 6.5 0 0 0 13 0v-1a6.5 6.5 0 0 0-13 0zM7.5 5L6 2M16.5 5L18 2M9 15h6"/><circle cx="9.5" cy="10.5" r=".9" fill="currentColor"/><circle cx="14.5" cy="10.5" r=".9" fill="currentColor"/>',
+  dolls: '<circle cx="8" cy="5" r="2.2"/><circle cx="16" cy="5" r="2.2"/><path d="M3.5 21L8 8.5l4.5 12.5zM11.5 21L16 8.5l4.5 12.5z"/>',
+  sakura: '<g><g transform="rotate(0 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"/></g><g transform="rotate(72 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"/></g><g transform="rotate(144 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"/></g><g transform="rotate(216 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"/></g><g transform="rotate(288 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"/></g><circle cx="12" cy="12" r="1.6"/></g>',
+  carp: '<path d="M4 3v18M4 5h11l4 2.5-4 2.5H4M4 12.5h9l4 2.5-4 2.5H4"/><circle cx="14.5" cy="7.5" r=".9" fill="currentColor"/><circle cx="12.5" cy="15" r=".9" fill="currentColor"/>',
+  tanabata: '<path d="M4 4c5 1 11 1 16 0M8 4.5v6M12 5v8M16 4.5v5"/><path d="M12 14.5l1.4 2.8 3.1.5-2.2 2.1.5 3.1-2.8-1.5-2.8 1.5.5-3.1-2.2-2.1 3.1-.5z"/>',
+  lantern: '<path d="M12 2v2.5M8.5 4.5h7M7.5 6.5c-1.8 3-1.8 9 0 12h9c1.8-3 1.8-9 0-12zM7 10.5h10M7 14.5h10M9.5 18.5v2h5v-2"/>',
+  tsukimi: '<path d="M21 9.5A6.5 6.5 0 1 1 14.5 3a5 5 0 0 0 6.5 6.5z"/><circle cx="6" cy="15.5" r="2"/><circle cx="10" cy="15.5" r="2"/><circle cx="8" cy="12" r="2"/><path d="M3 20h10"/>',
+  egg: '<path d="M12 3c3.5 0 7 6 7 11a7 7 0 0 1-14 0c0-5 3.5-11 7-11zM5.3 12.5l2.2-1.5 2.2 1.5 2.3-1.5 2.3 1.5 2.2-1.5 2.2 1.5"/>',
+  flower: '<circle cx="12" cy="8" r="3"/><path d="M12 11v10M12 17c-3 0-5-2-5-4 2 0 5 1 5 4zM12 15c2.5 0 4.5-1.5 4.5-3.5-2 0-4.5 1-4.5 3.5zM9 8a3 3 0 0 1-3-3M15 8a3 3 0 0 0 3-3"/>',
+  firework: '<path d="M12 12V3M12 12l6.4-6.4M12 12h9M12 12l6.4 6.4M12 12v9M12 12l-6.4 6.4M12 12H3M12 12L5.6 5.6"/><circle cx="12" cy="12" r="1.5"/>',
+  pumpkin: '<path d="M12 7c-4.5 0-8.5 2.5-8.5 7s4 7 8.5 7 8.5-2.5 8.5-7-4-7-8.5-7zM8.2 7.7c-1.6 2.5-1.6 10.1 0 12.6M15.8 7.7c1.6 2.5 1.6 10.1 0 12.6M12 7c0-2 1-3.5 3-4"/>',
+  pie: '<path d="M2.5 14h19l-1.6 5.5H4.1zM3 14a9 7 0 0 1 18 0M8 10l1.2 2M12 9v2.3M16 10l-1.2 2"/>',
+  tree: '<path d="M12 2.5l5 6h-3l4 5h-3l4 5H5l4-5H6l4-5H7zM12 18.5V22"/>',
+  leaf: '<path d="M5 19C5 10 10 4 20 4c0 10-6 15-15 15zM5 19l8-8"/>',
+  snow: '<path d="M12 2.5v19M3.8 7.2l16.4 9.6M20.2 7.2L3.8 16.8M9.5 4l2.5 1.7L14.5 4M9.5 20l2.5-1.7 2.5 1.7"/>',
+};
+
+const ALL = { ...HAVEN, ...GLYPHS, ...CHORES, ...SCHEDULE, ...EVENTS };
+
+/** An icon's inner SVG, for callers that draw their own <svg> (the countdown tile). */
+export const glyph = (name) => ALL[name] ?? GLYPHS.chores;
 
 export function icon(name, size = 24, stroke = 1.75) {
   const body = ALL[name] ?? GLYPHS.chores;
