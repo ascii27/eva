@@ -50,17 +50,27 @@ Purpose: **who has what today, so the family can prepare.** Reference: `design/D
 
 **2. "Today" card (always, until the switch below)**
 - Calendar/clock icon + "TODAY" eyebrow.
-- One row per person in fixed order: Mariko, Sarina, Nozomi, Michael. 56 px avatar, then their items as pills (56 px tall, icon + time + title, 26 px).
+- One row per person who has something, in fixed order: Mariko, Sarina, Nozomi, Michael. 56 px avatar, then their items as pills (56 px tall, icon + time + title, 26 px).
   - Upcoming: `--surface-200` fill, 2px `--line` border, ink text.
   - Next (the "Next up" event, or the next item for that person within the hour): solid teal, white text.
   - Done (end time passed): transparent, 2px dashed `--line` border, faint text, small check. Done items stay so the day's shape is visible.
-  - Nothing today: "Free" in muted text.
+  - Nothing scheduled: **leave that person out entirely** (no row, no "Free"). If nobody has anything, show one muted line: "Nothing scheduled".
   - More than 3 items for one person: show the next 2 + a "+N more" pill; the full list is in the active view.
 
-**3. After dinner: Tonight + Tomorrow**
+**3. After dinner: Tomorrow (plus the evening "Next up")**
 - Switch when every item today is done, or at 18:30, whichever comes first. Night mode takes over at bedtime as before.
-- **Tonight** card (moon icon): bath order ("Bath first" + avatar + name), plus anything else still tonight.
+- Evening "Next up" is usually Bedtime, with the bath-order row inside it (see the space budget below).
 - **Tomorrow · <weekday>** card: same per-person rows and pills as Today, for tomorrow. Footer row **Pack tonight** with amber pills (union of tomorrow's `bring` lists, deduplicated).
+
+**Space budget — the right column must never run under the bottom strip** (seen on the Echo 2026-11-15: Bedtime + Tonight + Tomorrow overflowed)
+- The calm stage is a fixed layout: top area above the strip, then the 168 px strip. Build it as a grid with the strip in its own row (`grid-template-rows: minmax(0, 1fr) 168px`) and give the right column `min-height: 0; overflow: hidden`, so content can only be trimmed, never overlap. At 1920×1080 the right column has ~740 px of height.
+- **At most 2 cards** in the right column: the "Next up" card (if any) + one list card (Today, or Tomorrow after the switch).
+- **No separate "Tonight" card.** Bath order goes inside the evening "Next up" card (e.g. Bedtime) as a row: tub icon, "Bath first", avatar, name. If there's no Next-up card, put that row at the top of the Tomorrow card.
+- **Compact list rules**, applied in this order until it fits:
+  1. Merge people who share the same event (same title and time) into one row with overlapping avatars (e.g. Mariko + Sarina, 7:55 School).
+  2. Max 2 pills per row + a "+N more" pill.
+  3. If it still doesn't fit, drop rows from the bottom (latest first) and end with a "+N more" row. The active view always has everything.
+- Test the worst case: `?time=20:21` with bedtime, bath and a full tomorrow; nothing may touch the strip.
 
 **Data (from Eva; absent vs empty rules apply)**
 - `schedule` (today) and `tomorrow`: `[{ id, who: ["mariko", ...], start: "HH:MM", end?: "HH:MM", title, icon, bring?: [{ icon, label }] }]`. `end` defaults to `start` + 60 min for the done state.
@@ -85,16 +95,58 @@ The calm view is read from 2–4 m, so it shows a few large signals, **icons fir
     - Then it returns (≈5 s). Tapping again restarts it.
     - With `prefers-reduced-motion`, the confetti and wiggle are skipped; the text swap stays.
     - Silk budget: transforms and opacity only, no blur, no canvas or JS animation loop. The confetti elements are removed after each burst.
-    - **Per event kind** (reference: `design/EventTiles.dc.html`). Eva sets `kind` when she pushes a countdown; unknown kinds fall back to `visit`.
+    - **Per event kind** (reference: `design/EventTiles.dc.html`). Eva sets `kind` when she pushes a countdown; unknown kinds fall back to `holiday` (star).
       - `visit`: gift icon, amber; lid pops, confetti bursts from the gift and ~38 pieces rain down across the whole screen.
       - `birthday`: cake icon, the birthday girl's colour; candle flickers, ~14 pastel balloons rise from the bottom edge across the whole screen (3–4 s).
-      - `holiday`: snowflake icon, blue; ~34 blue flakes drift down across the whole screen (3.5–4.5 s).
+      - `winter` (was `holiday`): snowflake icon, blue; ~34 blue flakes drift down across the whole screen (3.5–4.5 s). Full kind list: "Countdown kinds" below.
       - Particle budget on Silk: ≤ 40 elements, transform + opacity only, removed when the effect ends.
       - Party text is always: what (e.g. "Sarina turns 9"), the day ("Sat 28"), "N sleeps to go".
       - Push shape: `countdowns: [{ id, label, date, kind, who?, headline? }]`. The calm tile shows the nearest one. `headline` is the party's first line ("Grandma comes"); without it the label is used.
 - No counts, chore names, pay text or bath history on the calm view; those live in the active view.
 - Every icon tile has an `aria-label` that says it in words (e.g. "Make bed: done").
 - Rule of thumb: if it can't be read from across the kitchen, it belongs in the active view.
+
+## Countdown kinds: icon, colour, celebration (2026-11-15)
+Reference: `design/EventIcons.dc.html` (icon artwork, same line style: 24 grid, 1.9 stroke, round caps). Eva sends `kind` with each countdown; **unknown kinds fall back to `holiday`** (star, amber, confetti). The old `holiday` = snowflake mapping is replaced: the snowflake is now `winter` only.
+
+| kind | Label | Icon | Colour | Tap effect |
+|---|---|---|---|---|
+| `holiday` | Holiday (default) | star | amber | Confetti rain |
+| `visit` | Visit | gift | amber | Confetti rain |
+| `birthday` | Birthday | cake | pink (or the birthday person's colour) | Balloons rise |
+| `trip` | Trip | plane | blue | Confetti rain |
+| `move` | Moving day | box | amber | Confetti rain |
+| `anniversary` | Anniversary | heart | pink | Hearts rise |
+| `recital` | Recital | music | violet | Notes rise |
+| `sports` | Sports day | medal | amber | Confetti rain |
+| `ceremony` | Graduation · entrance | cap | violet | Confetti rain |
+| `school` | First / last day of school | bag | teal | Confetti rain |
+| `new-year` | New Year (お正月) | sunrise | amber | Confetti rain |
+| `setsubun` | Setsubun (節分) | oni | amber | Beans fall |
+| `hinamatsuri` | Hinamatsuri (ひな祭り) | dolls | pink | Petals fall |
+| `hanami` | Hanami (花見) | sakura | pink | Petals fall |
+| `kodomo` | Children's Day (こどもの日) | carp | blue | Confetti rain |
+| `tanabata` | Tanabata (七夕) | tanabata | violet | Stars fall |
+| `obon` | Obon (お盆) | lantern | amber | Lanterns rise |
+| `tsukimi` | Tsukimi (月見) | moon | violet | Stars fall |
+| `valentine` | Valentine's Day | heart | pink | Hearts rise |
+| `easter` | Easter | egg | violet | Confetti rain |
+| `parents-day` | Mother's / Father's Day | flower | pink | Hearts rise |
+| `july4` | Fourth of July | firework | blue | Confetti rain |
+| `halloween` | Halloween | pumpkin | amber | Confetti rain (orange + purple) |
+| `thanksgiving` | Thanksgiving | pie | amber | Leaves fall |
+| `christmas` | Christmas | tree | green | Snow falls |
+| `summer` | Summer break | sun | amber | Confetti rain |
+| `autumn` | Autumn | leaf | amber | Leaves fall |
+| `winter` | Winter break | snow | blue | Snow falls |
+| `spring` | Spring break | sakura | pink | Petals fall |
+
+- Colours: amber = `--warm`/`--warm-soft`, blue = `--cool`/`--cool-soft`, teal = `--accent`/`--accent-soft`, pink `#8c2a4f` on `#fbdde6`, violet `#4a3480` on `#e7defa`, green `#2f6b3c` on `#dcebd9` (new; add as `--green`/`--green-soft`).
+- Effects are three motions with different particles, all within the ≤ 40-element, transform + opacity budget:
+  - **Rain/burst:** confetti (burst from the icon + rain across the screen).
+  - **Rise:** balloons, hearts, music notes, lanterns (soft amber circles), from the bottom edge across the screen.
+  - **Fall:** snow, leaves (amber/orange leaf shapes), petals (pink), stars (small violet/amber), beans (small brown dots).
+- Add the new icons to `web/icons.js`; keep keys equal to the Icon column.
 
 ## Household and behaviour (don't regress)
 - Only Mariko (11) and Sarina (8) have chores. Michael and Nozomi appear in the schedule only.

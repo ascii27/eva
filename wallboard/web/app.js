@@ -236,7 +236,7 @@ function renderAmbient() {
       <div class="amb-wtext"><b>${esc(w.now.label)}</b><span>${esc(w.summary ?? '')}</span></div>`;
   } else $('amb-weather').innerHTML = '';
 
-  $('amb-right').innerHTML = rightColumn();
+  fitRightColumn();
 
   // Mid-celebration, leave the strip alone: a re-render would restart the burst.
   if (Date.now() >= partyUntil) $('amb-strip').innerHTML = strip().join('');
@@ -246,7 +246,8 @@ function renderAmbient() {
 //
 // Who has what today, so the family can prepare: a "Next up" card when
 // something starts within the hour, then a per-person "Today" card; after
-// dinner (everything done, or 18:30) "Tonight" + "Tomorrow". Reference:
+// dinner (everything done, or 18:30) "Tomorrow", with bath order riding in the
+// evening's Next-up card. Never more than two cards. Reference:
 // design/DayFlow.dc.html. Everything here sits on a card, never on the photo.
 
 const SOON_MIN = 60;                    // "Next up" appears this long before an event
@@ -346,60 +347,141 @@ function pill(e, state) {
   return `<span class="rc-pill ${state}" role="img" aria-label="${esc(`${e.allDay ? 'All day' : fmtMin(e.start)} ${e.title}: ${said}`)}">${icon(e.icon, 28, 1.9)}${time}<span class="w">${esc(e.title)}</span>${tick}</span>`;
 }
 
-/** One person's pills. `t` is null for a day that hasn't started (tomorrow). */
-function pills(items, t, nextIds) {
-  if (!items.length) return '<span class="rc-free">Free</span>';
+/**
+ * One row's pills. `t` is null for a day that hasn't started (tomorrow). More
+ * than `cap` items: the next two plus a "+N more" pill.
+ */
+function pills(items, t, nextIds, cap) {
   const sorted = [...items].sort((a, b) => (a.allDay ? -1 : a.start) - (b.allDay ? -1 : b.start));
   const done = (e) => t != null && !e.allDay && e.end <= t;
+  const isNext = (e) => [...e.ids].some((id) => nextIds.has(id));
   // Their next item within the hour lights up even when the card shows something else.
   const soon = t == null ? null : sorted.find((e) => !e.allDay && e.start > t && e.start - t <= SOON_MIN);
-  let list = sorted.map((e) => ({ e, s: done(e) ? 'done' : nextIds.has(e.id) || e === soon ? 'next' : 'up' }));
+  let list = sorted.map((e) => ({ e, s: done(e) ? 'done' : isNext(e) || e === soon ? 'next' : 'up' }));
   let more = 0;
-  if (list.length > PILL_MAX) {
+  if (list.length > cap) {
     const left = list.filter((x) => x.s !== 'done');
     const shown = (left.length ? left : list.slice(-2)).slice(0, 2);
     more = list.length - shown.length;
     list = shown;
   }
-  return list.map((x) => pill(x.e, x.s)).join('') + (more ? `<span class="rc-pill up more"><span class="w">+${more} more</span></span>` : '');
+  return list.map((x) => pill(x.e, x.s)).join('') + (more ? morePill(more) : '');
 }
 
-/** Rows in household order; anything for no one we know gets one extra row. */
-function personRows(list, t, nextIds) {
-  const rows = ORDER.map((id) => `<div class="rc-row">${avatar(id, 56, 20)}<div class="rc-pills">${pills(list.filter((e) => e.who.includes(id)), t, nextIds)}</div></div>`);
-  const nobody = list.filter((e) => !e.who.some((id) => ORDER.includes(id)));
-  if (nobody.length) rows.push(`<div class="rc-row"><span class="avatar rc-home" aria-label="Everyone">${icon('home', 30, 1.9)}</span><div class="rc-pills">${pills(nobody, t, nextIds)}</div></div>`);
-  return rows.join('');
+const morePill = (n) => `<span class="rc-pill up more"><span class="w">+${n} more</span></span>`;
+
+/**
+ * The same thing (title + time) for several people is one event shared by all
+ * of them — the girls' 7:55 School is one row, not two.
+ */
+function mergeShared(list) {
+  const out = [];
+  for (const e of list) {
+    const twin = out.find((x) => x.title === e.title && x.start === e.start && !!x.allDay === !!e.allDay);
+    if (twin) {
+      twin.who = [...new Set([...twin.who, ...e.who])];
+      twin.bring = unionBring([twin.bring, e.bring]);
+      twin.ids.add(e.id);
+    } else out.push({ ...e, ids: new Set([e.id]) });
+  }
+  return out;
 }
 
-function rightColumn() {
+/**
+ * Rows of a list card: one per group of people sharing items, in household
+ * order (a shared row before its first person's own), people with nothing left
+ * out, anything for no one we know last.
+ */
+function rowsOf(list) {
+  const rows = new Map();
+  for (const e of mergeShared(list)) {
+    const who = ORDER.filter((id) => e.who.includes(id));
+    const key = who.join('+');
+    if (!rows.has(key)) rows.set(key, { who, items: [] });
+    rows.get(key).items.push(e);
+  }
+  const rank = (r) => (r.who.length ? ORDER.indexOf(r.who[0]) * 10 - r.who.length : 1e3);
+  return [...rows.values()].sort((a, b) => rank(a) - rank(b));
+}
+
+/**
+ * A list card's rows at compaction `level` (CLAUDE.md "Space budget"): 0 is
+ * the full card; 1 caps every row at 2 pills; each level after drops one more
+ * row from the bottom behind a "+N more" row. `last` says nothing is left to drop.
+ */
+function listRows(list, t, nextIds, level) {
+  const rows = rowsOf(list);
+  if (!rows.length) return { html: '<span class="rc-free">Nothing scheduled</span>', last: true };
+  const cap = level === 0 ? PILL_MAX : 2;
+  const drop = Math.min(Math.max(level - 1, 0), rows.length);
+  const kept = rows.slice(0, rows.length - drop);
+  const hidden = rows.slice(kept.length).reduce((n, r) => n + r.items.length, 0);
+  const shared = rows.some((r) => r.who.length > 1);
+  const face = (r) => {
+    const avs = r.who.length
+      ? r.who.map((id, i) => `<span class="rc-ov"${i ? ' style="margin-left:-14px"' : ''}>${avatar(id, 56, 20)}</span>`).join('')
+      : `<span class="avatar rc-home" aria-label="Everyone">${icon('home', 30, 1.9)}</span>`;
+    return shared ? `<span class="rc-slot">${avs}</span>` : avs;
+  };
+  const html = kept.map((r) => `<div class="rc-row">${face(r)}<div class="rc-pills">${pills(r.items, t, nextIds, cap)}</div></div>`).join('')
+    + (hidden ? `<div class="rc-row"><div class="rc-pills">${morePill(hidden)}</div></div>` : '');
+  return { html, last: drop === rows.length };
+}
+
+/** Who bathes first tonight: a row inside the evening's Next-up card (or atop Tomorrow). */
+function bathRow() {
+  const id = local.bath.tonight;
+  return `<div class="rc-bathrow"><span class="rc-bath">${icon('bath', 28, 1.9)}</span><span class="rc-bt">Bath first</span>${avatar(id, 44, 16)}<span class="rc-bt">${esc(person(id).name)}</span></div>`;
+}
+
+/**
+ * The calm right column at compaction `level`. At most two cards: Next up (if
+ * any) and one list — Today, or Tomorrow after the switch. Returns the html and
+ * whether this is the most compact it gets.
+ */
+function rightColumn(level = 0) {
   const t = minutesOfDay(now());
   const up = nextUp();
   const nextIds = up?.ids ?? new Set();
+  const evening = dayOver();
   const out = [];
   if (up) {
     const avs = up.who.length ? `<span class="rc-avs">${up.who.map((id) => avatar(id, 44, 16)).join('')}</span>` : '';
     out.push(`<div class="rc-card rc-next">${rcHead(up.icon, up.label, avs)}
       <div class="rc-count"><span class="big">${up.mins}</span><span class="unit">min</span><span class="what">${esc(up.title)}</span></div>
-      ${up.bring.length ? `<div class="rc-bring"><span class="rc-k">Bring</span>${bringPills(up.bring)}</div>` : ''}</div>`);
+      ${up.bring.length ? `<div class="rc-bring"><span class="rc-k">Bring</span>${bringPills(up.bring)}</div>` : ''}
+      ${evening ? bathRow() : ''}</div>`);
   }
-  if (!dayOver()) {
-    out.push(`<div class="rc-card">${rcHead('clock', 'Today')}${personRows(todayEvents(), t, nextIds)}</div>`);
-    return out.join('');
+  if (!evening) {
+    const rows = listRows(todayEvents(), t, nextIds, level);
+    out.push(`<div class="rc-card">${rcHead('clock', 'Today')}${rows.html}</div>`);
+    return { html: out.join(''), last: rows.last };
   }
-  // After dinner. Tonight: who bathes first, then anything still to come today.
-  const still = (events('schedule') ?? []).filter((e) => !e.allDay && e.start > t && !nextIds.has(e.id) && !(up?.id === 'bedtime' && isBedtime(e)));
-  const b = person(local.bath.tonight);
-  out.push(`<div class="rc-card">${rcHead('moon', 'Tonight')}
-    <div class="rc-row"><span class="avatar rc-bath">${icon('bath', 32, 1.9)}</span><span class="rc-big">Bath first</span>${avatar(local.bath.tonight, 48, 18)}<span class="rc-big">${esc(b.name)}</span></div>
-    ${still.length ? `<div class="rc-pills">${still.map((e) => pill(e, 'up')).join('')}</div>` : ''}</div>`);
+  // After dinner: tomorrow, and what to pack for it tonight.
+  const bath = up ? '' : bathRow();
   const tm = events('tomorrow');
-  if (tm) {
-    const pack = unionBring(tm.map((e) => e.bring));
-    out.push(`<div class="rc-card">${rcHead('clock', `Tomorrow · ${WEEKDAYS[(now().getDay() + 1) % 7]}`)}${personRows(tm, null, new Set())}
-      ${pack.length ? `<div class="rc-bring rc-pack"><span class="rc-k">Pack tonight</span>${bringPills(pack)}</div>` : ''}</div>`);
+  if (!tm) {
+    if (bath) out.push(`<div class="rc-card">${rcHead('moon', 'Tonight')}${bath}</div>`);
+    return { html: out.join(''), last: true };
   }
-  return out.join('');
+  const pack = unionBring(tm.map((e) => e.bring));
+  const rows = listRows(tm, null, new Set(), level);
+  out.push(`<div class="rc-card">${rcHead('clock', `Tomorrow · ${WEEKDAYS[(now().getDay() + 1) % 7]}`)}${bath}${rows.html}
+    ${pack.length ? `<div class="rc-bring rc-pack"><span class="rc-k">Pack tonight</span>${bringPills(pack)}</div>` : ''}</div>`);
+  return { html: out.join(''), last: rows.last };
+}
+
+/**
+ * Render the right column, compacting until it fits above the strip. The
+ * column clips (overflow: hidden) as a backstop, so it can never overlap.
+ */
+function fitRightColumn() {
+  const el = $('amb-right');
+  for (let level = 0; ; level++) {
+    const { html, last } = rightColumn(level);
+    el.innerHTML = html;
+    if (last || el.scrollHeight <= el.clientHeight) return;
+  }
 }
 
 // Calm strip, both themes (PaperV3HaloLandscape.dc.html by day, Main.dc.html in

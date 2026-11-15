@@ -28,7 +28,7 @@ Nozomi amber (Haven `warm`), Michael blue (Haven `cool`). Always shown with name
 - Teal still means "done" in every theme; Mariko/Sarina avatars use light tints with dark initials by day. Superseded design files (LightPaper = v1, PaperV2Cards, LightDay/Pastel/Photo) are reference only.
 
 ## Right column through the day
-Morning: "Next up" (leave for school + bring) above a per-person **Today** card. During the day: next item within the hour becomes the "Next up" card; done items fade to dashed outlines. After dinner (all done or 18:30): **Tonight** (bath order) + **Tomorrow** with "Pack tonight". "Eva says" is off the calm view for now. Full rules in `CLAUDE.md`; reference `design/DayFlow.dc.html`.
+Morning: "Next up" (leave for school + bring) above a per-person **Today** card. During the day: next item within the hour becomes the "Next up" card; done items fade to dashed outlines. After dinner (all done or 18:30): the evening "Next up" (usually Bedtime, with the bath-order row inside it) + **Tomorrow** with "Pack tonight". Never more than 2 cards; people with nothing are left out; the list compacts (shared events merged, 2 pills + "+N more", then rows dropped behind "+N more") until it fits above the strip. "Eva says" is off the calm view for now. Full rules in `CLAUDE.md`; reference `design/DayFlow.dc.html`.
 
 ## Hierarchy (ambient)
 1. Time + date (300 px) — readable at 4 m

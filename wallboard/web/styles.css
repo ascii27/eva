@@ -102,7 +102,9 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .memory-dim { position: absolute; inset: 0; background: var(--veil); }
 
 /* Burn-in: the whole block drifts ±16 px on a 10-minute cycle. */
-.amb-drift { position: relative; flex: 1; display: flex; flex-direction: column; gap: 40px; min-height: 0; animation: drift 600s ease-in-out infinite; }
+/* A fixed grid (CLAUDE.md "Space budget"): the strip has its own 168 px row, so
+   the top area can only be trimmed, never run under it. */
+.amb-drift { position: relative; flex: 1; display: grid; grid-template-rows: minmax(0, 1fr) 168px; gap: 40px; min-height: 0; animation: drift 600s ease-in-out infinite; }
 @keyframes drift {
   0%, 100% { transform: translate(0, 0); }
   25% { transform: translate(16px, -12px); }
@@ -110,7 +112,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
   75% { transform: translate(-16px, -6px); }
 }
 
-.amb-main { flex: 1; display: flex; gap: 96px; min-height: 0; }
+.amb-main { display: flex; gap: 96px; min-height: 0; }
 .amb-left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .amb-date { font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; color: var(--ink-muted); }
 .amb-clock { margin-top: 8px; font-family: var(--font-display); font-size: 300px; line-height: 272px; font-weight: 300; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
@@ -121,9 +123,12 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .amb-wtext span { font-size: 28px; line-height: 36px; color: var(--ink-muted); }
 .amb-caption { margin-top: auto; display: flex; align-items: center; gap: 12px; color: var(--ink-muted); font-size: 22px; line-height: 28px; }
 
-.amb-right { width: 744px; flex: none; display: flex; flex-direction: column; gap: 24px; }
+/* Clips (CLAUDE.md "Space budget"), so it bleeds 36 px past the 744 px column
+   on top and sides to keep the cards' glow and shadow; the bottom edge is the
+   hard stop above the strip. */
+.amb-right { width: calc(744px + 72px); flex: none; display: flex; flex-direction: column; gap: 24px; min-height: 0; overflow: hidden; margin: -36px -36px 0; padding: 36px 36px 0; }
 /* Calm right column (design/DayFlow.dc.html): every piece on a solid card, no halo. */
-.rc-card { border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); padding: 26px 32px 30px; display: flex; flex-direction: column; gap: 14px; }
+.rc-card { flex: none; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); padding: 26px 32px 30px; display: flex; flex-direction: column; gap: 14px; }
 .rc-next { border: 0; box-shadow: var(--glow-accent); padding: 26px 32px; gap: 12px; }
 .rc-eyebrow { display: flex; align-items: center; gap: 12px; color: var(--ink-muted); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: var(--label); text-transform: uppercase; }
 .rc-next .rc-eyebrow { color: var(--accent); }
@@ -146,9 +151,14 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .rc-pill.next { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .rc-pill.done { background: transparent; border: 2px dashed var(--line); color: var(--ink-faint); }
 .rc-free { font-size: 26px; color: var(--ink-muted); font-weight: 500; }
+/* A row shared by several people: overlapping avatars in a fixed slot, so every row's pills line up. */
+.rc-slot { display: flex; flex: none; width: 112px; }
+.rc-ov { display: flex; border-radius: 50%; box-shadow: 0 0 0 3px var(--surface-100); }
 .rc-home { width: 56px; height: 56px; background: var(--surface-300); color: var(--ink); }
-.rc-bath { width: 56px; height: 56px; background: var(--cool-soft); color: var(--cool); }
-.rc-big { font-size: 30px; font-weight: 600; }
+/* Bath order, inside the evening's Next-up card (or atop Tomorrow). */
+.rc-bathrow { display: flex; align-items: center; gap: 12px; }
+.rc-bath { width: 48px; height: 48px; flex: none; border-radius: 50%; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center; }
+.rc-bt { font-size: 28px; font-weight: 600; }
 
 .eva-face { width: 64px; height: 64px; flex: none; border-radius: 16px; background: var(--surface-200); display: grid; place-items: center; }
 
@@ -170,7 +180,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .amb-caption:empty { display: none; }
 
 /* Calm strip, both themes (v3 day board; Main.dc.html in the evening). */
-.amb-strip { display: flex; gap: 24px; height: 168px; flex: none; }
+.amb-strip { display: flex; gap: 24px; height: 168px; min-height: 0; }
 .strip-card { border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--strip-shadow); display: flex; align-items: center; }
 .sd-kid { flex: 1; min-width: 0; padding: 0 24px; gap: 20px; }
 .sd-bath { width: 300px; flex: none; padding: 0 26px; gap: 22px; }
