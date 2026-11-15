@@ -57,7 +57,7 @@ interface StreamPhoto {
   derivatives?: Record<string, { checksum?: string; width?: string }>;
 }
 
-/** Stills of any orientation (the board lays portraits out in pairs); videos would need a player. */
+/** Stills of any orientation (the board shows portraits alone, in the left half); videos would need a player. */
 export function entriesFrom(stream: { streamName?: string; photos?: StreamPhoto[] }, album: number): PhotoEntry[] {
   const out: PhotoEntry[] = [];
   for (const p of stream.photos ?? []) {

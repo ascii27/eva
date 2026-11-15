@@ -19,6 +19,7 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
 console.log('chores:', await call('PUT', '/api/eva/chores', { chores: SEED_CHORES }));
 if (process.argv.includes('--clear-panels')) {
   const state = (await call('GET', '/api/eva/state')) as { panels: Record<string, unknown> };
-  // weather is the server's own feed (server/weather.ts), not Eva's — leave it.
-  for (const name of Object.keys(state.panels).filter((n) => n !== 'weather')) console.log(`panel ${name}:`, await call('DELETE', `/api/eva/panels/${name}`));
+  // Panels the server feeds itself (weather.ts, calendar.ts + routine.ts), not Eva's — leave them.
+  const own = new Set(['weather', 'schedule', 'tomorrow', 'leave-by', 'bedtime', 'occasion']);
+  for (const name of Object.keys(state.panels).filter((n) => !own.has(n))) console.log(`panel ${name}:`, await call('DELETE', `/api/eva/panels/${name}`));
 }

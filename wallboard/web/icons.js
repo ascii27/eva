@@ -22,6 +22,7 @@ const GLYPHS = {
   swap: '<path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"/>',
   undo: '<path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  bath: '<path d="M3 12h18v3a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5zM6 12V6a2 2 0 0 1 4 0M7 20l-1 2M17 20l1 2"/>',
 };
 
 // Chore icons, keyed by the `icon` field hermes sends with a chore.

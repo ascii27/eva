@@ -2,8 +2,9 @@
    Change the design first, then port.
 
    Themes by time of day (DESIGN.md): the defaults below are Evening (Haven
-   Night, dark); .stage[data-theme="day"] swaps in "Morning paper v2"
-   (PaperV2Sand, ActivePaper, ChoreTapPaper). Night mode is its own view and
+   Night, dark); .stage[data-theme="day"] swaps in "Morning paper" — v2 sand
+   tokens with the v3 halo calm view (PaperV3HaloLandscape / PaperV3Halo),
+   ActivePaper, ChoreTapPaper. Night mode is its own view and
    ignores both. */
 
 :root {
@@ -22,12 +23,13 @@
   --veil: rgba(7, 9, 12, 0.62);
   --strip-line: transparent;   /* day edges its strip cards; the dark boards don't */
   --hint: var(--ink-faint);
+  --halo: none;   /* day: cream halo on text over the photo (v3) */
   --ma-bg: #c4a4ff; --ma-fg: #1b1030;
   --sa-bg: #ff9cc0; --sa-fg: #2e0c19;
   --label: 0.08em;
 }
 
-/* Day · "Morning paper v2 · sand" — chosen after testing on the Echo (v1 was too
+/* Day · "Morning paper v2 · sand" tokens (v3 halo keeps them) — chosen after testing on the Echo (v1 was too
    bright and flat). Tokens from PaperV2Sand.dc.html. */
 .stage[data-theme="day"] {
   --surface-000: #d6c7ae; --surface-100: #fffaf1; --surface-200: #f1e6d3; --surface-300: #dccdb4;
@@ -40,9 +42,10 @@
   --glow-accent: 0 0 0 3px rgba(11,103,96,0.7), 0 16px 36px rgba(50,35,15,0.24);
   --card-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 4px rgba(50,35,15,0.16), 0 16px 36px rgba(50,35,15,0.24);
   --toast-shadow: 0 16px 40px rgba(60,40,20,0.18);
-  --veil: rgba(214, 199, 174, 0.50);
+  --veil: rgba(214, 199, 174, 0.35);
   --strip-line: var(--line);
-  --hint: var(--ink-muted);
+  --hint: var(--ink);
+  --halo: 0 0 2px #fffaf1, 0 0 6px #fffaf1, 0 0 22px rgba(255, 250, 241, 0.95);
   --ma-bg: #e7defa; --ma-fg: #4a3480;
   --sa-bg: #fbdde6; --sa-fg: #8c2a4f;
 }
@@ -80,16 +83,12 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 
 .ambient { padding: 88px 104px 72px; flex-direction: column; overflow: hidden; }
 .memory { position: absolute; inset: 0; opacity: 0; transition: opacity 2.5s ease; overflow: hidden; }
-/* Layout per photo (DESIGN.md "Memory photos"): landscape full-bleed; two
-   portraits side by side with an 8 px gap; a lone portrait (or square-ish photo)
-   in the left half — the pair's left slot — with the right half plain theme
-   ground. No blurred fill: too heavy for Silk. */
+/* Layout per photo (DESIGN.md "Memory photos"): landscape full-bleed; a
+   portrait (or square-ish photo) alone in the left half, the right half plain
+   theme ground. Never two at once. No blurred fill: too heavy for Silk. */
 .memory img { position: absolute; top: 0; height: 100%; object-fit: cover; }
 .memory img.full { left: 0; width: 100%; }
 .memory img.single { left: 0; width: calc(50% - 4px); }
-.memory img.half { width: calc(50% - 4px); }
-.memory img.half.l { left: 0; }
-.memory img.half.r { right: 0; }
 .memory.shown { opacity: 1; }
 /* Ken Burns, barely: vars are set per photo in app.js. The animation outlives
    .shown so the outgoing photo keeps drifting through its fade instead of snapping. */
@@ -159,6 +158,44 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 
 .amb-hint { position: absolute; right: 104px; bottom: 24px; font-size: 22px; line-height: 28px; color: var(--hint); }
 
+/* Day calm view · v3 halo (PaperV3HaloLandscape.dc.html; PaperV3Halo for a
+   portrait). Text over the photo gets a cream halo and full ink; the caption
+   sits on a solid pill; the strip is icon-led and 168 px tall. */
+.amb-date, .amb-clock, .amb-temp, .amb-wtext b, .amb-wtext span, .later .eyebrow, .later-row span, .amb-hint { text-shadow: var(--halo); }
+[data-theme="day"] .ambient { padding: 80px 104px 52px; }
+[data-theme="day"] .amb-drift { gap: 40px; }
+[data-theme="day"] .amb-date { font-weight: 700; color: var(--ink); }
+[data-theme="day"] .amb-clock, [data-theme="day"] .amb-temp { font-weight: 400; }
+[data-theme="day"] .amb-wtext b { font-weight: 600; }
+[data-theme="day"] .amb-wtext span { font-weight: 500; color: var(--ink); }
+[data-theme="day"] .amb-caption { align-self: flex-start; padding: 6px 16px; border-radius: 999px; background: var(--surface-100); color: var(--ink); }
+.amb-caption:empty { display: none; }
+[data-theme="day"] .later .eyebrow { font-weight: 700; color: var(--ink); }
+[data-theme="day"] .later-row .t, [data-theme="day"] .later-row .p { color: var(--ink); }
+[data-theme="day"] .later-row .w { font-weight: 600; }
+[data-theme="day"] .amb-hint { bottom: 12px; }
+
+[data-theme="day"] .amb-strip { gap: 24px; height: 168px; }
+.sd-kid, .sd-bath, .sd-count { border-radius: 28px; }
+.sd-kid { flex: 1; min-width: 0; padding: 0 24px; gap: 20px; }
+.sd-bath { width: 300px; flex: none; padding: 0 26px; gap: 22px; }
+.sd-count { width: 330px; flex: none; padding: 0 26px; gap: 18px; }
+.sd-who { width: 92px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sd-av { position: relative; width: 84px; height: 84px; font-size: 32px; }
+.sd-name { font-size: 22px; line-height: 26px; font-weight: 700; }
+.sd-star { position: absolute; right: -6px; top: -6px; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; box-shadow: var(--glow-accent); }
+.sd-first { position: absolute; left: -8px; top: -8px; height: 32px; padding: 0 9px; border-radius: 999px; background: var(--cool); color: var(--on-cool); display: grid; place-items: center; font-size: 17px; font-weight: 700; }
+.sd-dots { display: flex; gap: 12px; }
+.sd-dot { position: relative; flex: none; border-radius: 50%; border: 3px solid var(--line); background: var(--surface-200); color: var(--ink); display: grid; place-items: center; transition: background .24s ease, border-color .24s ease; }
+.sd-dot.on { border-color: transparent; background: var(--accent); color: var(--on-accent); }
+.sd-tick { position: absolute; right: -4px; bottom: -4px; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-100); color: var(--accent); display: grid; place-items: center; box-shadow: 0 1px 3px rgba(50,35,15,0.3); }
+.sd-disc { width: 96px; height: 96px; flex: none; border-radius: 50%; display: grid; place-items: center; }
+.sd-cool { background: var(--cool-soft); color: var(--cool); }
+.sd-warm { background: var(--warm-soft); color: var(--warm); }
+.sd-cd { display: flex; flex-direction: column; min-width: 0; }
+.sd-num { font-family: var(--font-display); font-size: 88px; line-height: 88px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--warm); }
+.sd-lbl { font-size: 22px; line-height: 26px; font-weight: 700; }
+
 /* ---------- 2 · Active ---------- */
 
 .active { padding: 40px 72px 48px; flex-direction: column; gap: 32px; }
@@ -189,6 +226,10 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .ev.next { background: var(--accent-soft); }
 .ev.past { opacity: 0.45; }
 .ev .t { width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+/* "All day" doesn't fit the time column at clock size; the size is the
+   eyebrow's (DESIGN.md "All-day events"). */
+.ev .t.allday, .later-row .t.allday { font-family: var(--font-sans); font-size: 20px; line-height: 32px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; white-space: nowrap; }
+.ev .t.allday { font-size: 18px; }   /* the Today card's 84 px column; 18 px as in .bath-hist .k */
 .ev.next .t { color: var(--accent); }
 .ev .body { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ev .title { font-size: 24px; line-height: 30px; font-weight: 600; }

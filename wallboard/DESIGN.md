@@ -19,7 +19,7 @@ Nozomi amber (Haven `warm`), Michael blue (Haven `cool`). Always shown with name
 ## Themes by time of day
 | Window | Theme | Notes |
 |---|---|---|
-| ~06:30–21:00 | **Day — "Morning paper v2 · sand"** | Chosen after testing on the Echo (v1 was too bright and flat). Tokens in `design/PaperV2Sand.dc.html` `:root`: ground #d6c7ae, cards #fffaf1 with 1px #c9b89c edge and a stronger shadow, ink #1d1712, muted #4b4034, done-teal #0b6760. Memory photo under a 50% sand veil; clock and weather sit directly on the photo (no card) so the photo stays visible |
+| ~06:30–21:00 | **Day — "Morning paper v3 · halo"** | v2 sand colours (v1 was too bright and flat on the Echo): ground #d6c7ae, cards #fffaf1 with 1px #c9b89c edge and a stronger shadow, ink #1d1712, muted #4b4034, done-teal #0b6760. Memory photo under a 35% sand veil; text sits directly on the photo with a cream halo (`text-shadow: 0 0 2px #fffaf1, 0 0 6px #fffaf1, 0 0 22px rgba(255,250,241,.95)`), heavier weights (clock 400, date 700) and full ink. Same treatment for landscape and single portrait (portraits are never paired). Caption on a cream pill. References: `design/PaperV3HaloLandscape.dc.html`, `PaperV3Halo.dc.html` |
 | 21:00–bedtime | **Evening — Haven Night** (dark) | Current dark design (`Main`, `Active`) |
 | bedtime–06:30 | **Night mode** | Pure black, warm dim text |
 
@@ -33,6 +33,26 @@ Nozomi amber (Haven `warm`), Michael blue (Haven `cool`). Always shown with name
 3. Eva's note (short, ≤ 2 lines at 34 px)
 4. Later today (3 items) · chore progress · one countdown
 
+### Day calm strip (v3, `PaperV3HaloLandscape`)
+Read from across the kitchen, so icons, not text. 168 px tall, four cards (radius 28, gap 24):
+- **Each girl:** 84 px avatar with her name under it (22 px bold), then one 64 px circle per chore with the chore's icon — teal with a small check badge when done, an empty ring when not. A teal star badge on the avatar when everything is done. More than four chores shrink the circles to fit. No counts, chore names or pay (those are in the active view).
+- **Bath:** 96 px blue disc with a bathtub, then the avatar of whoever goes first with a "1st" pill.
+- **Countdown:** 96 px amber disc with the gift, the number at 88 px, then "days · Label". A long label wraps to a second line.
+- The evening strip (`Main`) keeps its own layout: counts, progress bars, pay.
+
+## Routine (decided 2026-11-15, `server/routine.ts`)
+- Leave for school: Mariko & Sarina, **7:55 every weekday** (Mon–Fri), even on school holidays in the calendar. The card shows in the 45 min before.
+- Bedtime: **20:30 Sun–Thu, 21:00 Fri–Sat**, as a "Bedtime" row in today's schedule, plus the same teal countdown card as the school run (moon icon, "in bed by 20:30") in the **30 min** before. They never overlap. It does **not** move night mode, which stays 21:30–06:30.
+- Night view's "Tomorrow" line: the earlier of tomorrow's school run and tomorrow's first timed event; bedtime never counts.
+
+## Countdown tile default (decided 2026-11-15, `server/occasions.ts`)
+- When Eva hasn't pushed `countdowns`, the bottom-right tile shows the **nearest** upcoming occasion: a birthday from the calendar (any event titled "birthday"/"誕生日", yearly repeats included) or one of these holidays: New Year, Hinamatsuri, Easter, Children's Day, Mother's Day, Father's Day, July 4th, Halloween, Thanksgiving, Christmas.
+- Strictly after today (on the day it moves to the next one), a birthday wins a tie, gift icon. Eva's `countdowns` push always overrides it.
+
+## All-day events (decided 2026-11-15)
+- From the family calendar (school holidays, trips). Pinned at the **top** of the Today card and of ambient "Later today", for the whole day, with "ALL DAY" in the time column.
+- The label uses the eyebrow style (20 px, 600, uppercase, 0.08em; 18 px in the Today card's narrower column) because "All day" doesn't fit the time column at clock size. Never "past", never the highlighted "next" row.
+
 ## Chores interaction
 - Single tap toggles done. Press scale 0.97 / 120 ms; fill + check pop ≤ 1 frame after tap.
 - Toast with Undo (80 px button) for 8 s, draining bar. Undo restores the prior state; tapping a done card un-does it with its own undo.
@@ -45,15 +65,13 @@ Layout is chosen per photo by aspect ratio (width ÷ height), checked once when 
 | Photo | Ratio | Layout |
 |---|---|---|
 | Landscape | ≥ 1.2 | Full-bleed background, `object-fit: cover` |
-| Portrait | ≤ 0.9 | **Pair** with the next portrait in the queue: two halves side by side (8 px gap), each `cover` |
-| Portrait, no partner available | ≤ 0.9 | **Single, left**: fills the left half (same slot as the pair's left photo, `cover`); right half stays plain theme ground |
+| Portrait | ≤ 0.9 | **Single, left**: fills the left half (956 px, `cover`); right half stays plain theme ground. **Never paired** — one photo at a time (decided 2026-11-15) |
 | Square-ish | 0.9–1.2 | Treat as a single portrait (left half) |
 
 - No blurred-copy fill behind portraits: large blurs are too heavy for Silk.
-- Pairing: queue scans ahead up to ~5 photos for a portrait partner; keep the album order otherwise. Prefer pairing photos from the same day/event when metadata exists.
 - Pre-size on the server: landscape to 1920 px wide, portrait to 1080 px tall (JPEG ~80%), so Silk never decodes full camera files.
-- Faces: in pair mode the clock sits over the left photo; if face boxes are available, prefer the photo with the face lower in frame on the left.
-- Mockups: `design/PaperPortraitPair.dc.html`, `design/PaperPortraitSingle.dc.html` (single = left half, right blank); placeholders `assets/portrait-a.svg`, `assets/portrait-b.svg`.
+- Faces: the clock sits over the portrait; if face boxes become available, prefer crops that keep the face below the clock.
+- Mockup: `design/PaperPortraitSingle.dc.html` (left half, right blank). `PaperPortraitPair.dc.html` is superseded — pairing was dropped. Placeholders `assets/portrait-a.svg`, `assets/portrait-b.svg`.
 
 ## Always-on / burn-in
 - Memory photo crossfades every 3–5 min (CSS opacity transition, pre-sized JPEGs ≤ 1920 px, dimmed with a flat 62% overlay — no blur filters).

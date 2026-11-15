@@ -12,6 +12,7 @@ import { apply, emptyState, parseChores, reviveState, PANEL_NAME, type Action, t
 import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
 import { IKEJIRI, startWeather } from './weather.ts';
+import { startCalendar } from './calendar.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -77,6 +78,13 @@ if (process.env.WEATHER !== 'off') {
     15 * 60_000,
     (data) => dispatch({ type: 'panel.set', name: 'weather', data, at: Date.now() }),
   );
+}
+
+// The family's day — calendar (CALENDAR_URL, the iCloud published webcal link;
+// a secret, never log it) plus the fixed routine — published as `schedule`,
+// `tomorrow`, `leave-by` and `bedtime`. Without a URL, the routine alone. DAY=off: dummy.
+if (process.env.DAY !== 'off') {
+  startCalendar(process.env.CALENDAR_URL || undefined, 15 * 60_000, (name, data) => dispatch({ type: 'panel.set', name, data, at: Date.now() }));
 }
 
 // ---- http helpers ----------------------------------------------------------

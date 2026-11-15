@@ -80,6 +80,21 @@ for Ikejiri, Setagaya every 15 min (`server/weather.ts`), so a push to it is
 overwritten on the next poll. `WEATHER_LAT`/`WEATHER_LON` move it, `WEATHER=off`
 stops polling.
 
+`occasion` is the server's too: the countdown tile's default when nothing has
+pushed `countdowns` — the nearest birthday in the calendar or major JP/US holiday
+(`server/occasions.ts`). A pushed `countdowns` panel takes over the tile.
+
+`schedule`, `tomorrow`, `leave-by` and `bedtime` are the server's too: the fixed routine
+(`server/routine.ts` — weekday 7:55 school run, bedtime 20:30 / 21:00 Fri–Sat,
+also published as `bedtime` for its 30-min countdown card)
+merged with the family's iCloud calendar when
+`CALENDAR_URL` (the published `webcal://` link) is set in `/etc/wallboard.env`
+(`server/calendar.ts`): fetched every 15 min, recomputed every minute so the day
+rolls over at midnight, all times in Tokyo time. The link is a secret — anyone
+holding it can read the calendar — so it lives only on the VM, never in git or
+logs. `who` is read from the title (まりこ/さりな/のぞみ/マイケル or romaji; キッズ =
+both girls). All-day events arrive as `{at: null, allDay: true}`.
+
 ## Board API (enrolled cookie)
 
 - `GET /api/events` — SSE: `hello {build}` then `state` on connect and on every change.
@@ -103,6 +118,5 @@ down at the top of `server/photos.ts`.
 
 The board shuffles that set (no repeats until each has shown once), crossfades
 every 4 minutes, and gives each slide a barely visible zoom/pan. Portraits are
-paired side by side with the next portrait within 5 in the queue, or shown
-centred alone if none is near. A pushed
+shown alone in the left half, never paired. A pushed
 `memories` panel overrides all of it.
