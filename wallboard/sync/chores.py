@@ -51,6 +51,7 @@ ICONS = [
     (("dish", "皿", "食器"), "dishes"),
     (("clear table", "clear the table", "片付け"), "clear-table"),
     (("bath", "tub", "お風呂", "風呂"), "tub-clean"),
+    (("toilet", "トイレ"), "toilet"),
     (("vacuum", "掃除機"), "vacuum"),
     (("dust", "ほこり"), "dust"),
     (("garbage", "trash", "rubbish", "ゴミ", "ごみ"), "garbage"),

@@ -119,9 +119,10 @@ Reference: `design/ChoreIcons.dc.html` (each icon large, plus to-do and done sta
 | `garbage` | Take out the garbage | tied garbage bag |
 | `windows` | Wash the windows | window + shine marks + sparkle |
 | `living-room` | Tidy the living room | sofa + sparkle |
+| `toilet` | Clean the toilet | toilet (side view) + sparkle |
 | `bed`, `bag`, `table`, `shoes`, `laundry`, `plants` | existing | unchanged |
 
-- Cleaning chores carry the same small sparkle (top-right) so they read as "clean this".
+- Cleaning chores (`tub-clean`, `windows`, `living-room`, `toilet`) carry the same small sparkle (top-right) so they read as "clean this".
 - Unknown chore icon: fall back to the generic `chores` icon rather than leaving the circle empty.
 
 ## Countdown kinds: icon, colour, celebration (2026-11-15)

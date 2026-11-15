@@ -41,7 +41,7 @@ class Titles(unittest.TestCase):
         self.assertEqual(guess_icon("Clear Table"), "clear-table")
         self.assertEqual(guess_icon("Set the table"), "table")
         self.assertEqual(guess_icon("Clean Bath"), "tub-clean")    # `bath` is bath order
-        self.assertEqual(guess_icon("Clean Toilet"), None)         # no toilet icon yet
+        self.assertEqual(guess_icon("Clean Toilet"), "toilet")
         self.assertEqual(guess_icon("Vacuum"), "vacuum")
         self.assertEqual(guess_icon("Dishes"), "dishes")
         self.assertEqual(guess_icon("Take out the trash"), "garbage")
