@@ -38,10 +38,14 @@ class Titles(unittest.TestCase):
         self.assertEqual(parse_title("Dishes - Grandma"), ("Dishes - Grandma", None))   # unknown: keep it whole
 
     def test_icons_only_when_the_board_has_one(self):
-        self.assertEqual(guess_icon("Clear Table"), "table")
-        self.assertEqual(guess_icon("Clean Bath"), "bath")
-        self.assertIsNone(guess_icon("Vacuum"))
-        self.assertIsNone(guess_icon("Dishes"))
+        self.assertEqual(guess_icon("Clear Table"), "clear-table")
+        self.assertEqual(guess_icon("Set the table"), "table")
+        self.assertEqual(guess_icon("Clean Bath"), "tub-clean")    # `bath` is bath order
+        self.assertEqual(guess_icon("Clean Toilet"), None)         # no toilet icon yet
+        self.assertEqual(guess_icon("Vacuum"), "vacuum")
+        self.assertEqual(guess_icon("Dishes"), "dishes")
+        self.assertEqual(guess_icon("Take out the trash"), "garbage")
+        self.assertIsNone(guess_icon("Feed the cat"))
 
 
 class Visibility(unittest.TestCase):

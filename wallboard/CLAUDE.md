@@ -106,6 +106,24 @@ The calm view is read from 2–4 m, so it shows a few large signals, **icons fir
 - Every icon tile has an `aria-label` that says it in words (e.g. "Make bed: done").
 - Rule of thumb: if it can't be read from across the kitchen, it belongs in the active view.
 
+## Chore icons (2026-11-15)
+Reference: `design/ChoreIcons.dc.html` (each icon large, plus to-do and done states at strip size). Same line style as the board. Add to `web/icons.js` with these keys; `PUT /api/eva/chores` uses them in `icon`.
+
+| key | Chore | Drawing |
+|---|---|---|
+| `dishes` | Wash the dishes | bowl with soap bubbles |
+| `clear-table` | Clear the table | plate lifting off a table, up arrow |
+| `tub-clean` | Clean the bathtub | bathtub + sparkle (distinct from `bath`, which means bath order) |
+| `vacuum` | Vacuum | upright vacuum |
+| `dust` | Dusting | feather duster |
+| `garbage` | Take out the garbage | tied garbage bag |
+| `windows` | Wash the windows | window + shine marks + sparkle |
+| `living-room` | Tidy the living room | sofa + sparkle |
+| `bed`, `bag`, `table`, `shoes`, `laundry`, `plants` | existing | unchanged |
+
+- Cleaning chores carry the same small sparkle (top-right) so they read as "clean this".
+- Unknown chore icon: fall back to the generic `chores` icon rather than leaving the circle empty.
+
 ## Countdown kinds: icon, colour, celebration (2026-11-15)
 Reference: `design/EventIcons.dc.html` (icon artwork, same line style: 24 grid, 1.9 stroke, round caps). Eva sends `kind` with each countdown; **unknown kinds fall back to `holiday`** (star, amber, confetti). The old `holiday` = snowflake mapping is replaced: the snowflake is now `winter` only.
 

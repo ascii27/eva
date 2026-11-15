@@ -43,11 +43,20 @@ NAMES = [
     (("マイケル", "michael"), "michael"),
 ]
 
-# Icon from the chore's name: keys the board has in web/icons.js. A chore with
-# no match gets the board's generic chore icon (null) rather than a guess.
+# Icon from the chore's name: keys in web/icons.js (CLAUDE.md "Chore icons").
+# First match wins, so the specific ones come before the words they contain
+# ("clear the table" before "table"). Cleaning the bath is `tub-clean`: `bath`
+# on the board means bath order. No match → null, the board's generic icon.
 ICONS = [
+    (("dish", "皿", "食器"), "dishes"),
+    (("clear table", "clear the table", "片付け"), "clear-table"),
+    (("bath", "tub", "お風呂", "風呂"), "tub-clean"),
+    (("vacuum", "掃除機"), "vacuum"),
+    (("dust", "ほこり"), "dust"),
+    (("garbage", "trash", "rubbish", "ゴミ", "ごみ"), "garbage"),
+    (("window", "窓"), "windows"),
+    (("living", "リビング"), "living-room"),
     (("table", "テーブル"), "table"),
-    (("bath", "tub", "お風呂", "風呂"), "bath"),
     (("bed", "ベッド"), "bed"),
     (("bag", "かばん", "ランドセル"), "bag"),
     (("shoe", "靴"), "shoes"),

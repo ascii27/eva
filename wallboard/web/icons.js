@@ -33,6 +33,16 @@ const CHORES = {
   shoes: '<path d="M3 17V9h4l2 3 5 1.5c3 .8 7 1.5 7 4.5H3zM3 17v2h18v-2M11 12.5l-1 2M14 13.4l-1 2"/>',
   laundry: '<path d="M8 4L3 7l2 4 2-1v10h10V10l2 1 2-4-5-3c-.5 1.7-2 2.5-4 2.5S8.5 5.7 8 4z"/>',
   plants: '<path d="M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5zM8 21h8"/>',
+  // design/ChoreIcons.dc.html (CLAUDE.md "Chore icons"), copied verbatim. The
+  // cleaning ones carry a small sparkle; `tub-clean` is not `bath` (bath order).
+  dishes: '<path d="M3 12h18a9 9 0 0 1-18 0zM8 21h8"/><circle cx="8" cy="6.5" r="1.6"/><circle cx="12.5" cy="4" r="1.1"/><circle cx="15.5" cy="7.5" r="1.9"/>',
+  'clear-table': '<path d="M3 14h18M6 14v7M18 14v7M7 10h10M9 10a3 1.6 0 0 0 6 0M12 7V2.5M10 4.5l2-2 2 2"/>',
+  'tub-clean': '<path d="M3 12h18v3a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5zM6 12V6a2 2 0 0 1 4 0M7 20l-1 2M17 20l1 2"/><path d="M19 2.5v3.5M17.25 4.25h3.5"/>',
+  vacuum: '<path d="M14 2.5v13M12 2.5h4M8 20.5h11.5a1 1 0 0 0 1-1v-.5a2.5 2.5 0 0 0-2.5-2.5h-7A3 3 0 0 0 8 19.5z"/><rect x="10.5" y="7" width="7" height="8.5" rx="2"/>',
+  dust: '<path d="M3 21l6.5-6.5M9.5 14.5c-1.6-3.2.6-8.2 5.2-10.7 1 1.6 4 4.6 5.4 5.6-3 4.6-8 6.6-10.6 5.1zM12.5 8.5l3 3M15 6l3 3"/>',
+  garbage: '<path d="M8 8.5c-2.2 3-3.2 7-2.2 10 .9 2.6 11.5 2.6 12.4 0 1-3 0-7-2.2-10zM9 8.5l3-2.5 3 2.5M10 3.5l2 1.2 2-1.2"/>',
+  windows: '<rect x="3" y="4" width="14" height="16" rx="1.2"/><path d="M10 4v16M3 12h14M5.5 9.5l2-2M12.5 16.5l2-2"/><path d="M19 2.5v3.5M17.25 4.25h3.5"/>',
+  'living-room': '<path d="M4.5 11V8.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2V11M2.5 13a2 2 0 0 1 4 0v2h11v-2a2 2 0 0 1 4 0v5h-19zM5 18v2.5M19 18v2.5"/><path d="M12 1.5v3M10.5 3h3"/>',
 };
 
 // Schedule and bring icons, keyed by the `icon` field on a schedule entry or a
