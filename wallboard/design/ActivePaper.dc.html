@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wallboard — day, active</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/haven/components/bundle.css">
+<script src="ds/haven/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@300;400;500&amp;display=swap">
+<style>
+:root{--surface-000:#d6c7ae;--surface-100:#fffaf1;--surface-200:#f1e6d3;--surface-300:#dccdb4;--line:#c9b89c;--ink:#1d1712;--ink-muted:#4b4034;--ink-faint:#5f5345;--accent:#0b6760;--accent-soft:#cfe9e1;--on-accent:#ffffff;--warm:#934606;--warm-soft:#f8e1c6;--on-warm:#ffffff;--cool:#24559e;--cool-soft:#d9e4f4;--on-cool:#ffffff;--success:#276b3c;--alert:#a92b22;--alert-soft:#f5d8d3;--elevation-1:inset 0 1px 0 rgba(255,255,255,0.7),0 2px 4px rgba(50,35,15,0.16),0 16px 36px rgba(50,35,15,0.24);--glow-accent:0 0 0 3px rgba(11,103,96,0.7),0 16px 36px rgba(50,35,15,0.24);--focus-ring:var(--accent);--font-display:"Space Grotesk","Inter",system-ui,sans-serif;--font-sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--space-16:64px;--radius-sm:12px;--radius-md:20px;--radius-lg:28px;--radius-pill:999px;--touch-min:64px;--touch-lg:80px;--widget-unit:168px}
+body{margin:0;font-family:var(--font-sans);color:var(--ink);background:var(--surface-000)}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+.chore{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;box-sizing:border-box;width:100%;height:112px;padding:14px 16px;border:1px solid var(--line);border-radius:20px;background:var(--surface-200);color:var(--ink);font-family:var(--font-sans);text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .24s ease,box-shadow .24s ease,border-color .24s ease,transform .12s ease}
+.chore:active{transform:scale(.97)}
+.chore-icon{display:flex;color:var(--ink-muted);transition:color .24s ease}
+.chore-label{font-size:21px;line-height:26px;font-weight:600;padding-right:44px}
+.chore-check{position:absolute;top:14px;right:14px;width:40px;height:40px;box-sizing:border-box;border-radius:50%;border:2px solid var(--surface-300);display:grid;place-items:center;color:transparent;transition:background .24s ease,border-color .24s ease,color .24s ease}
+.chore.is-done{background:var(--accent-soft);border-color:transparent}
+.chore.is-done .chore-icon{color:var(--accent)}
+.chore.is-done .chore-check{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.chore.is-fresh{box-shadow:var(--glow-accent)}
+.chore.is-fresh .chore-check{animation:wb-pop .36s cubic-bezier(.3,.7,.2,1)}
+@keyframes wb-pop{0%{transform:scale(.3)}65%{transform:scale(1.18)}100%{transform:scale(1)}}
+.wb-toast{animation:wb-rise .2s ease-out}
+@keyframes wb-rise{from{transform:translate(-50%,24px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+.wb-timer{transform-origin:left center;animation:wb-drain 8s linear forwards}
+@keyframes wb-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+.wb-undo{-webkit-tap-highlight-color:transparent;transition:transform .12s ease}
+.wb-undo:active{transform:scale(.96)}
+@media (prefers-reduced-motion:reduce){.chore,.chore-check,.wb-toast{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+<div style="position: relative; width: 1920px; height: 1080px; box-sizing: border-box; padding: 40px 72px 48px; display: flex; flex-direction: column; gap: 32px; overflow: hidden; background: var(--surface-000); color: var(--ink); font-family: var(--font-sans)">
+
+  <!-- Header: time, date, the day's weather -->
+  <div style="height: 120px; flex: none; display: flex; align-items: center; gap: 48px">
+    <div style="display: flex; align-items: center; gap: 28px; width: 520px; flex: none">
+      <span style="font-family: var(--font-display); font-size: 112px; line-height: 104px; font-weight: 300; letter-spacing: -0.03em; font-variant-numeric: tabular-nums">7:42</span>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 28px; line-height: 34px; font-weight: 600">Monday</span>
+        <span style="font-size: 24px; line-height: 30px; color: var(--ink-muted)">16 November</span>
+      </div>
+    </div>
+    <div style="flex: 1; display: flex; gap: 12px; justify-content: center">
+      <div style="width: 124px; box-sizing: border-box; padding: 12px 0; border-radius: 20px; background: var(--surface-100); display: flex; flex-direction: column; align-items: center; gap: 6px"><span style="font-size: 20px; line-height: 24px; font-weight: 600">Now</span><span style="display: flex; color: var(--warm)"><x-import component-from-global-scope="Haven.Icon" name="sun" size="{{s32}}" title="Sunny"></x-import></span><span style="font-family: var(--font-display); font-size: 30px; line-height: 32px">14°</span></div>
+      <div style="width: 124px; box-sizing: border-box; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px"><span style="font-size: 20px; line-height: 24px; color: var(--ink-muted)">10:00</span><span style="display: flex; color: var(--warm)"><x-import component-from-global-scope="Haven.Icon" name="sun" size="{{s32}}" title="Sunny"></x-import></span><span style="font-family: var(--font-display); font-size: 30px; line-height: 32px">16°</span></div>
+      <div style="width: 124px; box-sizing: border-box; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px"><span style="font-size: 20px; line-height: 24px; color: var(--ink-muted)">13:00</span><span style="display: flex; color: var(--warm)"><x-import component-from-global-scope="Haven.Icon" name="sun" size="{{s32}}" title="Sunny"></x-import></span><span style="font-family: var(--font-display); font-size: 30px; line-height: 32px">19°</span></div>
+      <div style="width: 124px; box-sizing: border-box; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px"><span style="font-size: 20px; line-height: 24px; color: var(--ink-muted)">16:00</span><span style="display: flex; color: var(--ink-muted)"><x-import component-from-global-scope="Haven.Icon" name="cloud" size="{{s32}}" title="Cloudy"></x-import></span><span style="font-family: var(--font-display); font-size: 30px; line-height: 32px">17°</span></div>
+      <div style="width: 124px; box-sizing: border-box; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px"><span style="font-size: 20px; line-height: 24px; color: var(--ink-muted)">19:00</span><span style="display: flex; color: var(--cool)"><x-import component-from-global-scope="Haven.Icon" name="drop" size="{{s32}}" title="Rain"></x-import></span><span style="font-family: var(--font-display); font-size: 30px; line-height: 32px">13°</span></div>
+      <div style="width: 124px; box-sizing: border-box; padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px"><span style="font-size: 20px; line-height: 24px; color: var(--ink-muted)">22:00</span><span style="display: flex; color: var(--cool)"><x-import component-from-global-scope="Haven.Icon" name="drop" size="{{s32}}" title="Rain"></x-import></span><span style="font-family: var(--font-display); font-size: 30px; line-height: 32px">11°</span></div>
+    </div>
+    <a href="PaperV3HaloLandscape.dc.html" aria-label="Back to calm view" style="width: 72px; height: 72px; flex: none; border-radius: 50%; background: var(--surface-200); color: var(--ink-muted); display: grid; place-items: center; text-decoration: none">
+      <x-import component-from-global-scope="Haven.Icon" name="home" size="{{s32}}"></x-import>
+    </a>
+  </div>
+
+  <div style="flex: 1; min-height: 0; display: flex; gap: 24px">
+
+    <!-- Today: who's where, when -->
+    <div style="width: 460px; flex: none; box-sizing: border-box; padding: 28px 24px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; gap: 8px">
+      <div style="display: flex; align-items: center; gap: 14px; padding: 0 8px 12px">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--ink-muted)"><rect x="4" y="5" width="16" height="15" rx="2"></rect><path d="M4 10h16M8 3v4M16 3v4"></path></svg>
+        <span style="font-size: 30px; line-height: 36px; font-weight: 600">Today</span>
+      </div>
+
+      <div style="display: flex; gap: 18px; padding: 14px 16px; border-radius: 18px; background: var(--accent-soft)">
+        <span style="width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--accent)">7:55</span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 24px; line-height: 30px; font-weight: 600">Leave for school</span><div style="display: flex; align-items: center; gap: 8px"><span style="width: 32px; height: 32px; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center; font-size: 13px; font-weight: 700">Ma</span><span style="width: 32px; height: 32px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center; font-size: 13px; font-weight: 700">Sa</span><span style="font-size: 20px; line-height: 26px; color: var(--accent); margin-left: 4px">in 13 min</span></div></div>
+      </div>
+
+      <div style="display: flex; gap: 18px; padding: 14px 16px">
+        <span style="width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted)">9:30</span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 24px; line-height: 30px; font-weight: 600">Office</span><div style="display: flex; align-items: center; gap: 8px"><span style="width: 32px; height: 32px; border-radius: 50%; background: var(--cool); color: var(--on-cool); display: grid; place-items: center; font-size: 14px; font-weight: 700">Mi</span><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">Michael · back 18:00</span></div></div>
+      </div>
+
+      <div style="display: flex; gap: 18px; padding: 14px 16px">
+        <span style="width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted)">11:00</span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 24px; line-height: 30px; font-weight: 600">Dentist</span><div style="display: flex; align-items: center; gap: 8px"><span style="width: 32px; height: 32px; border-radius: 50%; background: var(--warm); color: var(--on-warm); display: grid; place-items: center; font-size: 14px; font-weight: 700">No</span><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">Nozomi</span></div></div>
+      </div>
+
+      <div style="display: flex; gap: 18px; padding: 14px 16px">
+        <span style="width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted)">15:00</span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 24px; line-height: 30px; font-weight: 600">Piano lesson</span><div style="display: flex; align-items: center; gap: 8px"><span style="width: 32px; height: 32px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center; font-size: 13px; font-weight: 700">Sa</span><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">Sarina · walks home</span></div></div>
+      </div>
+
+      <div style="display: flex; gap: 18px; padding: 14px 16px">
+        <span style="width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted)">16:30</span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 24px; line-height: 30px; font-weight: 600">Swim · pickup</span><div style="display: flex; align-items: center; gap: 8px"><span style="width: 32px; height: 32px; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center; font-size: 13px; font-weight: 700">Ma</span><span style="width: 32px; height: 32px; border-radius: 50%; background: var(--warm); color: var(--on-warm); display: grid; place-items: center; font-size: 14px; font-weight: 700">No</span><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">Nozomi picks up</span></div></div>
+      </div>
+
+      <div style="display: flex; gap: 18px; padding: 14px 16px">
+        <span style="width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted)">18:30</span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 24px; line-height: 30px; font-weight: 600">Family dinner</span><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">Everyone home</span></div>
+      </div>
+
+      <div style="display: flex; gap: 18px; padding: 14px 16px">
+        <span style="width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted)">20:00</span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 6px"><span style="font-size: 24px; line-height: 30px; font-weight: 600">Bath &amp; bedtime</span><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">{{bath.firstName}} first tonight</span></div>
+      </div>
+    </div>
+
+    <!-- Kids: chores, pay, bath order -->
+    <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 20px">
+      <div style="flex: 1; min-height: 0; box-sizing: border-box; padding: 26px 30px 28px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; gap: 20px">
+        <div style="display: flex; align-items: center; gap: 14px">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--ink-muted)"><rect x="4" y="4" width="16" height="16" rx="4"></rect><path d="M8 12.5l3 3 5-6"></path></svg>
+          <span style="font-size: 30px; line-height: 36px; font-weight: 600">Chores</span>
+          <span style="margin-left: auto; font-size: 22px; line-height: 28px; color: var(--ink-muted)">{{total}}</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; align-items: start">
+        <!-- Mariko -->
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0">
+          <div style="display: flex; align-items: center; gap: 16px"><span style="width: 64px; height: 64px; flex: none; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center; font-size: 24px; font-weight: 700">Ma</span><div style="display: flex; flex-direction: column"><span style="font-size: 30px; line-height: 36px; font-weight: 600">Mariko</span><span style="font-size: 22px; line-height: 28px; color: {{p.ma.color}}">{{p.ma.status}}</span></div><sc-if value="{{p.ma.all}}" hint-placeholder-val="{{false}}"><span style="margin-left: auto; width: 48px; height: 48px; flex: none; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="All done"><path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"></path></svg></span></sc-if></div>
+          <div style="display: flex; gap: 6px"><sc-for list="{{p.ma.segs}}" as="s" hint-placeholder-count="4"><span style="flex: 1; height: 10px; border-radius: 5px; background: {{s.bg}}"></span></sc-for></div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<button type="button" class="chore {{c.ma_0.cls}}" aria-pressed="{{c.ma_0.pressed}}" onClick="{{c.ma_0.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8M3 15h18M6 9V6.5A1.5 1.5 0 0 1 7.5 5h3A1.5 1.5 0 0 1 12 6.5V9"></path></svg></span><span class="chore-label">Make bed</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+<button type="button" class="chore {{c.ma_1.cls}}" aria-pressed="{{c.ma_1.pressed}}" onClick="{{c.ma_1.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM9.5 3.5h5M9 14h6v3H9z"></path></svg></span><span class="chore-label">Pack school bag</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+<button type="button" class="chore {{c.ma_2.cls}}" aria-pressed="{{c.ma_2.pressed}}" onClick="{{c.ma_2.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="3.5"></circle><path d="M2.5 5v14M21.5 5v14"></path></svg></span><span class="chore-label">Set the table</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+<button type="button" class="chore {{c.ma_3.cls}}" aria-pressed="{{c.ma_3.pressed}}" onClick="{{c.ma_3.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17V9h4l2 3 5 1.5c3 .8 7 1.5 7 4.5H3zM3 17v2h18v-2M11 12.5l-1 2M14 13.4l-1 2"></path></svg></span><span class="chore-label">Tidy shoes</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; min-height: 88px; box-sizing: border-box; padding: 8px 8px 8px 20px; border-radius: 22px; background: var(--surface-200)">
+            <span style="display: flex; color: {{pay.ma.color}}"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M8.5 7l3.5 5 3.5-5M12 12v6M9 13.5h6M9 16h6"></path></svg></span>
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column"><span style="font-size: 22px; line-height: 28px; font-weight: 600; color: {{pay.ma.color}}">{{pay.ma.text}}</span><span style="font-size: 18px; line-height: 24px; color: var(--ink-muted)">{{pay.ma.sub}}</span></div>
+            <sc-if value="{{pay.ma.canPay}}" hint-placeholder-val="{{true}}"><button type="button" class="wb-undo" onClick="{{pay.ma.tap}}" style="height: 72px; padding: 0 28px; border: 0; border-radius: 999px; background: var(--warm); color: var(--on-warm); font-family: var(--font-sans); font-size: 22px; font-weight: 600; cursor: pointer">Mark paid</button></sc-if>
+          </div>
+        </div>
+        <!-- Sarina -->
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0">
+          <div style="display: flex; align-items: center; gap: 16px"><span style="width: 64px; height: 64px; flex: none; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center; font-size: 24px; font-weight: 700">Sa</span><div style="display: flex; flex-direction: column"><span style="font-size: 30px; line-height: 36px; font-weight: 600">Sarina</span><span style="font-size: 22px; line-height: 28px; color: {{p.sa.color}}">{{p.sa.status}}</span></div><sc-if value="{{p.sa.all}}" hint-placeholder-val="{{false}}"><span style="margin-left: auto; width: 48px; height: 48px; flex: none; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center"><svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="All done"><path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"></path></svg></span></sc-if></div>
+          <div style="display: flex; gap: 6px"><sc-for list="{{p.sa.segs}}" as="s" hint-placeholder-count="4"><span style="flex: 1; height: 10px; border-radius: 5px; background: {{s.bg}}"></span></sc-for></div>
+          <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+<button type="button" class="chore {{c.sa_0.cls}}" aria-pressed="{{c.sa_0.pressed}}" onClick="{{c.sa_0.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19v-8a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v8M3 15h18M6 9V6.5A1.5 1.5 0 0 1 7.5 5h3A1.5 1.5 0 0 1 12 6.5V9"></path></svg></span><span class="chore-label">Make bed</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+<button type="button" class="chore {{c.sa_1.cls}}" aria-pressed="{{c.sa_1.pressed}}" onClick="{{c.sa_1.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM9.5 3.5h5M9 14h6v3H9z"></path></svg></span><span class="chore-label">Pack school bag</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+<button type="button" class="chore {{c.sa_2.cls}}" aria-pressed="{{c.sa_2.pressed}}" onClick="{{c.sa_2.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4L3 7l2 4 2-1v10h10V10l2 1 2-4-5-3c-.5 1.7-2 2.5-4 2.5S8.5 5.7 8 4z"></path></svg></span><span class="chore-label">Put away laundry</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+<button type="button" class="chore {{c.sa_3.cls}}" aria-pressed="{{c.sa_3.pressed}}" onClick="{{c.sa_3.tap}}"><span class="chore-icon"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5zM8 21h8"></path></svg></span><span class="chore-label">Water plants</span><span class="chore-check" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span></button>
+          </div>
+          <div style="display: flex; align-items: center; gap: 14px; min-height: 88px; box-sizing: border-box; padding: 8px 8px 8px 20px; border-radius: 22px; background: var(--surface-200)">
+            <span style="display: flex; color: {{pay.sa.color}}"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M8.5 7l3.5 5 3.5-5M12 12v6M9 13.5h6M9 16h6"></path></svg></span>
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column"><span style="font-size: 22px; line-height: 28px; font-weight: 600; color: {{pay.sa.color}}">{{pay.sa.text}}</span><span style="font-size: 18px; line-height: 24px; color: var(--ink-muted)">{{pay.sa.sub}}</span></div>
+            <sc-if value="{{pay.sa.canPay}}" hint-placeholder-val="{{true}}"><button type="button" class="wb-undo" onClick="{{pay.sa.tap}}" style="height: 72px; padding: 0 28px; border: 0; border-radius: 999px; background: var(--warm); color: var(--on-warm); font-family: var(--font-sans); font-size: 22px; font-weight: 600; cursor: pointer">Mark paid</button></sc-if>
+          </div>
+        </div>
+        </div>
+      </div>
+      <!-- Bath order: alternates automatically, can be swapped -->
+      <div style="flex: none; box-sizing: border-box; padding: 20px 20px 20px 28px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; align-items: center; gap: 20px">
+          <div style="width: 56px; height: 56px; flex: none; border-radius: 16px; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center"><x-import component-from-global-scope="Haven.Icon" name="drop" size="{{s32}}"></x-import></div>
+          <span style="font-size: 26px; line-height: 32px; font-weight: 600; color: var(--ink-muted)">Bath first tonight</span>
+          <span style="width: 48px; height: 48px; flex: none; border-radius: 50%; background: {{bath.firstBg}}; color: {{bath.firstFg}}; display: grid; place-items: center; font-size: 18px; font-weight: 700">{{bath.firstIni}}</span>
+          <span style="font-size: 36px; line-height: 42px; font-weight: 600">{{bath.firstName}}</span>
+          <button type="button" class="wb-undo" onClick="{{bath.swap}}" style="margin-left: auto; height: 72px; padding: 0 28px; border: 0; border-radius: 999px; background: var(--surface-300); color: var(--ink); font-family: var(--font-sans); font-size: 22px; font-weight: 600; display: flex; align-items: center; gap: 10px; cursor: pointer"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7"></path></svg>Swap</button>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-left: 76px">
+          <span style="font-size: 18px; line-height: 24px; color: var(--ink-faint); margin-right: 6px">Went first</span>
+          <sc-for list="{{bath.history}}" as="h" hint-placeholder-count="5"><span style="width: 32px; height: 32px; border-radius: 50%; background: {{h.bg}}; color: {{h.fg}}; opacity: {{h.op}}; display: grid; place-items: center; font-size: 12px; font-weight: 700">{{h.ini}}</span></sc-for>
+          <span style="margin-left: 12px; font-size: 20px; line-height: 26px; color: var(--ink-muted)">{{bath.note}}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Eva + logistics -->
+    <div style="width: 368px; flex: none; display: flex; flex-direction: column; gap: 20px">
+      <div style="box-sizing: border-box; padding: 24px 26px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; gap: 14px">
+        <div style="display: flex; align-items: center; gap: 14px">
+          <div style="width: 52px; height: 52px; flex: none; border-radius: 14px; background: var(--surface-200); display: grid; place-items: center"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="5"></rect><circle cx="9" cy="12" r="1.4" fill="currentColor"></circle><circle cx="15" cy="12" r="1.4" fill="currentColor"></circle></svg></div>
+          <span style="font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted)">Eva says</span>
+        </div>
+        <span style="font-size: 26px; line-height: 34px; font-weight: 500">Rain after 6 pm. Swim bag needs the spare towel tonight.</span>
+        <span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">Also: library books due Wednesday.</span>
+      </div>
+
+      <div style="box-sizing: border-box; padding: 24px 26px; border-radius: 28px; background: var(--surface-100); box-shadow: var(--glow-accent); display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent)">Leave for school</span>
+        <div style="display: flex; align-items: baseline; gap: 10px"><span style="font-family: var(--font-display); font-size: 72px; line-height: 72px; font-weight: 300; font-variant-numeric: tabular-nums; color: var(--accent)">13</span><span style="font-size: 28px; color: var(--accent)">min</span><span style="margin-left: auto; font-size: 22px; color: var(--ink-muted)">by 7:55</span></div>
+        <div style="height: 1px; background: var(--line); margin: 10px 0 8px"></div>
+        <span style="font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted)">Pickup</span>
+        <span style="font-size: 24px; line-height: 30px; font-weight: 600">Swim · 16:30 · Nozomi</span>
+      </div>
+
+      <div style="box-sizing: border-box; padding: 22px 26px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; align-items: center; gap: 18px">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--warm); flex: none"><path d="M7 3v7M5 3v5a2 2 0 0 0 4 0V3M7 10v11M17 21V3c-2 1-3 4-3 7s1 3 3 3"></path></svg>
+        <div style="display: flex; flex-direction: column"><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">Tonight 18:30</span><span style="font-size: 28px; line-height: 34px; font-weight: 600">Curry rice</span></div>
+      </div>
+
+      <div style="flex: 1; box-sizing: border-box; padding: 22px 26px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; gap: 14px">
+        <span style="font-size: 20px; line-height: 26px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-muted)">Countdowns</span>
+        <div style="display: flex; align-items: baseline; justify-content: space-between"><span style="font-size: 24px; line-height: 30px; font-weight: 500">Grandma visits</span><span style="font-size: 22px; color: var(--ink-muted)"><span style="font-family: var(--font-display); font-size: 36px; color: var(--warm)">12</span> days</span></div>
+        <div style="display: flex; align-items: baseline; justify-content: space-between"><span style="font-size: 24px; line-height: 30px; font-weight: 500">Winter break</span><span style="font-size: 22px; color: var(--ink-muted)"><span style="font-family: var(--font-display); font-size: 36px; color: var(--ink)">38</span> days</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmation + undo: appears on every chore tap, drains in 8 s -->
+  <sc-if value="{{toast.show}}" hint-placeholder-val="{{false}}">
+    <div class="wb-toast" role="status" style="position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); width: 780px; box-sizing: border-box; padding: 18px 18px 18px 24px; border-radius: 28px; background: var(--surface-200); border: 1px solid {{toast.edge}}; box-shadow: 0 16px 40px rgba(60,40,20,0.18); display: flex; align-items: center; gap: 20px; overflow: hidden; z-index: 5">
+      <span style="width: 56px; height: 56px; flex: none; border-radius: 50%; background: {{toast.chip}}; color: {{toast.chipInk}}; display: grid; place-items: center"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></span>
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px"><span style="font-size: 28px; line-height: 34px; font-weight: 600">{{toast.text}}</span><span style="font-size: 20px; line-height: 26px; color: var(--ink-muted)">{{toast.sub}}</span></div>
+      <button type="button" class="wb-undo" onClick="{{undo}}" style="height: 80px; padding: 0 32px; border: 0; border-radius: 999px; background: var(--surface-300); color: var(--ink); font-family: var(--font-sans); font-size: 24px; font-weight: 600; display: flex; align-items: center; gap: 12px; cursor: pointer"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"></path></svg>Undo</button>
+      <span class="wb-timer" aria-hidden="true" style="position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: {{toast.edge}}"></span>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+  kids() {
+    return {
+      ma: { name: 'Mariko', ini: 'Ma', bg: '#e7defa', fg: '#4a3480', chores: ['Make bed', 'Pack school bag', 'Set the table', 'Tidy shoes'] },
+      sa: { name: 'Sarina', ini: 'Sa', bg: '#fbdde6', fg: '#8c2a4f', chores: ['Make bed', 'Pack school bag', 'Put away laundry', 'Water plants'] }
+    };
+  }
+  s() {
+    const st = this.state || {};
+    return {
+      done: st.done || { ma: [true, true, true, false], sa: [true, true, true, true] },
+      owed: st.owed || { ma: 1, sa: 0 },
+      paidToday: st.paidToday || { ma: false, sa: false },
+      bathTonight: st.bathTonight || 'sa',
+      bathHistory: ['sa', 'ma', 'sa', 'sa', 'ma']
+    };
+  }
+  snap() { const s = this.s(); return { done: s.done, owed: s.owed, paidToday: s.paidToday, bathTonight: s.bathTonight }; }
+  componentWillUnmount() { clearTimeout(this._t); }
+  show(toast, patch, fresh) {
+    clearTimeout(this._t);
+    toast.prev = this.snap();
+    this.setState(Object.assign({}, patch, { fresh: fresh || null, toast: null }), () => this.setState({ toast: toast }));
+    this._t = setTimeout(() => this.setState({ toast: null, fresh: null }), 8000);
+  }
+  tap(who, i) {
+    const s = this.s(); const k = this.kids()[who];
+    const done = Object.assign({}, s.done); done[who] = s.done[who].slice(); done[who][i] = !done[who][i];
+    const n = done[who].filter(Boolean).length, all = n === done[who].length;
+    this.show({
+      ok: done[who][i],
+      text: k.chores[i] + (done[who][i] ? ' — done' : ' — back to to-do'),
+      sub: k.name + ' · ' + (all ? 'all done for today' : n + ' of ' + done[who].length)
+    }, { done: done }, done[who][i] ? who + '_' + i : null);
+  }
+  pay(who) {
+    const s = this.s(); const k = this.kids()[who];
+    const days = this.owedDays(s, who);
+    const owed = Object.assign({}, s.owed); owed[who] = 0;
+    const paidToday = Object.assign({}, s.paidToday); paidToday[who] = s.done[who].every(Boolean);
+    this.show({ ok: true, text: 'Paid ' + k.name, sub: days + (days === 1 ? ' day' : ' days') + ' of chores · Eva noted it' }, { owed: owed, paidToday: paidToday });
+  }
+  swap() {
+    const s = this.s(); const next = s.bathTonight === 'ma' ? 'sa' : 'ma';
+    this.show({ ok: true, text: this.kids()[next].name + ' goes first tonight', sub: 'Swapped by hand · next turn adjusts' }, { bathTonight: next });
+  }
+  undo() {
+    const t = this.state && this.state.toast; if (!t) return;
+    clearTimeout(this._t);
+    this.setState(Object.assign({}, t.prev, { toast: null, fresh: null }));
+  }
+  owedDays(s, who) { return s.owed[who] + (s.done[who].every(Boolean) && !s.paidToday[who] ? 1 : 0); }
+  renderVals() {
+    const s = this.s(); const kids = this.kids(); const fresh = this.state && this.state.fresh;
+    const c = {}, p = {}, pay = {};
+    let all = 0, count = 0;
+    Object.keys(kids).forEach((who) => {
+      const list = s.done[who]; const n = list.filter(Boolean).length; const isAll = n === list.length;
+      all += list.length; count += n;
+      p[who] = { all: isAll, status: isAll ? 'All done' : n + ' of ' + list.length + ' done', color: isAll ? 'var(--accent)' : 'var(--ink-muted)',
+        segs: list.map((d) => ({ bg: d ? 'var(--accent)' : 'var(--surface-300)' })) };
+      list.forEach((d, i) => {
+        const key = who + '_' + i;
+        c[key] = { cls: d ? (fresh === key ? 'is-done is-fresh' : 'is-done') : '', pressed: d ? 'true' : 'false', tap: () => this.tap(who, i) };
+      });
+      const days = this.owedDays(s, who);
+      pay[who] = days > 0
+        ? { canPay: true, color: 'var(--warm)', text: days + (days === 1 ? ' day' : ' days') + ' to pay', sub: s.owed[who] > 0 ? (isAll ? 'Includes today' : 'Today not finished yet') : 'Earned today' }
+        : (s.paidToday[who]
+          ? { canPay: false, color: 'var(--success)', text: 'Paid up', sub: 'Today included' }
+          : { canPay: false, color: 'var(--ink-muted)', text: 'Nothing owed', sub: 'Finish all ' + list.length + ' to earn today' });
+      pay[who].tap = () => this.pay(who);
+    });
+    const first = kids[s.bathTonight];
+    const last = kids[s.bathHistory[s.bathHistory.length - 1]];
+    const auto = s.bathHistory[s.bathHistory.length - 1] === 'ma' ? 'sa' : 'ma';
+    const bath = {
+      firstName: first.name, firstIni: first.ini, firstBg: first.bg, firstFg: first.fg,
+      note: 'Last night: ' + last.name + (s.bathTonight === auto ? '' : ' · swapped tonight'),
+      history: s.bathHistory.map((w, i, arr) => ({ ini: kids[w].ini, bg: kids[w].bg, fg: kids[w].fg, op: i === arr.length - 1 ? 1 : 0.55 })),
+      swap: () => this.swap()
+    };
+    const t = this.state && this.state.toast;
+    const toast = t ? { show: true, text: t.text, sub: t.sub, edge: t.ok ? 'var(--accent)' : 'var(--line)', chip: t.ok ? 'var(--accent)' : 'var(--surface-300)', chipInk: t.ok ? 'var(--on-accent)' : 'var(--ink-muted)' } : { show: false };
+    return { s32: 32, c: c, p: p, pay: pay, bath: bath, total: count + ' of ' + all + ' done', toast: toast, undo: () => this.undo() };
+  }
+}
+</script>
+</body>
+</html>

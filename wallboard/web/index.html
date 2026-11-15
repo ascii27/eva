@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Eva Wallboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <!-- One fixed 1920×1080 stage, scaled to whatever Silk's viewport turns out
+       to be (DESIGN.md: scale one root container rather than re-laying out). -->
+  <div class="stage" id="stage">
+
+    <!-- 1 · Ambient: glance from across the kitchen -->
+    <section class="view ambient" id="ambient" data-action="wake">
+      <div class="memory" id="mem-a"></div>
+      <div class="memory" id="mem-b"></div>
+      <div class="memory-dim" aria-hidden="true"></div>
+      <div class="amb-drift">
+        <div class="amb-main">
+          <div class="amb-left">
+            <p class="amb-date" data-clock="date"></p>
+            <p class="amb-clock" data-clock="time"></p>
+            <div class="amb-weather" id="amb-weather"></div>
+            <div class="amb-caption" id="amb-caption"></div>
+          </div>
+          <div class="amb-right" id="amb-right"></div>
+        </div>
+        <div class="amb-strip" id="amb-strip"></div>
+      </div>
+      <span class="amb-hint">Tap anywhere for today</span>
+      <div class="wb-sky" id="amb-sky" aria-hidden="true" hidden></div>
+    </section>
+
+    <!-- 2 · Active: after a tap -->
+    <section class="view active" id="active">
+      <header class="act-head">
+        <div class="act-time">
+          <span class="act-clock" data-clock="time"></span>
+          <div class="act-date"><span data-clock="weekday"></span><span class="muted" data-clock="daymonth"></span></div>
+        </div>
+        <div class="act-hourly" id="act-hourly"></div>
+        <button type="button" class="round-btn" data-action="home" data-icon="home" aria-label="Back to calm view"></button>
+      </header>
+      <div class="act-body">
+        <div class="card act-schedule" id="act-schedule"></div>
+        <div class="act-mid">
+          <div class="card act-chores">
+            <div class="card-head"><span class="ico-muted" data-icon="chores"></span><span class="card-title">Chores</span><span class="act-total" id="act-total"></span></div>
+            <div class="kid-cols" id="kid-cols"></div>
+          </div>
+          <div class="card act-bath" id="act-bath"></div>
+        </div>
+        <div class="act-side" id="act-side"></div>
+      </div>
+      <div class="dim" aria-hidden="true"></div>
+    </section>
+
+    <!-- 4 · Night -->
+    <section class="view night" id="night" data-action="wake">
+      <div class="night-block" id="night-block">
+        <span class="night-clock" data-clock="time"></span>
+        <div class="night-line" id="night-weather"></div>
+        <div class="night-line night-tomorrow" id="night-tomorrow"></div>
+      </div>
+      <span class="night-hint">Tap to wake</span>
+    </section>
+
+    <!-- 3 · Confirmation + undo: every tap, drains in 8 s -->
+    <div class="toast" id="toast" role="status" hidden>
+      <span class="toast-chip" id="toast-chip"></span>
+      <div class="toast-text"><span class="toast-title" id="toast-title"></span><span class="toast-sub" id="toast-sub"></span></div>
+      <button type="button" class="pill-btn toast-undo" data-action="undo"></button>
+      <span class="toast-timer" id="toast-timer"></span>
+    </div>
+
+    <div class="offline" id="offline" hidden>Reconnecting…</div>
+  </div>
+  <div class="debug" id="debug" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wallboard — night</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/haven/components/bundle.css">
+<script src="ds/haven/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@300;400&amp;display=swap">
+<style>
+:root{--font-display:"Space Grotesk","Inter",system-ui,sans-serif;--font-sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif}
+body{margin:0;background:#000;font-family:var(--font-sans)}
+</style>
+</helmet>
+<div style="position: relative; width: 1920px; height: 1080px; overflow: hidden; background: #000; font-family: var(--font-sans)">
+  <!-- The whole block drifts to a new spot every ~10 min; shown here offset from centre -->
+  <div style="position: absolute; left: 236px; top: 268px; display: flex; flex-direction: column; gap: 20px">
+    <span style="font-family: var(--font-display); font-size: 240px; line-height: 220px; font-weight: 300; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; color: #6b5f52">23:14</span>
+    <div style="display: flex; align-items: center; gap: 20px; font-size: 30px; line-height: 38px; color: #574d43">
+      <span style="display: flex"><x-import component-from-global-scope="Haven.Icon" name="moon" size="{{s30}}" title="Clear night"></x-import></span>
+      <span>9° clear · rain clears by morning</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 16px; margin-top: 28px; font-size: 30px; line-height: 38px; color: #574d43">
+      <span style="font-family: var(--font-display); font-variant-numeric: tabular-nums">7:55</span>
+      <span>Tomorrow · leave for school</span>
+    </div>
+  </div>
+  <span style="position: absolute; right: 120px; bottom: 96px; font-size: 22px; line-height: 28px; color: #3a332d">Tap to wake</span>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1920,"height":1080}}'>
+class Component extends DCLogic {
+  renderVals() { return { s30: 30 }; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wallboard — event & holiday icons</title>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="ds/haven/components/bundle.css">
+<script src="ds/haven/components/bundle.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Space+Grotesk:wght@300;400;500&amp;display=swap">
+<style>
+:root{--surface-000:#d6c7ae;--surface-100:#fffaf1;--surface-200:#f1e6d3;--surface-300:#dccdb4;--line:#c9b89c;--ink:#1d1712;--ink-muted:#4b4034;--ink-faint:#5f5345;--accent:#0b6760;--accent-soft:#cfe9e1;--on-accent:#ffffff;--warm:#934606;--warm-soft:#f8e1c6;--on-warm:#ffffff;--cool:#24559e;--cool-soft:#d9e4f4;--on-cool:#ffffff;--success:#276b3c;--alert:#a92b22;--alert-soft:#f5d8d3;--elevation-1:inset 0 1px 0 rgba(255,255,255,0.7),0 2px 4px rgba(50,35,15,0.16),0 16px 36px rgba(50,35,15,0.24);--glow-accent:0 0 0 3px rgba(11,103,96,0.7),0 16px 36px rgba(50,35,15,0.24);--focus-ring:var(--accent);--font-display:"Space Grotesk","Inter",system-ui,sans-serif;--font-sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--space-16:64px;--radius-sm:12px;--radius-md:20px;--radius-lg:28px;--radius-pill:999px;--touch-min:64px;--touch-lg:80px;--widget-unit:168px}
+body{margin:0;font-family:var(--font-sans);color:var(--ink);background:var(--surface-000)}
+a{color:var(--accent)}a:hover{color:var(--ink)}
+.wb-event{transition:transform .12s ease,box-shadow .24s ease;-webkit-tap-highlight-color:transparent}
+.wb-event:active{transform:scale(.97)}
+.wb-event.is-party{box-shadow:0 0 0 3px var(--warm),var(--elevation-1)}
+.wb-lid{transform-box:fill-box;transform-origin:0% 100%;transition:transform .35s cubic-bezier(.3,.7,.2,1.4)}
+.wb-event.is-party .wb-lid{transform:translate(-1px,-4px) rotate(-18deg)}
+.wb-event.is-party .wb-gift{animation:wb-wiggle .6s ease}
+@keyframes wb-wiggle{0%,100%{transform:rotate(0)}20%{transform:rotate(-10deg) scale(1.08)}40%{transform:rotate(9deg) scale(1.08)}60%{transform:rotate(-6deg)}80%{transform:rotate(3deg)}}
+.wb-bit{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);opacity:0;animation:wb-burst 1.7s cubic-bezier(.15,.7,.3,1) forwards;pointer-events:none}
+@keyframes wb-burst{0%{opacity:1;transform:translate(-50%,-50%) rotate(0)}55%{opacity:1;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) rotate(calc(var(--r) * .6))}100%{opacity:0;transform:translate(calc(-50% + var(--dx2)),calc(-50% + var(--dy2))) rotate(var(--r))}}
+.wb-party-text{animation:wb-in .3s ease-out}
+@keyframes wb-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.wb-bit{display:none}.wb-event.is-party .wb-gift{animation:none}.wb-lid{transition:none}}
+.wb-event .wb-gift{transition:width .24s ease,height .24s ease}
+.wb-event.is-party .wb-gift{width:72px!important;height:72px!important}
+.wb-event.is-party .wb-gift svg{width:44px;height:44px}
+.wb-fit{display:flex;flex-direction:column;flex:1;min-width:0}
+.wb-fit>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-sky{position:absolute;inset:0;z-index:4;pointer-events:none;overflow:hidden}
+.wb-rain{position:absolute;top:-60px;opacity:0;animation:wb-rain var(--d) cubic-bezier(.35,.1,.6,1) var(--dl) forwards}
+@keyframes wb-rain{0%{opacity:1;transform:translate(0,0) rotate(0)}85%{opacity:1}100%{opacity:0;transform:translate(var(--sx),var(--h)) rotate(var(--r))}}
+.wb-up{position:absolute;bottom:-90px;opacity:0;animation:wb-up var(--d) cubic-bezier(.3,.5,.5,1) var(--dl) forwards}
+.wb-up::after{content:"";position:absolute;left:50%;top:100%;width:2px;height:40px;background:rgba(29,23,18,.3)}
+@keyframes wb-up{0%{opacity:1;transform:translate(0,0)}80%{opacity:1}100%{opacity:0;transform:translate(var(--sx),var(--h)) rotate(var(--r))}}
+.wb-snow{position:absolute;top:-40px;opacity:0;color:#3a6fc0;animation:wb-rain var(--d) linear var(--dl) forwards}
+@media (prefers-reduced-motion:reduce){.wb-sky{display:none}}
+</style>
+</helmet>
+<div style="width: 2900px; box-sizing: border-box; padding: 64px 80px 80px; display: flex; flex-direction: column; gap: 44px; background: var(--surface-000); color: var(--ink); font-family: var(--font-sans)">
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <h1 style="margin: 0; font-size: 44px; line-height: 52px; font-weight: 700">Countdown icons · events and holidays</h1>
+    <p style="margin: 0; font-size: 24px; line-height: 32px; color: var(--ink-muted); max-width: 1900px">Eva sends a <b>kind</b> with each countdown; the tile uses that icon and colour, and the tap celebration uses that effect. Unknown kinds fall back to the star. Same line style as the rest of the board (24 grid, 1.9 stroke, round caps). Effects reuse three motions: burst/rain, rise, fall, with a different particle shape.</p>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <h2 style="margin: 0; font-size: 30px; line-height: 36px; font-weight: 700">Everyday family events</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 20px">
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Holiday (default)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">holiday</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="1.5"></rect><path d="M3 7h18v3H3zM12 7v13M12 7c-1.5-3.5-5.5-3-4.5 0M12 7c1.5-3.5 5.5-3 4.5 0"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Visit</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">visit</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21h16M5 21v-7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7M5 16.5c1.5 1 3 1 4.5 0s3-1 4.5 0 3 1 4.5 0M12 12V8.5M12 6.5c.9-.9.9-2 0-3-.9 1-.9 2.1 0 3z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Birthday</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">birthday</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #8c2a4f">Balloons rise</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.5c0-.8-.7-1.5-1.5-1.5H15L10 3H8l2.5 8H6L4.5 9H3l1 3.5L3 16h1.5L6 14h4.5L8 22h2l5-8h4.5c.8 0 1.5-.7 1.5-1.5z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Trip</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">trip</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--cool)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8M7.5 5.5l9 5"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Moving day</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">move</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-8.5-9A4.5 4.5 0 0 1 12 6.5 4.5 4.5 0 0 1 20.5 11C19 15.6 12 20 12 20z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Anniversary</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">anniversary</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #8c2a4f">Hearts rise</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="17" cy="16" r="3"></circle></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Recital</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">recital</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #4a3480">Notes rise</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3l3.5 7.5M17 3l-3.5 7.5"></path><circle cx="12" cy="15.5" r="5.5"></circle><path d="M12 13v5M10.5 14l1.5-1"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Sports day</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">sports</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5M22 9v6"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Graduation · entrance</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">ceremony</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #4a3480">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0v10a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2zM9.5 3.5h5M9 14h6v3H9z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">First / last day of school</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">school</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--accent)">Confetti rain</span>
+      </div>
+    </div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <h2 style="margin: 0; font-size: 30px; line-height: 36px; font-weight: 700">Japan</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 20px">
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 17h19M6 17a6 6 0 0 1 12 0M12 5v3M5.6 8.6l2 2M18.4 8.6l-2 2M5 21h14"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">New Year (お正月)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">new-year</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 11a6.5 6.5 0 0 0 13 0v-1a6.5 6.5 0 0 0-13 0zM7.5 5L6 2M16.5 5L18 2M9 15h6"></path><circle cx="9.5" cy="10.5" r=".9" fill="currentColor"></circle><circle cx="14.5" cy="10.5" r=".9" fill="currentColor"></circle></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Setsubun (節分)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">setsubun</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Beans fall</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="5" r="2.2"></circle><circle cx="16" cy="5" r="2.2"></circle><path d="M3.5 21L8 8.5l4.5 12.5zM11.5 21L16 8.5l4.5 12.5z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Hinamatsuri (ひな祭り)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">hinamatsuri</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #8c2a4f">Petals fall</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g><g transform="rotate(0 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(72 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(144 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(216 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(288 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><circle cx="12" cy="12" r="1.6"></circle></g></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Hanami (花見)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">hanami</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #8c2a4f">Petals fall</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3v18M4 5h11l4 2.5-4 2.5H4M4 12.5h9l4 2.5-4 2.5H4"></path><circle cx="14.5" cy="7.5" r=".9" fill="currentColor"></circle><circle cx="12.5" cy="15" r=".9" fill="currentColor"></circle></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Children’s Day (こどもの日)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">kodomo</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--cool)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4c5 1 11 1 16 0M8 4.5v6M12 5v8M16 4.5v5"></path><path d="M12 14.5l1.4 2.8 3.1.5-2.2 2.1.5 3.1-2.8-1.5-2.8 1.5.5-3.1-2.2-2.1 3.1-.5z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Tanabata (七夕)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">tanabata</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #4a3480">Stars fall</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v2.5M8.5 4.5h7M7.5 6.5c-1.8 3-1.8 9 0 12h9c1.8-3 1.8-9 0-12zM7 10.5h10M7 14.5h10M9.5 18.5v2h5v-2"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Obon (お盆)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">obon</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Lanterns rise</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 9.5A6.5 6.5 0 1 1 14.5 3a5 5 0 0 0 6.5 6.5z"></path><circle cx="6" cy="15.5" r="2"></circle><circle cx="10" cy="15.5" r="2"></circle><circle cx="8" cy="12" r="2"></circle><path d="M3 20h10"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Tsukimi (月見)</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">tsukimi</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #4a3480">Stars fall</span>
+      </div>
+    </div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <h2 style="margin: 0; font-size: 30px; line-height: 36px; font-weight: 700">United States</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 20px">
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.4-8.5-9A4.5 4.5 0 0 1 12 6.5 4.5 4.5 0 0 1 20.5 11C19 15.6 12 20 12 20z"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Valentine’s Day</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">valentine</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #8c2a4f">Hearts rise</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #e7defa; color: #4a3480; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c3.5 0 7 6 7 11a7 7 0 0 1-14 0c0-5 3.5-11 7-11zM5.3 12.5l2.2-1.5 2.2 1.5 2.3-1.5 2.3 1.5 2.2-1.5 2.2 1.5"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Easter</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">easter</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #4a3480">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3"></circle><path d="M12 11v10M12 17c-3 0-5-2-5-4 2 0 5 1 5 4zM12 15c2.5 0 4.5-1.5 4.5-3.5-2 0-4.5 1-4.5 3.5zM9 8a3 3 0 0 1-3-3M15 8a3 3 0 0 0 3-3"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Mother’s / Father’s Day</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">parents-day</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #8c2a4f">Hearts rise</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 12V3M12 12l6.4-6.4M12 12h9M12 12l6.4 6.4M12 12v9M12 12l-6.4 6.4M12 12H3M12 12L5.6 5.6"></path><circle cx="12" cy="12" r="1.5"></circle></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Fourth of July</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">july4</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--cool)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7c-4.5 0-8.5 2.5-8.5 7s4 7 8.5 7 8.5-2.5 8.5-7-4-7-8.5-7zM8.2 7.7c-1.6 2.5-1.6 10.1 0 12.6M15.8 7.7c1.6 2.5 1.6 10.1 0 12.6M12 7c0-2 1-3.5 3-4"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Halloween</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">halloween</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 14h19l-1.6 5.5H4.1zM3 14a9 7 0 0 1 18 0M8 10l1.2 2M12 9v2.3M16 10l-1.2 2"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Thanksgiving</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">thanksgiving</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Leaves fall</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #dcebd9; color: #2f6b3c; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l5 6h-3l4 5h-3l4 5H5l4-5H6l4-5H7zM12 18.5V22"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Christmas</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">christmas</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #2f6b3c">Snow falls</span>
+      </div>
+    </div>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 18px">
+    <h2 style="margin: 0; font-size: 30px; line-height: 36px; font-weight: 700">Seasons & school breaks</h2>
+    <div style="display: flex; flex-wrap: wrap; gap: 20px">
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Summer break</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">summer</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Confetti rain</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--warm-soft); color: var(--warm); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19C5 10 10 4 20 4c0 10-6 15-15 15zM5 19l8-8"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Autumn</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">autumn</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--warm)">Leaves fall</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5v19M3.8 7.2l16.4 9.6M20.2 7.2L3.8 16.8M9.5 4l2.5 1.7L14.5 4M9.5 20l2.5-1.7 2.5 1.7"></path></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Winter break</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">winter</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: var(--cool)">Snow falls</span>
+      </div>
+      <div style="width: 248px; box-sizing: border-box; padding: 22px 20px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--elevation-1); display: flex; flex-direction: column; align-items: flex-start; gap: 12px">
+        <span style="width: 88px; height: 88px; border-radius: 50%; background: #fbdde6; color: #8c2a4f; display: grid; place-items: center"><svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g><g transform="rotate(0 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(72 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(144 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(216 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><g transform="rotate(288 12 12)"><path d="M12 10c-1.8-2.6-1.3-5.6 0-6.8 1.3 1.2 1.8 4.2 0 6.8z"></path></g><circle cx="12" cy="12" r="1.6"></circle></g></svg></span>
+        <span style="font-size: 22px; line-height: 28px; font-weight: 700">Spring break</span>
+        <span style="font-family: ui-monospace, Menlo, monospace; font-size: 17px; line-height: 22px; color: var(--ink-muted)">spring</span>
+        <span style="font-size: 17px; line-height: 22px; font-weight: 600; color: #8c2a4f">Petals fall</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":2900,"height":1700}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

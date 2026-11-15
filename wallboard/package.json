@@ -1,0 +1,25 @@
+{
+  "name": "eva-wallboard",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server/index.ts",
+    "dev": "node --watch server/index.ts",
+    "test": "node --test 'server/**/*.test.ts' && npm run test:sync",
+    "test:sync": "cd sync && python3 -m unittest -q test_chores",
+    "typecheck": "tsc --noEmit",
+    "deploy": "./deploy/deploy.sh",
+    "seed": "node scripts/seed.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "ical.js": "^2.2.1",
+    "sharp": "^0.34.5"
+  }
+}
