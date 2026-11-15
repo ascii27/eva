@@ -2,6 +2,10 @@ const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
+// The kitchen wallboard is a separate Node project with its own node_modules;
+// keep Metro from crawling it.
+config.resolver.blockList = [/\/wallboard\/.*/];
+
 const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   // react-native-audio-api's AudioControls component imports

@@ -7,5 +7,7 @@
     // scripts/ runs under node's native TypeScript stripping, which requires
     // the real file extension in the import specifier.
     "allowImportingTsExtensions": true
-  }
+  },
+  // The kitchen wallboard is its own Node project with its own tsconfig.
+  "exclude": ["node_modules", "wallboard"]
 }

@@ -1,0 +1,15 @@
+[Unit]
+Description=Eva kitchen wallboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=exedev
+WorkingDirectory=/home/exedev/wallboard
+EnvironmentFile=/etc/wallboard.env
+ExecStart=/usr/bin/node server/index.ts
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
