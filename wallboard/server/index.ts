@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { apply, emptyState, parseChores, reviveState, PANEL_NAME, type Action, type BoardState } from './state.ts';
 import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
+import { IKEJIRI, startWeather } from './weather.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -66,6 +67,17 @@ function dispatch(a: Action): boolean {
 
 // Keeps idle connections alive through proxies, which drop a silent stream.
 setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 25_000).unref();
+
+// Real weather (Open-Meteo), published as the `weather` panel. Home by default;
+// WEATHER_LAT/WEATHER_LON override, WEATHER=off stops polling (the last panel stays).
+if (process.env.WEATHER !== 'off') {
+  startWeather(
+    Number(process.env.WEATHER_LAT ?? IKEJIRI.lat),
+    Number(process.env.WEATHER_LON ?? IKEJIRI.lon),
+    15 * 60_000,
+    (data) => dispatch({ type: 'panel.set', name: 'weather', data, at: Date.now() }),
+  );
+}
 
 // ---- http helpers ----------------------------------------------------------
 

@@ -17,7 +17,7 @@ Separate from the phone app: its own Node project, its own deploy, hosted at
   `DESIGN.md`). A 1080-tall stage stretched to the screen's shape; three views:
   ambient (default), active (after a tap, back to resting after 60 s), night
   (21:30–06:30, tap for a dimmed active view). Two colour themes by time of
-  day: "Morning paper" 06:30–17:30, dark Haven Night until bedtime, switched
+  day: "Morning paper" 06:30–21:00, dark Haven Night until bedtime, switched
   with a 1.5 s crossfade, no reload.
 - `web/dummy.js` — **dummy content** for everything Eva doesn't push yet. Each
   key is replaced by the pushed panel of the same name. Pay and bath order are
@@ -74,6 +74,11 @@ means "there is nothing". Only `DELETE` makes a panel absent again.
 Panels the board knows (shapes in `web/dummy.js`): `note` (`{text, sub?}` or a
 string), `weather`, `leave-by`, `pickup`, `dinner`, `countdowns`, `schedule`,
 `tomorrow`, `memories`.
+
+`weather` is the exception: the server fills it itself from Open-Meteo (no key)
+for Ikejiri, Setagaya every 15 min (`server/weather.ts`), so a push to it is
+overwritten on the next poll. `WEATHER_LAT`/`WEATHER_LON` move it, `WEATHER=off`
+stops polling.
 
 ## Board API (enrolled cookie)
 
