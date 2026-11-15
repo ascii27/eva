@@ -2,8 +2,9 @@
    Change the design first, then port.
 
    Themes by time of day (DESIGN.md): the defaults below are Evening (Haven
-   Night, dark); .stage[data-theme="day"] swaps in "Morning paper" (LightPaper,
-   ActivePaper). Night mode is its own view and ignores both. */
+   Night, dark); .stage[data-theme="day"] swaps in "Morning paper v2"
+   (PaperV2Sand, ActivePaper, ChoreTapPaper). Night mode is its own view and
+   ignores both. */
 
 :root {
   --surface-000: #07090c; --surface-100: #0f131a; --surface-200: #171c25; --surface-300: #222936;
@@ -19,24 +20,29 @@
   --card-shadow: none;
   --toast-shadow: 0 20px 50px rgba(0,0,0,0.6);
   --veil: rgba(7, 9, 12, 0.62);
+  --strip-line: transparent;   /* day edges its strip cards; the dark boards don't */
+  --hint: var(--ink-faint);
   --ma-bg: #c4a4ff; --ma-fg: #1b1030;
   --sa-bg: #ff9cc0; --sa-fg: #2e0c19;
   --label: 0.08em;
 }
 
-/* Day · "Morning paper" — chosen by the girls. Tokens from LightPaper.dc.html. */
+/* Day · "Morning paper v2 · sand" — chosen after testing on the Echo (v1 was too
+   bright and flat). Tokens from PaperV2Sand.dc.html. */
 .stage[data-theme="day"] {
-  --surface-000: #f3ede3; --surface-100: #fffdf8; --surface-200: #f2ebdf; --surface-300: #e4dacb;
-  --line: #e4dbcd;
-  --ink: #2a231e; --ink-muted: #5f554c; --ink-faint: #83786d;
-  --accent: #0f766e; --accent-soft: #d9efe8; --on-accent: #ffffff;
-  --warm: #a14f0c; --warm-soft: #fbe6cf; --on-warm: #ffffff;
-  --cool: #2c5fae; --cool-soft: #dde7f6; --on-cool: #ffffff;
-  --success: #2f7a46; --alert: #b8322a;
-  --glow-accent: 0 0 0 2px rgba(15,118,110,0.5), 0 10px 28px rgba(15,118,110,0.14);
-  --card-shadow: 0 1px 2px rgba(60,40,20,0.06), 0 10px 28px rgba(60,40,20,0.08);
+  --surface-000: #d6c7ae; --surface-100: #fffaf1; --surface-200: #f1e6d3; --surface-300: #dccdb4;
+  --line: #c9b89c;
+  --ink: #1d1712; --ink-muted: #4b4034; --ink-faint: #5f5345;
+  --accent: #0b6760; --accent-soft: #cfe9e1; --on-accent: #ffffff;
+  --warm: #934606; --warm-soft: #f8e1c6; --on-warm: #ffffff;
+  --cool: #24559e; --cool-soft: #d9e4f4; --on-cool: #ffffff;
+  --success: #276b3c; --alert: #a92b22;
+  --glow-accent: 0 0 0 3px rgba(11,103,96,0.7), 0 16px 36px rgba(50,35,15,0.24);
+  --card-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 2px 4px rgba(50,35,15,0.16), 0 16px 36px rgba(50,35,15,0.24);
   --toast-shadow: 0 16px 40px rgba(60,40,20,0.18);
-  --veil: rgba(243, 237, 227, 0.82);
+  --veil: rgba(214, 199, 174, 0.50);
+  --strip-line: var(--line);
+  --hint: var(--ink-muted);
   --ma-bg: #e7defa; --ma-fg: #4a3480;
   --sa-bg: #fbdde6; --sa-fg: #8c2a4f;
 }
@@ -75,11 +81,12 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .ambient { padding: 88px 104px 72px; flex-direction: column; overflow: hidden; }
 .memory { position: absolute; inset: 0; opacity: 0; transition: opacity 2.5s ease; overflow: hidden; }
 /* Layout per photo (DESIGN.md "Memory photos"): landscape full-bleed; two
-   portraits side by side with an 8 px gap; a lone portrait centred, full height,
-   on the theme's ground. No blurred fill: too heavy for Silk. */
+   portraits side by side with an 8 px gap; a lone portrait (or square-ish photo)
+   in the left half — the pair's left slot — with the right half plain theme
+   ground. No blurred fill: too heavy for Silk. */
 .memory img { position: absolute; top: 0; height: 100%; object-fit: cover; }
 .memory img.full { left: 0; width: 100%; }
-.memory img.single { left: 0; width: 100%; object-fit: contain; object-position: center; }
+.memory img.single { left: 0; width: calc(50% - 4px); }
 .memory img.half { width: calc(50% - 4px); }
 .memory img.half.l { left: 0; }
 .memory img.half.r { right: 0; }
@@ -133,7 +140,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .later-row .p { color: var(--ink-muted); }
 
 .amb-strip { display: flex; gap: 20px; height: 112px; flex: none; }
-.strip-card { padding: 0 28px; border-radius: 24px; background: var(--surface-100); box-shadow: var(--card-shadow); display: flex; align-items: center; gap: 18px; }
+.strip-card { padding: 0 28px; border-radius: 24px; background: var(--surface-100); border: 1px solid var(--strip-line); box-shadow: var(--card-shadow); display: flex; align-items: center; gap: 18px; }
 .strip-kid { flex: 1; }
 .strip-kid .info { flex: 1; display: flex; flex-direction: column; gap: 10px; }
 .strip-kid .row { display: flex; align-items: baseline; gap: 12px; }
@@ -150,7 +157,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .strip-label .k { font-size: 22px; line-height: 28px; color: var(--ink-muted); }
 .strip-label .v { font-size: 30px; line-height: 36px; font-weight: 600; }
 
-.amb-hint { position: absolute; right: 104px; bottom: 24px; font-size: 22px; line-height: 28px; color: var(--ink-faint); }
+.amb-hint { position: absolute; right: 104px; bottom: 24px; font-size: 22px; line-height: 28px; color: var(--hint); }
 
 /* ---------- 2 · Active ---------- */
 

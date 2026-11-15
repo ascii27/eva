@@ -46,14 +46,13 @@ function isNight(d) {
   return m >= 21 * 60 + 30 || m < 6 * 60 + 30;
 }
 
-// Themes by time of day (DESIGN.md): Morning paper 06:30–17:30, Haven Night
-// (dark) until bedtime, then the night view. A fixed 17:30 for now; DESIGN.md
-// wants sunset from the weather feed once there is one. ?theme=day|evening pins it.
+// Themes by time of day (DESIGN.md): Morning paper 06:30–21:00, Haven Night
+// (dark) until bedtime, then the night view. ?theme=day|evening pins it.
 function themeFor(d) {
   const pinned = q.get('theme');
   if (pinned === 'day' || pinned === 'evening') return pinned;
   const m = minutesOfDay(d);
-  return m >= 6 * 60 + 30 && m < 17 * 60 + 30 ? 'day' : 'evening';
+  return m >= 6 * 60 + 30 && m < 21 * 60 ? 'day' : 'evening';
 }
 
 let themeTimer = null;
@@ -249,7 +248,7 @@ function renderAmbient() {
 //
 // Layout per photo by width ÷ height (DESIGN.md): ≥ 1.2 full-bleed; ≤ 0.9
 // portrait, paired with another portrait found within the next 5 in the bag;
-// anything else, or a portrait with no partner, shown single and centred.
+// anything else, or a portrait with no partner, shown single in the left half.
 let serverPhotos = [];
 let bag = [];
 let photoFront = 'mem-a';

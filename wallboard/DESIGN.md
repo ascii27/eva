@@ -19,13 +19,13 @@ Nozomi amber (Haven `warm`), Michael blue (Haven `cool`). Always shown with name
 ## Themes by time of day
 | Window | Theme | Notes |
 |---|---|---|
-| ~06:30–17:30 | **Day — "Morning paper"** (warm cream) | Chosen by the girls. Tokens in `design/LightPaper.dc.html` `:root`. Cards get a soft shadow to lift off the cream ground; photo veiled with cream at 82% |
-| ~17:30–bedtime | **Evening — Haven Night** (dark) | Current dark design (`Main`, `Active`) |
+| ~06:30–21:00 | **Day — "Morning paper v2 · sand"** | Chosen after testing on the Echo (v1 was too bright and flat). Tokens in `design/PaperV2Sand.dc.html` `:root`: ground #d6c7ae, cards #fffaf1 with 1px #c9b89c edge and a stronger shadow, ink #1d1712, muted #4b4034, done-teal #0b6760. Memory photo under a 50% sand veil; clock and weather sit directly on the photo (no card) so the photo stays visible |
+| 21:00–bedtime | **Evening — Haven Night** (dark) | Current dark design (`Main`, `Active`) |
 | bedtime–06:30 | **Night mode** | Pure black, warm dim text |
 
 - Switch with a 1.5 s background/colour crossfade (CSS variables on `:root`, `transition` on background/color only). No reload.
-- Better later: use sunset time from the weather feed for the day→evening switch instead of a fixed 17:30.
-- Teal still means "done" in every theme; Mariko/Sarina avatars use light tints with dark initials by day.
+- Paper runs into the evening on purpose (changed from 17:30 on 2026-11-15): the family wanted the light board until 21:00, not tied to sunset.
+- Teal still means "done" in every theme; Mariko/Sarina avatars use light tints with dark initials by day. Superseded design files (LightPaper = v1, PaperV2Cards, LightDay/Pastel/Photo) are reference only.
 
 ## Hierarchy (ambient)
 1. Time + date (300 px) — readable at 4 m
