@@ -1,6 +1,6 @@
 // The family's day: an iCloud published calendar (webcal) merged with the fixed
-// routine (routine.ts), published as three panels the board already renders —
-// `schedule` (today), `tomorrow` (the night view's first commitment),
+// routine (routine.ts), published as the panels the board renders —
+// `schedule` (today) and `tomorrow` as event lists (CLAUDE.md "Data"),
 // `leave-by`, `bedtime` and `occasion`. The server owns all five; a hermes push to any is
 // overwritten.
 //
@@ -16,18 +16,24 @@ import ICAL from 'ical.js';
 import { bedtimeFor, leaveByFor, type LeaveBy } from './routine.ts';
 import { isBirthday, nextOccasion, type Occasion } from './occasions.ts';
 
+/** One event, the shape Eva pushes too: `{ id, who, start, end?, title, icon, bring? }`. */
 export interface Entry {
+  id: string;
   /** "H:MM" Tokyo time, or null for an all-day event. */
-  at: string | null;
+  start: string | null;
+  end?: string;
   allDay?: true;
   title: string;
   who: string[];
+  /** A key in web/icons.js, guessed from the title (iconOf). */
+  icon: string;
   sub: string;
 }
 
 export interface CalendarPanels {
   schedule: Entry[];
-  tomorrow: { at: string; title: string } | null;
+  /** Tomorrow's events with the school run folded in; bedtime left out. */
+  tomorrow: Entry[];
   'leave-by': LeaveBy | null;
   /** Same shape as leave-by; the board counts down to it in the 30 min before. */
   bedtime: LeaveBy;
@@ -74,12 +80,25 @@ export function whoOf(title: string): string[] {
   return ['mariko', 'sarina', 'nozomi', 'michael'].filter((i) => out.has(i));
 }
 
+// Which icon a calendar title gets; the board falls back to a calendar.
+const ICON: [RegExp, string][] = [
+  [/水泳|スイミング|プール|swim/i, 'swim'],
+  [/ピアノ|piano|music|レッスン/i, 'music'],
+  [/歯医者|歯科|dentist/i, 'tooth'],
+  [/テニス|tennis/i, 'tennis'],
+  [/お迎え|迎え|pick ?up/i, 'car'],
+  [/仕事|会社|出社|office|work/i, 'work'],
+];
+export function iconOf(title: string): string {
+  return ICON.find(([re]) => re.test(title))?.[1] ?? 'calendar';
+}
+
 function subOf(location: string | null): string {
   const first = (location ?? '').split(/\n|\\n/)[0].trim();
   return first.length > 40 ? `${first.slice(0, 39)}…` : first;
 }
 
-interface Occurrence { start: number; allDay: boolean; startDate: string; endDate: string; title: string; location: string | null }
+interface Occurrence { start: number; end: number; allDay: boolean; startDate: string; endDate: string; title: string; location: string | null }
 
 /** Every occurrence overlapping [from, to), recurring events expanded. */
 function occurrences(ics: string, from: number, to: number): Occurrence[] {
@@ -109,6 +128,7 @@ function occurrences(ics: string, from: number, to: number): Occurrence[] {
     if (start >= to) return;
     out.push({
       start,
+      end,
       allDay,
       startDate: allDay ? s.toString() : tokyoDate(new Date(start)),
       endDate: allDay ? tokyoDate(new Date(end - 1)) : tokyoDate(new Date(start)),
@@ -145,7 +165,10 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
   const occ = ics ? occurrences(ics, t0, t0 + 367 * DAY) : [];
 
   const entry = (o: Occurrence): Entry => {
-    const e: Entry = { at: o.allDay ? null : tokyoHM(new Date(o.start)), title: o.title, who: whoOf(o.title), sub: subOf(o.location) };
+    const start = o.allDay ? null : tokyoHM(new Date(o.start));
+    const e: Entry = { id: `${o.startDate}-${start ?? 'allday'}-${o.title}`, start, title: o.title, who: whoOf(o.title), icon: iconOf(o.title), sub: subOf(o.location) };
+    // A same-day end only; past midnight the default (start + 60) is the better guess.
+    if (!o.allDay && o.end > o.start && tokyoDate(new Date(o.end - 1)) === o.startDate) e.end = tokyoHM(new Date(o.end));
     if (o.allDay) e.allDay = true;
     return e;
   };
@@ -155,17 +178,18 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
   const allDay = occ.filter((o) => o.allDay && o.startDate <= today && o.endDate >= today).sort(byStart);
   const timed = occ.filter((o) => !o.allDay && o.startDate === today).sort(byStart);
   const bed = bedtimeFor(today);
-  const timedEntries = [...timed.map(entry), bed].sort((a, b) => hmKey(a.at!) - hmKey(b.at!));
+  const bedEntry: Entry = { id: 'bedtime', start: bed.at, title: bed.title, who: bed.who, icon: 'moon', sub: '' };
+  const timedEntries = [...timed.map(entry), bedEntry].sort((a, b) => hmKey(a.start!) - hmKey(b.start!));
   const schedule = [...allDay.map(entry), ...timedEntries];
 
-  // Night view: tomorrow's first commitment — the school run or a timed event,
-  // whichever is earlier. Bedtime never counts as a commitment.
-  const cands: { at: string; title: string }[] = occ
-    .filter((o) => !o.allDay && o.startDate === tomorrow)
-    .map((o) => ({ at: tokyoHM(new Date(o.start)), title: `Tomorrow · ${o.title}` }));
+  // Tomorrow, for the after-dinner card and the night view's first commitment:
+  // all-day events, then timed ones with the school run among them. Bedtime
+  // is routine, not a commitment, so it stays out.
+  const tAllDay = occ.filter((o) => o.allDay && o.startDate <= tomorrow && o.endDate >= tomorrow).sort(byStart).map(entry);
+  const tTimed = occ.filter((o) => !o.allDay && o.startDate === tomorrow).sort(byStart).map(entry);
   const leaveTomorrow = leaveByFor(tomorrow);
-  if (leaveTomorrow) cands.push({ at: leaveTomorrow.at, title: 'Tomorrow · leave for school' });
-  cands.sort((a, b) => hmKey(a.at) - hmKey(b.at));
+  if (leaveTomorrow) tTimed.push({ id: `school-${tomorrow}`, start: leaveTomorrow.at, title: 'School', who: leaveTomorrow.who, icon: 'bag', sub: '' });
+  tTimed.sort((a, b) => hmKey(a.start!) - hmKey(b.start!));
 
   const birthdays = occ.filter((o) => isBirthday(o.title)).map((o) => {
     const w = whoOf(o.title);
@@ -174,7 +198,7 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
 
   return {
     schedule,
-    tomorrow: cands[0] ?? null,
+    tomorrow: [...tAllDay, ...tTimed],
     'leave-by': leaveByFor(today),
     bedtime: { label: 'Bedtime', who: bed.who, at: bed.at },
     occasion: nextOccasion(today, birthdays),

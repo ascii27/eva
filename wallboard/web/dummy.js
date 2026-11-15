@@ -3,16 +3,11 @@
 // of the same name the moment hermes pushes one (see `content()` in app.js), so
 // this file shrinks as the integration grows.
 //
-// Times are "H:MM" in the board's local day. The leave-by time is relative to
-// page load so the countdown card is always there to try; real data won't be.
+// Times are "H:MM" in the board's local day. The schedule and tomorrow are
+// the sample day from design/DayFlow.dc.html, so ?time=7:42 / 15:40 / 19:30
+// reproduce its three moments.
 
-function inMinutes(start, n) {
-  const d = new Date(start.getTime() + n * 60_000);
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-/** `start` is the board's notion of now, which ?time= can fake. */
-export function dummy(start = new Date()) {
+export function dummy() {
   return {
     note: { text: 'Rain after 6 pm. Swim bag needs the spare towel tonight.', sub: 'Also: library books due Wednesday.' },
 
@@ -29,7 +24,7 @@ export function dummy(start = new Date()) {
       night: { cond: 'clear-night', text: '9° clear · rain clears by morning' },
     },
 
-    'leave-by': { label: 'Leave for school', who: ['mariko', 'sarina'], at: inMinutes(start, 13) },
+    'leave-by': { label: 'Leave for school', who: ['mariko', 'sarina'], at: '7:55' },
 
     pickup: { text: 'Swim · 16:30 · Nozomi' },
 
@@ -40,16 +35,23 @@ export function dummy(start = new Date()) {
       { label: 'Winter break', days: 38 },
     ],
 
+    // Shape (CLAUDE.md "Data"): { id, who, start, end?, title, icon, bring? }.
     schedule: [
-      { at: '9:30', title: 'Office', who: ['michael'], sub: 'Michael · back 18:00' },
-      { at: '11:00', title: 'Dentist', who: ['nozomi'], sub: 'Nozomi' },
-      { at: '15:00', title: 'Piano lesson', who: ['sarina'], sub: 'Sarina · walks home' },
-      { at: '16:30', title: 'Swim · pickup', who: ['mariko', 'nozomi'], sub: 'Nozomi picks up' },
-      { at: '18:30', title: 'Family dinner', who: [], sub: 'Everyone home' },
-      { at: '20:00', title: 'Bath & bedtime', who: [], sub: '{bath} first tonight' },
+      { id: 'office', who: ['michael'], start: '9:30', title: 'Office', icon: 'work' },
+      { id: 'dentist', who: ['nozomi'], start: '11:00', title: 'Dentist', icon: 'tooth' },
+      { id: 'piano', who: ['sarina'], start: '15:00', title: 'Piano', icon: 'music' },
+      { id: 'swim', who: ['mariko'], start: '16:30', title: 'Swim', icon: 'swim',
+        bring: [{ icon: 'bag', label: 'Swim bag' }, { icon: 'towel', label: 'Spare towel' }] },
+      { id: 'pickup', who: ['nozomi'], start: '16:30', title: 'Pickup', icon: 'car' },
     ],
 
-    tomorrow: { at: '7:55', title: 'Tomorrow · leave for school' },
+    tomorrow: [
+      { id: 't-school', who: ['mariko', 'sarina'], start: '7:55', title: 'School', icon: 'bag',
+        bring: [{ icon: 'recorder', label: 'Recorder' }] },
+      { id: 't-office', who: ['michael'], start: '9:00', title: 'Office', icon: 'work' },
+      { id: 't-tennis', who: ['mariko'], start: '17:00', title: 'Tennis', icon: 'tennis',
+        bring: [{ icon: 'tennis', label: 'Tennis kit' }] },
+    ],
 
     memories: [
       { src: '/assets/memory-placeholder.svg', caption: 'Beach day, August 2025', w: 1920, h: 1080 },

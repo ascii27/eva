@@ -122,23 +122,35 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .amb-caption { margin-top: auto; display: flex; align-items: center; gap: 12px; color: var(--ink-muted); font-size: 22px; line-height: 28px; }
 
 .amb-right { width: 744px; flex: none; display: flex; flex-direction: column; gap: 24px; }
-.leave { padding: 32px 40px; border-radius: 28px; background: var(--surface-100); box-shadow: var(--glow-accent); display: flex; flex-direction: column; gap: 4px; }
-.leave-head { display: flex; align-items: center; gap: 12px; color: var(--accent); font-size: 22px; line-height: 28px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; }
-.leave-mins { display: flex; align-items: baseline; gap: 16px; color: var(--accent); }
-.leave-mins .big { font-family: var(--font-display); font-size: 128px; line-height: 120px; font-weight: 300; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.leave-mins .unit { font-size: 44px; line-height: 52px; font-weight: 500; }
-.leave-sub { font-size: 28px; line-height: 36px; color: var(--ink-muted); }
+/* Calm right column (design/DayFlow.dc.html): every piece on a solid card, no halo. */
+.rc-card { border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); padding: 26px 32px 30px; display: flex; flex-direction: column; gap: 14px; }
+.rc-next { border: 0; box-shadow: var(--glow-accent); padding: 26px 32px; gap: 12px; }
+.rc-eyebrow { display: flex; align-items: center; gap: 12px; color: var(--ink-muted); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: var(--label); text-transform: uppercase; }
+.rc-next .rc-eyebrow { color: var(--accent); }
+.rc-avs { margin-left: auto; display: flex; gap: 6px; text-transform: none; letter-spacing: normal; }
+.rc-count { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+.rc-count .big { font-family: var(--font-display); font-size: 104px; line-height: 100px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--accent); }
+.rc-count .unit { font-size: 38px; font-weight: 600; color: var(--accent); }
+.rc-count .what { margin-left: 8px; font-size: 32px; line-height: 40px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-bring { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rc-k { font-size: 22px; font-weight: 700; letter-spacing: var(--label); text-transform: uppercase; color: var(--ink-muted); }
+.rc-bp { display: inline-flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; border-radius: 999px; background: var(--warm-soft); color: var(--warm); font-size: 24px; font-weight: 600; }
+.rc-pack { padding-top: 14px; border-top: 1px solid var(--line); }
+.rc-row { display: flex; align-items: center; gap: 16px; min-height: 64px; }
+.rc-pills { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.rc-pill { height: 56px; max-width: 100%; padding: 0 16px 0 12px; border-radius: 999px; background: var(--surface-200); border: 2px solid var(--line); color: var(--ink); display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.rc-pill svg { flex: none; }
+.rc-pill .t { font-family: var(--font-display); font-size: 26px; font-variant-numeric: tabular-nums; }
+.rc-pill .w { font-size: 26px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rc-pill.more { padding: 0 16px; }
+.rc-pill.next { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.rc-pill.done { background: transparent; border: 2px dashed var(--line); color: var(--ink-faint); }
+.rc-free { font-size: 26px; color: var(--ink-muted); font-weight: 500; }
+.rc-home { width: 56px; height: 56px; background: var(--surface-300); color: var(--ink); }
+.rc-bath { width: 56px; height: 56px; background: var(--cool-soft); color: var(--cool); }
+.rc-big { font-size: 30px; font-weight: 600; }
 
-.eva { padding: 32px 40px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); display: flex; gap: 24px; align-items: flex-start; }
 .eva-face { width: 64px; height: 64px; flex: none; border-radius: 16px; background: var(--surface-200); display: grid; place-items: center; }
-.eva-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.eva-text { font-size: 34px; line-height: 44px; font-weight: 500; }
-
-.later { padding: 4px 8px 0; display: flex; flex-direction: column; gap: 14px; }
-.later-row { display: flex; align-items: baseline; gap: 24px; font-size: 30px; line-height: 38px; }
-.later-row .t { width: 104px; flex: none; font-family: var(--font-display); font-variant-numeric: tabular-nums; color: var(--ink-muted); }
-.later-row .w { font-weight: 500; }
-.later-row .p { color: var(--ink-muted); }
 
 .segs { display: flex; gap: 6px; }
 .segs span { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-300); transition: background .24s ease; }
@@ -149,16 +161,13 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 /* Day calm view · v3 halo (PaperV3HaloLandscape.dc.html; PaperV3Halo for a
    portrait). Text over the photo gets a cream halo and full ink; the caption
    sits on a solid pill. */
-.amb-date, .amb-clock, .amb-temp, .amb-wtext b, .amb-wtext span, .later .eyebrow, .later-row span, .amb-hint { text-shadow: var(--halo); }
+.amb-date, .amb-clock, .amb-temp, .amb-wtext b, .amb-wtext span, .amb-hint { text-shadow: var(--halo); }
 [data-theme="day"] .amb-date { font-weight: 700; color: var(--ink); }
 [data-theme="day"] .amb-clock, [data-theme="day"] .amb-temp { font-weight: 400; }
 [data-theme="day"] .amb-wtext b { font-weight: 600; }
 [data-theme="day"] .amb-wtext span { font-weight: 500; color: var(--ink); }
 [data-theme="day"] .amb-caption { align-self: flex-start; padding: 6px 16px; border-radius: 999px; background: var(--surface-100); color: var(--ink); }
 .amb-caption:empty { display: none; }
-[data-theme="day"] .later .eyebrow { font-weight: 700; color: var(--ink); }
-[data-theme="day"] .later-row .t, [data-theme="day"] .later-row .p { color: var(--ink); }
-[data-theme="day"] .later-row .w { font-weight: 600; }
 
 /* Calm strip, both themes (v3 day board; Main.dc.html in the evening). */
 .amb-strip { display: flex; gap: 24px; height: 168px; flex: none; }
@@ -254,7 +263,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .ev .t { width: 84px; flex: none; font-family: var(--font-display); font-size: 28px; line-height: 32px; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
 /* "All day" doesn't fit the time column at clock size; the size is the
    eyebrow's (DESIGN.md "All-day events"). */
-.ev .t.allday, .later-row .t.allday { font-family: var(--font-sans); font-size: 20px; line-height: 32px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; white-space: nowrap; }
+.ev .t.allday { font-family: var(--font-sans); font-size: 20px; line-height: 32px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; white-space: nowrap; }
 .ev .t.allday { font-size: 18px; }   /* the Today card's 84 px column; 18 px as in .bath-hist .k */
 .ev.next .t { color: var(--accent); }
 .ev .body { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }

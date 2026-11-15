@@ -75,7 +75,7 @@ function applyTheme(animate) {
 
 let server = null;               // BoardState from the server
 const pending = new Map();       // chore id → done, sent but not yet confirmed
-const DUMMY = dummy(now());      // computed once so relative times stay put
+const DUMMY = dummy();
 
 // Pay and bath order live only in this browser for now (dummy, no server
 // model yet). Persisted so a reload doesn't reset the experience.
@@ -207,8 +207,9 @@ function bathFirst() {
 }
 
 /** Sort key: all-day events (from the calendar) before anything timed. */
-const startOf = (e) => (e.allDay ? -1 : parseHM(e.at));
-const timeLabel = (e) => (e.allDay ? 'All day' : e.at);
+const startOf = (e) => (e.allDay ? -1 : parseHM(e.start ?? e.at));
+const timeLabel = (e) => (e.allDay ? 'All day' : fmtMin(parseHM(e.start ?? e.at)));
+const fmtMin = (m) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 
 function schedule() {
   const items = (content('schedule') ?? []).map((e) => ({ ...e, sub: String(e.sub ?? '').replace('{bath}', bathFirst()) }));
@@ -235,31 +236,170 @@ function renderAmbient() {
       <div class="amb-wtext"><b>${esc(w.now.label)}</b><span>${esc(w.summary ?? '')}</span></div>`;
   } else $('amb-weather').innerHTML = '';
 
-  const right = [];
-  const due = countdown();
-  if (due) {
-    right.push(`<div class="leave">
-      <div class="leave-head">${icon(due.icon, 32)}<span>${esc(due.item.label)}</span></div>
-      <div class="leave-mins"><span class="big">${due.mins}</span><span class="unit">min</span></div>
-      <span class="leave-sub">${esc(names(due.item.who))} · ${due.verb} ${esc(due.item.at)}</span></div>`);
-  }
-  const n = note();
-  if (n) {
-    right.push(`<div class="eva"><div class="eva-face">${icon('eva', 36)}</div>
-      <div class="eva-body"><span class="eyebrow">Eva says</span><span class="eva-text">${esc(n.text)}</span></div></div>`);
-  }
-  const t = minutesOfDay(now());
-  // All-day events lead "Later today" for the whole day.
-  const later = schedule().filter((e) => !e.leave && (e.allDay || parseHM(e.at) > t)).slice(0, 3);
-  right.push(`<div class="later"><span class="eyebrow">Later today</span>${
-    later.length
-      ? later.map((e) => `<div class="later-row"><span class="t${e.allDay ? ' allday' : ''}">${esc(timeLabel(e))}</span><span class="w">${esc(e.title)}</span><span class="p">${esc(names(e.who))}</span></div>`).join('')
-      : '<div class="later-row"><span class="p">Nothing else today</span></div>'
-  }</div>`);
-  $('amb-right').innerHTML = right.join('');
+  $('amb-right').innerHTML = rightColumn();
 
   // Mid-celebration, leave the strip alone: a re-render would restart the burst.
   if (Date.now() >= partyUntil) $('amb-strip').innerHTML = strip().join('');
+}
+
+// ---- calm right column (CLAUDE.md "Calm view: right column changes through the day")
+//
+// Who has what today, so the family can prepare: a "Next up" card when
+// something starts within the hour, then a per-person "Today" card; after
+// dinner (everything done, or 18:30) "Tonight" + "Tomorrow". Reference:
+// design/DayFlow.dc.html. Everything here sits on a card, never on the photo.
+
+const SOON_MIN = 60;                    // "Next up" appears this long before an event
+const EVENING_SWITCH = 18 * 60 + 30;    // Today → Tonight + Tomorrow, at the latest
+const PILL_MAX = 3;                     // more than this per person: next 2 + "+N more"
+
+/**
+ * A schedule entry, normalised: start/end in minutes (end defaults to start +
+ * 60 for the done state), arrays never missing. Accepts the older `at` too.
+ */
+function normEvent(e, i) {
+  const start = e?.allDay ? null : parseHM(e?.start ?? e?.at);
+  const end = parseHM(e?.end) ?? (start == null ? null : start + 60);
+  return {
+    ...e, id: e?.id ?? `e${i}`, start, end,
+    who: Array.isArray(e?.who) ? e.who : [],
+    bring: Array.isArray(e?.bring) ? e.bring : [],
+    icon: e?.icon ?? 'calendar',
+  };
+}
+
+/** `schedule` / `tomorrow` as events, or null when it isn't a list (absent, or the old shape). */
+function events(key) {
+  const list = content(key);
+  return Array.isArray(list) ? list.map(normEvent).filter((e) => e.allDay || e.start != null) : null;
+}
+
+// Bedtime is routine, not "who has what": it gets its own countdown and a
+// place in Tonight, but no pill on the girls' rows.
+const isBedtime = (e) => e.id === 'bedtime' || e.title === 'Bedtime';
+const todayEvents = () => (events('schedule') ?? []).filter((e) => !isBedtime(e));
+
+/** Rain in the forecast between now and `endMin`. */
+function rainBefore(endMin) {
+  const t = minutesOfDay(now());
+  return (content('weather')?.hourly ?? []).some((h) => {
+    const m = parseHM(h.time);
+    return m != null && m > t - 60 && m < endMin && h.cond === 'rain';
+  });
+}
+
+const sameLabel = (a, b) => String(a.label).toLowerCase() === String(b.label).toLowerCase();
+function unionBring(lists) {
+  const out = [];
+  for (const b of lists.flat()) if (b?.label && !out.some((x) => sameLabel(x, b))) out.push(b);
+  return out;
+}
+
+/**
+ * The soonest thing starting within its window, or null: an event within the
+ * hour, the school run inside its 45 min, bedtime inside its 30. Events that
+ * start at the same minute share the card (Swim + Nozomi's pickup), so its
+ * avatars and bring list are the union. Always counted down to a real start
+ * time, never relative to page load.
+ */
+function nextUp() {
+  const t = minutesOfDay(now());
+  const within = (m, w) => m != null && m - t > 0 && m - t <= w;
+  const c = [];
+  const lb = content('leave-by');
+  // The girls are out until evening, so any rain later today means an umbrella now.
+  if (within(parseHM(lb?.at), LEAVE_WINDOW_MIN)) {
+    c.push({ id: 'leave', start: parseHM(lb.at), end: 24 * 60, who: lb.who ?? [], icon: 'bag', label: lb.label ?? 'Leave for school', title: `by ${lb.at}`, bring: lb.bring ?? [] });
+  }
+  const bt = content('bedtime');
+  if (within(parseHM(bt?.at), BED_WINDOW_MIN)) {
+    c.push({ id: 'bedtime', start: parseHM(bt.at), end: parseHM(bt.at), who: bt.who ?? [], icon: 'moon', label: bt.label ?? 'Bedtime', title: `by ${bt.at}`, bring: [] });
+  }
+  for (const e of todayEvents()) if (!e.allDay && within(e.start, SOON_MIN)) c.push({ ...e, label: 'Next up' });
+  if (!c.length) return null;
+  c.sort((a, b) => a.start - b.start);
+  const group = c.filter((e) => e.start === c[0].start);
+  const who = ORDER.filter((id) => group.some((e) => e.who.includes(id)));
+  for (const e of group) for (const id of e.who) if (!who.includes(id)) who.push(id);
+  const bring = unionBring(group.map((e) => e.bring));
+  if (rainBefore(Math.max(...group.map((e) => e.end))) && !bring.some((b) => b.icon === 'umbrella')) bring.push({ icon: 'umbrella', label: 'Umbrella' });
+  return { ...group[0], who, bring, mins: c[0].start - t, ids: new Set(group.map((e) => e.id)) };
+}
+
+/** Today is over: every timed item done, or 18:30, whichever is first. */
+function dayOver() {
+  const t = minutesOfDay(now());
+  if (t >= EVENING_SWITCH) return true;
+  const timed = todayEvents().filter((e) => !e.allDay);
+  return timed.length > 0 && timed.every((e) => e.end <= t);
+}
+
+const rcHead = (ic, label, extra = '') =>
+  `<div class="rc-eyebrow">${icon(ic, 30, ic === 'clock' || ic === 'moon' ? 1.75 : 1.9)}<span>${esc(label)}</span>${extra}</div>`;
+
+const bringPills = (list) => list.map((b) => `<span class="rc-bp">${icon(b.icon ?? 'bag', 26, 1.9)}${esc(b.label)}</span>`).join('');
+
+function pill(e, state) {
+  const time = e.allDay ? '' : `<span class="t">${esc(fmtMin(e.start))}</span>`;
+  const tick = state === 'done' ? icon('check', 22, 3) : '';
+  const said = { done: 'done', next: 'next', up: 'later' }[state];
+  return `<span class="rc-pill ${state}" role="img" aria-label="${esc(`${e.allDay ? 'All day' : fmtMin(e.start)} ${e.title}: ${said}`)}">${icon(e.icon, 28, 1.9)}${time}<span class="w">${esc(e.title)}</span>${tick}</span>`;
+}
+
+/** One person's pills. `t` is null for a day that hasn't started (tomorrow). */
+function pills(items, t, nextIds) {
+  if (!items.length) return '<span class="rc-free">Free</span>';
+  const sorted = [...items].sort((a, b) => (a.allDay ? -1 : a.start) - (b.allDay ? -1 : b.start));
+  const done = (e) => t != null && !e.allDay && e.end <= t;
+  // Their next item within the hour lights up even when the card shows something else.
+  const soon = t == null ? null : sorted.find((e) => !e.allDay && e.start > t && e.start - t <= SOON_MIN);
+  let list = sorted.map((e) => ({ e, s: done(e) ? 'done' : nextIds.has(e.id) || e === soon ? 'next' : 'up' }));
+  let more = 0;
+  if (list.length > PILL_MAX) {
+    const left = list.filter((x) => x.s !== 'done');
+    const shown = (left.length ? left : list.slice(-2)).slice(0, 2);
+    more = list.length - shown.length;
+    list = shown;
+  }
+  return list.map((x) => pill(x.e, x.s)).join('') + (more ? `<span class="rc-pill up more"><span class="w">+${more} more</span></span>` : '');
+}
+
+/** Rows in household order; anything for no one we know gets one extra row. */
+function personRows(list, t, nextIds) {
+  const rows = ORDER.map((id) => `<div class="rc-row">${avatar(id, 56, 20)}<div class="rc-pills">${pills(list.filter((e) => e.who.includes(id)), t, nextIds)}</div></div>`);
+  const nobody = list.filter((e) => !e.who.some((id) => ORDER.includes(id)));
+  if (nobody.length) rows.push(`<div class="rc-row"><span class="avatar rc-home" aria-label="Everyone">${icon('home', 30, 1.9)}</span><div class="rc-pills">${pills(nobody, t, nextIds)}</div></div>`);
+  return rows.join('');
+}
+
+function rightColumn() {
+  const t = minutesOfDay(now());
+  const up = nextUp();
+  const nextIds = up?.ids ?? new Set();
+  const out = [];
+  if (up) {
+    const avs = up.who.length ? `<span class="rc-avs">${up.who.map((id) => avatar(id, 44, 16)).join('')}</span>` : '';
+    out.push(`<div class="rc-card rc-next">${rcHead(up.icon, up.label, avs)}
+      <div class="rc-count"><span class="big">${up.mins}</span><span class="unit">min</span><span class="what">${esc(up.title)}</span></div>
+      ${up.bring.length ? `<div class="rc-bring"><span class="rc-k">Bring</span>${bringPills(up.bring)}</div>` : ''}</div>`);
+  }
+  if (!dayOver()) {
+    out.push(`<div class="rc-card">${rcHead('clock', 'Today')}${personRows(todayEvents(), t, nextIds)}</div>`);
+    return out.join('');
+  }
+  // After dinner. Tonight: who bathes first, then anything still to come today.
+  const still = (events('schedule') ?? []).filter((e) => !e.allDay && e.start > t && !nextIds.has(e.id) && !(up?.id === 'bedtime' && isBedtime(e)));
+  const b = person(local.bath.tonight);
+  out.push(`<div class="rc-card">${rcHead('moon', 'Tonight')}
+    <div class="rc-row"><span class="avatar rc-bath">${icon('bath', 32, 1.9)}</span><span class="rc-big">Bath first</span>${avatar(local.bath.tonight, 48, 18)}<span class="rc-big">${esc(b.name)}</span></div>
+    ${still.length ? `<div class="rc-pills">${still.map((e) => pill(e, 'up')).join('')}</div>` : ''}</div>`);
+  const tm = events('tomorrow');
+  if (tm) {
+    const pack = unionBring(tm.map((e) => e.bring));
+    out.push(`<div class="rc-card">${rcHead('clock', `Tomorrow · ${WEEKDAYS[(now().getDay() + 1) % 7]}`)}${personRows(tm, null, new Set())}
+      ${pack.length ? `<div class="rc-bring rc-pack"><span class="rc-k">Pack tonight</span>${bringPills(pack)}</div>` : ''}</div>`);
+  }
+  return out.join('');
 }
 
 // Calm strip, both themes (PaperV3HaloLandscape.dc.html by day, Main.dc.html in
@@ -459,16 +599,16 @@ function renderActive() {
   const t = minutesOfDay(now());
   const lm = leaveMinutes();
   let items = schedule();
-  const nextIdx = lm != null ? items.findIndex((e) => e.leave) : items.findIndex((e) => !e.allDay && parseHM(e.at) > t);
+  const nextIdx = lm != null ? items.findIndex((e) => e.leave) : items.findIndex((e) => !e.allDay && startOf(e) > t);
   // Leave-by only appears in the list while it's still ahead.
-  items = items.map((e, i) => ({ ...e, i })).filter((e) => !e.leave || parseHM(e.at) > t);
+  items = items.map((e, i) => ({ ...e, i })).filter((e) => !e.leave || startOf(e) > t);
   // Too many rows: drop the earliest finished timed events; all-day rows stay pinned on top.
-  for (let k; items.length > 7 && (k = items.findIndex((e) => !e.allDay && parseHM(e.at) <= t)) >= 0;) items.splice(k, 1);
+  for (let k; items.length > 7 && (k = items.findIndex((e) => !e.allDay && startOf(e) <= t)) >= 0;) items.splice(k, 1);
   $('act-schedule').innerHTML = `<div class="card-head"><span class="ico-muted">${icon('calendar', 32)}</span><span class="card-title">Today</span></div>${
     items.length ? items.map((e) => {
       const next = e.i === nextIdx;
-      const past = !e.allDay && parseHM(e.at) <= t;
-      const until = parseHM(e.at) - t;
+      const past = !e.allDay && startOf(e) <= t;
+      const until = startOf(e) - t;
       const chips = (e.who ?? []).map((id) => avatar(id, 32, 13)).join('');
       const sub = next && until <= 60 ? `<span class="sub soon">in ${until} min</span>` : e.sub ? `<span class="sub">${esc(e.sub)}</span>` : '';
       return `<div class="ev ${next ? 'next' : ''} ${past ? 'past' : ''}"><span class="t${e.allDay ? ' allday' : ''}">${esc(timeLabel(e))}</span>
@@ -582,7 +722,13 @@ function payRow(g) {
 function renderNight() {
   const w = content('weather')?.night;
   $('night-weather').innerHTML = w ? `<span style="display:flex">${icon(weatherIcon(w.cond)[0], 30)}</span><span>${esc(w.text)}</span>` : '';
-  const tm = content('tomorrow');
+  // Tomorrow's first commitment. `tomorrow` is a list of events now; the older
+  // `{at, title}` shape still reads.
+  const raw = content('tomorrow');
+  const first = Array.isArray(raw)
+    ? raw.map(normEvent).filter((e) => !e.allDay && e.start != null).sort((a, b) => a.start - b.start)[0]
+    : null;
+  const tm = first ? { at: fmtMin(first.start), title: `Tomorrow · ${first.title}` } : raw?.at ? raw : null;
   $('night-tomorrow').innerHTML = tm ? `<span class="num">${esc(tm.at)}</span><span>${esc(tm.title)}</span>` : '';
 }
 

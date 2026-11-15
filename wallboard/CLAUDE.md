@@ -14,6 +14,8 @@ Guidance for any Claude session working in `wallboard/`. Read `README.md` (how i
 | Day portrait photos | `design/PaperPortraitSingle.dc.html` (one portrait, left half) |
 | Evening (21:00–bedtime) | `design/Main.dc.html` (dark; same icon strip and tap-to-celebrate tile as day, dark avatar colours), `design/Active.dc.html`, `design/ChoreTap.dc.html` |
 | Night (bedtime–06:30) | `design/Night.dc.html` |
+| Calm right column through the day | `design/DayFlow.dc.html` (rules in "Calm view: right column changes through the day") |
+| Countdown tile celebrations | `design/EventTiles.dc.html` |
 | **Reference only — do not port** | `LightPaper` (v1, too bright on the Echo), `PaperV2Cards`, `PaperPortraitPair` (pairing dropped), `LightDay`, `LightPastel`, `LightPhoto` |
 
 ## Day theme ("Morning paper v2 · sand")
@@ -34,12 +36,36 @@ Lives in `web/styles.css` under `.stage[data-theme="day"]`. Values come from the
 - Avatars: Mariko `#e7defa` with text `#4a3480`, Sarina `#fbdde6` with text `#8c2a4f`.
 - Why v2: v1 looked too bright and flat on the Echo Show 15 (washed-out photos, cards that didn't stand out).
 
-## Calm view: right column (2026-11-15)
-- **No "Eva says" card on the calm view for now** (removed at the family's request). Leave the `note` panel in the data and the active view; just don't render it on calm.
-- **"Later today" sits on a solid card** (`--surface-100`, 1px `--line` edge, `--elevation-1`), not on the photo. The halo did not read well for list text.
-  - Calendar icon + "LATER TODAY" eyebrow.
-  - Up to 3 rows: time 34 px (display font, muted), title 34 px weight 600, and on the right a 48 px avatar of who it's for (or a fork icon in a `--warm-soft` circle for dinner).
-- The right column is now: leave-for-school card (only in its window), then "Later today".
+## Calm view: right column changes through the day (2026-11-15)
+Purpose: **who has what today, so the family can prepare.** Reference: `design/DayFlow.dc.html` (three moments at real size, 744 px wide; sample schedule).
+- **No "Eva says" card on the calm view for now** (removed at the family's request). Keep the `note` panel in the data and the active view; just don't render it on calm.
+- Nothing in the right column sits on the photo without a card: everything is on solid cards (`--surface-100`, 1px `--line` edge, `--elevation-1`). No halo here.
+
+**1. "Next up" card (top, only when something starts within 60 min)**
+- Glow card (`--glow-accent`). Eyebrow with the event's icon + label ("Leave for school", or "Next up"), and avatars (44 px) of who's involved on the right.
+- Big countdown: number at 104 px teal + "min", then the title ("by 7:55", "Swim").
+- **Bring** row: amber pills (`--warm-soft` bg, `--warm` text, icon + word) from the event's `bring` list. Hide the row if it's empty.
+- This replaces the old leave-for-school card and fixes its bug: the countdown is always to a real event time, never relative to "now".
+- If two events start within the hour, show the sooner one.
+
+**2. "Today" card (always, until the switch below)**
+- Calendar/clock icon + "TODAY" eyebrow.
+- One row per person in fixed order: Mariko, Sarina, Nozomi, Michael. 56 px avatar, then their items as pills (56 px tall, icon + time + title, 26 px).
+  - Upcoming: `--surface-200` fill, 2px `--line` border, ink text.
+  - Next (the "Next up" event, or the next item for that person within the hour): solid teal, white text.
+  - Done (end time passed): transparent, 2px dashed `--line` border, faint text, small check. Done items stay so the day's shape is visible.
+  - Nothing today: "Free" in muted text.
+  - More than 3 items for one person: show the next 2 + a "+N more" pill; the full list is in the active view.
+
+**3. After dinner: Tonight + Tomorrow**
+- Switch when every item today is done, or at 18:30, whichever comes first. Night mode takes over at bedtime as before.
+- **Tonight** card (moon icon): bath order ("Bath first" + avatar + name), plus anything else still tonight.
+- **Tomorrow · <weekday>** card: same per-person rows and pills as Today, for tomorrow. Footer row **Pack tonight** with amber pills (union of tomorrow's `bring` lists, deduplicated).
+
+**Data (from Eva; absent vs empty rules apply)**
+- `schedule` (today) and `tomorrow`: `[{ id, who: ["mariko", ...], start: "HH:MM", end?: "HH:MM", title, icon, bring?: [{ icon, label }] }]`. `end` defaults to `start` + 60 min for the done state.
+- Icons: `web/icons.js` already has bag, bath, calendar, moon and others; add swim, music, tooth, car (pickup), work, tennis, umbrella, towel, recorder, clock in the same line style (24 grid, 1.9 stroke, round caps).
+- Weather can add a bring item (umbrella when rain is forecast before the event ends).
 
 ## Calm view: big, icon-led signals (2026-11-15)
 The calm view is read from 2–4 m, so it shows a few large signals, **icons first, words second**. Details live one tap away in the active view.

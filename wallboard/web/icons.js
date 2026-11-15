@@ -35,7 +35,22 @@ const CHORES = {
   plants: '<path d="M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5zM8 21h8"/>',
 };
 
-const ALL = { ...HAVEN, ...GLYPHS, ...CHORES };
+// Schedule and bring icons, keyed by the `icon` field on a schedule entry or a
+// bring item. Paths copied from design/DayFlow.dc.html (drawn at 1.9 stroke).
+const SCHEDULE = {
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  swim: '<path d="M2.5 16c2 0 2-1.5 4-1.5s2 1.5 4 1.5 2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 3-1.5M2.5 20c2 0 2-1.5 4-1.5s2 1.5 4 1.5 2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 3-1.5M8 12l3.5-5 4 2.5"/><circle cx="17.5" cy="6" r="1.8"/>',
+  music: '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  tooth: '<path d="M7 3c-2.5 0-4 2-4 4.5 0 3 2 4.5 2.5 8S7 21 8 21s1.5-3 2-5 1-2 2-2 1.5 0 2 2 1 5 2 5 1.5-2 2.5-5.5S21 10.5 21 7.5C21 5 19.5 3 17 3c-2 0-3 1-5 1S9 3 7 3z"/>',
+  car: '<path d="M3 17h18v-4l-2.5-5h-13L3 13zM3 13h18M7 17v2.5M17 17v2.5"/>',
+  work: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5h6v2M3 12.5h18"/>',
+  tennis: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6c3.5 3.5 3.5 9.3 0 12.8M18.4 5.6c-3.5 3.5-3.5 9.3 0 12.8"/>',
+  umbrella: '<path d="M3 12a9 9 0 0 1 18 0zM12 12v6.5a2 2 0 0 1-4 0"/>',
+  towel: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M5 8h14M9 13h6"/>',
+  recorder: '<path d="M14 3l7 7-11 11-3-1-1-3z"/><circle cx="13" cy="9" r=".8" fill="currentColor"/><circle cx="10.5" cy="11.5" r=".8" fill="currentColor"/><circle cx="8" cy="14" r=".8" fill="currentColor"/>',
+};
+
+const ALL = { ...HAVEN, ...GLYPHS, ...CHORES, ...SCHEDULE };
 
 export function icon(name, size = 24, stroke = 1.75) {
   const body = ALL[name] ?? GLYPHS.chores;

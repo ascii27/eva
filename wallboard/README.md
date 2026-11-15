@@ -99,7 +99,13 @@ merged with the family's iCloud calendar when
 rolls over at midnight, all times in Tokyo time. The link is a secret — anyone
 holding it can read the calendar — so it lives only on the VM, never in git or
 logs. `who` is read from the title (まりこ/さりな/のぞみ/マイケル or romaji; キッズ =
-both girls). All-day events arrive as `{at: null, allDay: true}`.
+both girls). `schedule` (today) and `tomorrow` are event lists:
+`[{id, who, start, end?, title, icon, bring?: [{icon, label}]}]` — `start` is
+`H:MM` (`null` with `allDay: true` for all-day events), `end` defaults to start
++ 60 min, `icon` is a key in `web/icons.js` (the server guesses it from the
+title). Today's list carries bedtime as `id: "bedtime"`; tomorrow's carries the
+school run as `School` at 7:55 and never bedtime. The board also still reads
+the older `at` field and the old `tomorrow: {at, title}`.
 
 ## Board API (enrolled cookie)
 
