@@ -98,7 +98,59 @@ function append(s: BoardState, chores: Chore[], e: NewEvent): BoardState {
 
 const hasEvent = (s: BoardState, id: string) => s.log.some((e) => e.id === id);
 
+/** Largest yen amount accepted anywhere (chore amount or payment), either sign. */
+export const MAX_YEN = 1_000_000;
+
+/** A safe integer within ±MAX_YEN. */
+export const isYen = (v: unknown): v is number => Number.isSafeInteger(v) && Math.abs(v as number) <= MAX_YEN;
+
+const isCancelled = (s: BoardState, id: string) => s.log.some((e) => e.type === 'undone' && e.cancels === id);
+
+/**
+ * The latest uncancelled completion of a chore, from the log. The log outlives
+ * a chore's place on the board, so this is how a chore that drops out of one
+ * push and comes back keeps its phase and can't be ticked twice in a day.
+ */
+function lastDone(s: BoardState, choreId: string): Extract<LogEvent, { type: 'done' }> | null {
+  for (let i = s.log.length - 1; i >= 0; i--) {
+    const e = s.log[i];
+    if (e.type === 'done' && e.choreId === choreId && !isCancelled(s, e.id)) return e;
+  }
+  return null;
+}
+
 const sameSchedule = (a: Schedule, b: Schedule) => a.every === b.every && a.unit === b.unit && a.start === b.start;
+
+/**
+ * Runtime for a chore new to the board. With no history it starts at
+ * schedule.start, even if that is past (it shows as overdue). A chore that was
+ * on the board before — dropped by one push, back in the next — is seeded from
+ * its latest uncancelled completion: done today stays done (undo restores it to
+ * its first day on or after today), and either way it is next due on the first
+ * occurrence after that completion, so it keeps its phase.
+ */
+function seeded(s: BoardState, def: ChoreDef, today: string): Chore {
+  const last = lastDone(s, def.id);
+  if (!last) return { ...def, nextDue: def.schedule.start, doneOn: null, prevDue: null, doneEvent: null };
+  const day = tokyoDay(last.at);
+  const nextDue = nextAfter(def.schedule, day);
+  if (day === today) {
+    return { ...def, nextDue, doneOn: today, prevDue: firstOnOrAfter(def.schedule, today), doneEvent: last.id };
+  }
+  return { ...def, nextDue, doneOn: null, prevDue: null, doneEvent: null };
+}
+
+/**
+ * Why a board "Mark paid" for `amount` can't go through, or null if it can. The
+ * button pays exactly what is owed, so anything else — a second tap after the
+ * first landed, a balance that moved underneath it — is a conflict, not a payment.
+ */
+export function boardPayConflict(s: BoardState, who: string, amount: number): string | null {
+  const owed = balances(s)[who]?.owed ?? 0;
+  if (owed <= 0) return 'nothing is owed';
+  if (amount !== owed) return 'amount does not match what is owed';
+  return null;
+}
 
 /** Returns the next state, or null when the action changes nothing (unknown id, etc). */
 export function apply(s: BoardState, a: Action): BoardState | null {
@@ -113,6 +165,10 @@ export function apply(s: BoardState, a: Action): BoardState | null {
       const chores = s.chores.slice();
       if (a.done) {
         if (c.nextDue > today || c.doneOn === today) return null;
+        // Belt and braces for the runtime fields: the log is the money, so one
+        // uncancelled completion per chore per Tokyo day, whatever they say.
+        const last = lastDone(s, c.id);
+        if (last && tokyoDay(last.at) === today) return null;
         chores[i] = { ...c, prevDue: c.nextDue, nextDue: nextAfter(c.schedule, today), doneOn: today, doneEvent: a.eventId };
         return append(s, chores, {
           type: 'done', id: a.eventId, at: a.at, who: c.who ?? ANYONE, delta: c.amount,
@@ -135,7 +191,7 @@ export function apply(s: BoardState, a: Action): BoardState | null {
       const prev = new Map(s.chores.map((c) => [c.id, c]));
       const chores = a.chores.map((def): Chore => {
         const old = prev.get(def.id);
-        if (!old) return { ...def, nextDue: def.schedule.start, doneOn: null, prevDue: null, doneEvent: null };
+        if (!old) return seeded(s, def, today);
         const runtime = { nextDue: old.nextDue, doneOn: old.doneOn, prevDue: old.prevDue, doneEvent: old.doneEvent };
         if (sameSchedule(old.schedule, def.schedule)) return { ...def, ...runtime };
         if (old.doneOn === today) {
@@ -148,7 +204,7 @@ export function apply(s: BoardState, a: Action): BoardState | null {
     case 'payment': {
       // Idempotent on the caller's id, so a retried request doesn't pay twice.
       // Negative is allowed: an opening-balance credit.
-      if (!Number.isInteger(a.amount) || a.amount === 0 || hasEvent(s, a.eventId)) return null;
+      if (!isYen(a.amount) || a.amount === 0 || hasEvent(s, a.eventId)) return null;
       return append(s, s.chores, {
         type: 'payment', id: a.eventId, at: a.at, who: a.who, delta: -a.amount,
         amount: a.amount, source: a.source, note: a.note,
@@ -252,8 +308,8 @@ export function parseChores(body: unknown): ChoreDef[] | string {
     if (c.who != null && typeof c.who !== 'string') return `chores[${i}].who: must be a string`;
     if (c.icon != null && typeof c.icon !== 'string') return `chores[${i}].icon: must be a string`;
     if ('done' in c) return `chores[${i}].done: not accepted, the board owns done-ness`;
-    if (typeof c.amount !== 'number' || !Number.isInteger(c.amount) || c.amount < 0) {
-      return `chores[${i}].amount: must be an integer >= 0`;
+    if (!isYen(c.amount) || c.amount < 0) {
+      return `chores[${i}].amount: must be an integer from 0 to ${MAX_YEN}`;
     }
     const schedule = parseSchedule(c.schedule);
     if (typeof schedule === 'string') return `chores[${i}].schedule: ${schedule}`;

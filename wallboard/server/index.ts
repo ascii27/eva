@@ -9,7 +9,7 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { activityAfter, apply, balances, emptyState, parseChores, reviveState, view, PANEL_NAME, type Action, type BoardState } from './state.ts';
+import { activityAfter, apply, balances, boardPayConflict, emptyState, isYen, parseChores, reviveState, view, MAX_YEN, PANEL_NAME, type Action, type BoardState } from './state.ts';
 import { tokyoDay } from './schedule.ts';
 import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
@@ -121,7 +121,7 @@ const EVENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 function validPayment(b: { who?: unknown; amount?: unknown; note?: unknown; id?: unknown } | null): string | null {
   if (!b) return 'expected a JSON body';
   if (typeof b.who !== 'string' || !WHO.test(b.who)) return 'who must match ' + WHO;
-  if (!Number.isInteger(b.amount) || b.amount === 0) return 'amount must be a non-zero integer';
+  if (!isYen(b.amount) || b.amount === 0) return `amount must be a non-zero integer within ±${MAX_YEN}`;
   if (b.note !== undefined && (typeof b.note !== 'string' || b.note.length > 200)) return 'note must be a string of at most 200 characters';
   if (b.id !== undefined && (typeof b.id !== 'string' || !EVENT_ID.test(b.id))) return 'id must match ' + EVENT_ID;
   return null;
@@ -288,6 +288,10 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const bad = validPayment({ who, amount: b?.amount });
     if (bad) return json(res, 400, { error: bad });
     if ((b!.amount as number) <= 0) return json(res, 400, { error: 'amount must be positive' });
+    // Mark paid pays exactly what is owed. A double tap's second request, or a
+    // balance that changed under the button, gets 409 and the current figure.
+    const conflict = boardPayConflict(state, who, b!.amount as number);
+    if (conflict) return json(res, 409, { error: conflict, owed: balances(state)[who]?.owed ?? 0 });
     const id = newId('ev');
     dispatch({ type: 'payment', eventId: id, who, amount: b!.amount as number, source: 'board', note: null, at: Date.now() });
     return json(res, 200, { ok: true, id });
