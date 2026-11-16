@@ -5,6 +5,7 @@
 //   ... npm run seed -- --clear-panels   also drop every pushed panel, so the
 //                                         board falls back to dummy content
 import { SEED_CHORES } from '../web/dummy.js';
+import { tokyoDay } from '../server/schedule.ts';
 
 const base = process.env.WALLBOARD_URL ?? 'http://localhost:8080';
 const headers = { 'content-type': 'application/json', authorization: `Bearer ${process.env.HERMES_TOKEN ?? ''}` };
@@ -16,7 +17,10 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
   return j;
 }
 
-console.log('chores:', await call('PUT', '/api/eva/chores', { chores: SEED_CHORES }));
+// Every chore daily, worth 100 yen, starting today (Tokyo).
+const start = tokyoDay(Date.now());
+const chores = SEED_CHORES.map((c) => ({ ...c, amount: 100, schedule: { every: 1, unit: 'day', start } }));
+console.log('chores:', await call('PUT', '/api/eva/chores', { chores }));
 if (process.argv.includes('--clear-panels')) {
   const state = (await call('GET', '/api/eva/state')) as { panels: Record<string, unknown> };
   // Panels the server feeds itself (weather.ts, calendar.ts + routine.ts), not Eva's — leave them.

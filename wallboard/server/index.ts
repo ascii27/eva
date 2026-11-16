@@ -8,7 +8,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { apply, emptyState, parseChores, reviveState, PANEL_NAME, type Action, type BoardState } from './state.ts';
+import { randomBytes } from 'node:crypto';
+import { activityAfter, apply, balances, emptyState, parseChores, reviveState, view, PANEL_NAME, type Action, type BoardState } from './state.ts';
+import { tokyoDay } from './schedule.ts';
 import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
 import { IKEJIRI, startWeather } from './weather.ts';
@@ -34,9 +36,14 @@ photos.start(60 * 60_000);
 
 // ---- state + persistence ---------------------------------------------------
 
-let state: BoardState = emptyState();
+/** Event and log ids: sortable by time, unguessable enough to be unique across restarts. */
+function newId(prefix: 'ev' | 'log'): string {
+  return `${prefix}-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
+}
+
+let state: BoardState = emptyState(newId('log'));
 try {
-  state = reviveState(JSON.parse(await readFile(DATA, 'utf8')));
+  state = reviveState(JSON.parse(await readFile(DATA, 'utf8')), newId('log'));
 } catch {
   // first run, or unreadable — start empty
 }
@@ -62,9 +69,22 @@ function dispatch(a: Action): boolean {
   if (!next) return false;
   state = next;
   save(state);
-  for (const c of clients) send(c, 'state', state);
+  broadcast();
   return true;
 }
+
+/** The day the boards were last sent; the tick below rebroadcasts when it turns. */
+let broadcastDay = tokyoDay(Date.now());
+function broadcast(): void {
+  const at = Date.now();
+  broadcastDay = tokyoDay(at);
+  const v = view(state, at);
+  for (const c of clients) send(c, 'state', v);
+}
+
+// Midnight in Tokyo turns the board's day with no state change: chores come
+// due and yesterday's done ones go. Rebroadcast the view; nothing to save.
+setInterval(() => { if (tokyoDay(Date.now()) !== broadcastDay) broadcast(); }, 60_000).unref();
 
 // Keeps idle connections alive through proxies, which drop a silent stream.
 setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 25_000).unref();
@@ -92,6 +112,19 @@ if (process.env.DAY !== 'off') {
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
+}
+
+const WHO = /^[a-z][a-z0-9-]{0,31}$/;
+const EVENT_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+
+/** Shared checks for a payment body; returns an error string or null. */
+function validPayment(b: { who?: unknown; amount?: unknown; note?: unknown; id?: unknown } | null): string | null {
+  if (!b) return 'expected a JSON body';
+  if (typeof b.who !== 'string' || !WHO.test(b.who)) return 'who must match ' + WHO;
+  if (!Number.isInteger(b.amount) || b.amount === 0) return 'amount must be a non-zero integer';
+  if (b.note !== undefined && (typeof b.note !== 'string' || b.note.length > 200)) return 'note must be a string of at most 200 characters';
+  if (b.id !== undefined && (typeof b.id !== 'string' || !EVENT_ID.test(b.id))) return 'id must match ' + EVENT_ID;
+  return null;
 }
 
 async function body(req: IncomingMessage): Promise<unknown> {
@@ -152,19 +185,32 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (!isHermes(req, HERMES_TOKEN)) return json(res, 401, { error: 'unauthorized' });
     const at = Date.now();
 
-    if (pathname === '/api/eva/state' && method === 'GET') return json(res, 200, state);
+    if (pathname === '/api/eva/state' && method === 'GET') return json(res, 200, view(state, at));
 
     if (pathname === '/api/eva/chores' && method === 'PUT') {
       const b = await body(req);
       const chores = parseChores(b);
       if (typeof chores === 'string') return json(res, 400, { error: chores });
-      // Optimistic concurrency for a pusher that read the state first (the
-      // Reminders sync): if anything changed since — a kid's tap — it re-reads
-      // rather than overwrite that tap with a stale list.
-      const ifVersion = (b as { ifVersion?: unknown }).ifVersion;
-      if (typeof ifVersion === 'number' && ifVersion !== state.version) return json(res, 409, { error: 'state changed', version: state.version });
       dispatch({ type: 'chores.replace', chores, at });
       return json(res, 200, { ok: true, version: state.version });
+    }
+
+    if (pathname === '/api/eva/activity' && method === 'GET') {
+      const after = Number(url.searchParams.get('after') ?? 0);
+      if (!Number.isInteger(after) || after < 0) return json(res, 400, { error: 'after must be a non-negative integer' });
+      return json(res, 200, activityAfter(state, after));
+    }
+
+    if (pathname === '/api/eva/balances' && method === 'GET') return json(res, 200, { balances: balances(state) });
+
+    if (pathname === '/api/eva/payments' && method === 'POST') {
+      const b = (await body(req)) as { who?: unknown; amount?: unknown; note?: unknown; id?: unknown } | null;
+      const bad = validPayment(b);
+      if (bad) return json(res, 400, { error: bad });
+      const id = b!.id === undefined ? newId('ev') : (b!.id as string);
+      const note = typeof b!.note === 'string' ? b!.note : null;
+      const fresh = dispatch({ type: 'payment', eventId: id, who: b!.who as string, amount: b!.amount as number, source: 'eva', note, at });
+      return json(res, 200, { ok: true, id, duplicate: !fresh });
     }
 
     const panel = pathname.match(/^\/api\/eva\/panels\/([^/]+)$/);
@@ -200,13 +246,13 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     });
     res.write('retry: 3000\n\n');
     send(res, 'hello', { build: BUILD });
-    send(res, 'state', state);
+    send(res, 'state', view(state, Date.now()));
     clients.add(res);
     req.on('close', () => clients.delete(res));
     return;
   }
 
-  if (pathname === '/api/state' && method === 'GET') return json(res, 200, state);
+  if (pathname === '/api/state' && method === 'GET') return json(res, 200, view(state, Date.now()));
 
   if (pathname === '/api/photos' && method === 'GET') return json(res, 200, { photos: photos.list() });
 
@@ -230,8 +276,28 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const b = (await body(req)) as { done?: unknown } | null;
     if (typeof b?.done !== 'boolean') return json(res, 400, { error: 'expected {"done": true|false}' });
     if (!state.chores.some((c) => c.id === id)) return json(res, 404, { error: 'no such chore' });
-    dispatch({ type: 'chore.set', id, done: b.done, at: Date.now() });
+    // null (a repeated tap, a stale undo) is not an error: the board is already where it wanted.
+    dispatch({ type: 'chore.set', id, done: b.done, at: Date.now(), eventId: newId('ev') });
     return json(res, 200, { ok: true, version: state.version });
+  }
+
+  const pay = pathname.match(/^\/api\/pay\/([^/]+)$/);
+  if (pay && method === 'POST') {
+    const who = decodeURIComponent(pay[1]);
+    const b = (await body(req)) as { amount?: unknown } | null;
+    const bad = validPayment({ who, amount: b?.amount });
+    if (bad) return json(res, 400, { error: bad });
+    if ((b!.amount as number) <= 0) return json(res, 400, { error: 'amount must be positive' });
+    const id = newId('ev');
+    dispatch({ type: 'payment', eventId: id, who, amount: b!.amount as number, source: 'board', note: null, at: Date.now() });
+    return json(res, 200, { ok: true, id });
+  }
+
+  const cancel = pathname.match(/^\/api\/cancel\/([^/]+)$/);
+  if (cancel && method === 'POST') {
+    const cancels = decodeURIComponent(cancel[1]);
+    if (!dispatch({ type: 'cancel', eventId: newId('ev'), cancels, at: Date.now() })) return json(res, 404, { error: 'no such payment to cancel' });
+    return json(res, 200, { ok: true });
   }
 
   if (pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' });
