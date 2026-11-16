@@ -12,9 +12,10 @@ sys.modules["export_chores"] = ec
 spec.loader.exec_module(ec)
 
 
-def item(title, freq="daily", interval=1, day=(2026, 11, 16), completed=False, rid=None):
+def item(title, freq="daily", interval=1, day=(2026, 11, 16), completed=False, rid=None, weekdays=None):
     due = datetime(*day, tzinfo=timezone.utc) if day else None
-    return ec.Item(rid=rid or f"Reminder/{title}", title=title, due=due, freq=freq, interval=interval, completed=completed)
+    return ec.Item(rid=rid or f"Reminder/{title}", title=title, due=due, freq=freq, interval=interval,
+                   completed=completed, weekdays=weekdays)
 
 
 class BuildRows(unittest.TestCase):
@@ -33,6 +34,25 @@ class BuildRows(unittest.TestCase):
     def test_weekly_unknown_icon(self):
         rows, _ = ec.build_rows([item("Sort the shelf - Sarina", freq="weekly", day=(2026, 11, 20))])
         self.assertEqual((rows[0]["Every"], rows[0]["Unit"], rows[0]["Icon"], rows[0]["Start"]), (1, "week", "", "2026-11-20"))
+
+    def test_weekly_on_several_weekdays_skipped(self):
+        rows, skipped = ec.build_rows([item("Laundry - Mariko", freq="weekly", weekdays=[1, 4])])
+        self.assertEqual(rows, [])
+        self.assertEqual(skipped, ["needs a decision: Laundry - Mariko — repeats on several weekdays"])
+
+    def test_weekly_on_one_weekday_exported(self):
+        rows, skipped = ec.build_rows([item("Laundry - Mariko", freq="weekly", weekdays=[1])])
+        self.assertEqual(skipped, [])
+        self.assertEqual(rows[0]["Unit"], "week")
+
+    def test_weekdays_of_reads_the_rule_or_says_unknown(self):
+        class Rule:  # pyicloud 2026.11.2's shape: no days-of-week field
+            frequency = interval = None
+        self.assertIsNone(ec.weekdays_of(Rule()))
+        self.assertIsNone(ec.weekdays_of(None))
+        r = Rule()
+        r.days_of_week = (2, 5)
+        self.assertEqual(ec.weekdays_of(r), [2, 5])
 
     def test_monthly_skipped(self):
         rows, skipped = ec.build_rows([item("Windows - Mariko", freq="monthly")])

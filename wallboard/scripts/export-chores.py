@@ -77,6 +77,8 @@ class Item:
     freq: Optional[str] = None    # daily | weekly | monthly | yearly; None = doesn't repeat
     interval: int = 1
     completed: bool = False
+    # Days of the week a weekly rule repeats on; None = the library didn't say.
+    weekdays: Optional[list] = None
 
 
 def parse_title(title: str) -> tuple[str, Optional[str]]:
@@ -134,6 +136,10 @@ def build_rows(items: list[Item]) -> tuple[list[dict], list[str]]:
             skip(it, "completed and doesn't repeat" if it.completed else "doesn't repeat")
         elif it.freq not in ("daily", "weekly"):
             skip(it, f"repeats {it.freq}")
+        elif it.freq == "weekly" and it.weekdays is not None and len(set(it.weekdays)) > 1:
+            # The board's schedule is one day every N weeks; Mon+Thu would
+            # silently become just whichever day the next due date falls on.
+            skip(it, "repeats on several weekdays")
         elif it.due is None:
             skip(it, "no due date")
         elif who not in GIRLS:
@@ -180,6 +186,20 @@ def login():
     return api
 
 
+def weekdays_of(rule) -> Optional[list]:
+    """The weekday set of a recurrence rule, or None if it isn't exposed.
+
+    pyicloud 2026.11.2's RecurrenceRule maps only frequency, interval,
+    occurrence count and first day of week; it drops the days-of-week field
+    entirely. Read it if a later version adds one, under either spelling.
+    """
+    for name in ("days_of_week", "days_of_the_week"):
+        v = getattr(rule, name, None)
+        if v:
+            return list(v)
+    return None
+
+
 def fetch(api) -> list[Item]:
     svc = api.reminders
     target = next((l for l in svc.lists() if l.title.strip().lower() == LIST_NAME.lower()), None)
@@ -207,6 +227,7 @@ def fetch(api) -> list[Item]:
             freq=rule.frequency.name.lower() if rule else None,
             interval=rule.interval if rule else 1,
             completed=r.completed,
+            weekdays=weekdays_of(rule),
         ))
     return items
 
@@ -214,9 +235,14 @@ def fetch(api) -> list[Item]:
 def main() -> None:
     import json
 
-    rows, skipped = build_rows(fetch(login()))
+    items = fetch(login())
+    rows, skipped = build_rows(items)
     for line in skipped:
         print(line, file=sys.stderr)
+    unread = sorted(i.title for i in items if i.freq == "weekly" and i.weekdays is None)
+    if unread:
+        print("check in Reminders (the weekday set can't be read; split any that repeat on "
+              "several weekdays): " + "; ".join(unread), file=sys.stderr)
     print(f"{len(rows)} exported, {len(skipped)} need a decision", file=sys.stderr)
     print(json.dumps(rows, ensure_ascii=False, indent=2))
 
