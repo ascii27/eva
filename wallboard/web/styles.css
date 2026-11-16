@@ -194,6 +194,11 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .sd-kid { flex: 1; min-width: 0; padding: 0 24px; gap: 20px; }
 .sd-bath { width: 300px; flex: none; padding: 0 26px; gap: 22px; }
 .sd-count { width: 330px; flex: none; padding: 0 26px; gap: 18px; }
+/* Coming-up rotation (ASC-25): the tile stays put, its content crossfades. */
+.sd-count > * { transition: opacity .4s ease; }
+.sd-count.is-out > * { opacity: 0; }
+.sd-count.is-in > * { animation: sd-fade-in .4s ease; }
+@keyframes sd-fade-in { from { opacity: 0; } }
 .sd-who { width: 92px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .sd-av { position: relative; width: 84px; height: 84px; font-size: 32px; }
 .sd-name { font-size: 22px; line-height: 26px; font-weight: 700; }

@@ -10,7 +10,7 @@ Standard library only. Configuration comes from the environment:
 Commands:
 
   read                       what the board shows right now (bubble, today,
-                             tomorrow, weather, countdown, chores) as JSON
+                             tomorrow, weather, countdowns, chores) as JSON
   recent [N]                 the last N bubbles this script pushed (default 10)
   push TEXT [--sub SUB] [--mood happy|excited]
                              put a new message up; it plays the arrival
@@ -94,8 +94,9 @@ def cmd_read(_args) -> None:
     s = call("GET", "/api/eva/state")
     weather = panel(s, "weather") or {}
     now = weather.get("now") or {}
-    countdowns = panel(s, "countdowns")
-    occasion = panel(s, "occasion")
+    # The tile rotates through Eva's pushed countdowns plus the board's own
+    # (nearest birthday, holiday, school event), so report both.
+    countdowns = (panel(s, "countdowns") or []) + (panel(s, "occasions") or [])
     chores = s.get("chores") or []
     print(json.dumps({
         "now": dt.datetime.now(TOKYO).strftime("%A %d %B %Y, %H:%M (Tokyo)"),
@@ -107,7 +108,7 @@ def cmd_read(_args) -> None:
         },
         "today": events(panel(s, "schedule")),
         "tomorrow": events(panel(s, "tomorrow")),
-        "countdown": countdowns if countdowns is not None else occasion,
+        "countdowns": countdowns,
         "chores": {
             "done": [f"{c['title']} ({c.get('who') or 'anyone'})" for c in chores if c.get("done")],
             "to_do": [f"{c['title']} ({c.get('who') or 'anyone'})" for c in chores if not c.get("done")],

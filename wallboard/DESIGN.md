@@ -55,9 +55,14 @@ At rest the tile reads number / "days" / label, each line single with an ellipsi
 - Bedtime: **20:30 Sun–Thu, 21:00 Fri–Sat**, as a "Bedtime" row in today's schedule, plus the same teal countdown card as the school run (moon icon, "in bed by 20:30") in the **30 min** before. They never overlap. It does **not** move night mode, which stays 21:30–06:30.
 - Night view's "Tomorrow" line: the earlier of tomorrow's school run and tomorrow's first timed event; bedtime never counts.
 
-## Countdown tile default (decided 2026-11-15, `server/occasions.ts`)
-- When Eva hasn't pushed `countdowns`, the bottom-right tile shows the **nearest** upcoming occasion: a birthday from the calendar (any event titled "birthday"/"誕生日", yearly repeats included) or one of these holidays: New Year, Hinamatsuri, Easter, Children's Day, Mother's Day, Father's Day, July 4th, Halloween, Thanksgiving, Christmas.
-- Strictly after today (on the day it moves to the next one), a birthday wins a tie, gift icon. Eva's `countdowns` push always overrides it.
+## Countdown tile: "Coming up" rotation (decided 2026-11-15, rotation 2026-11-16 / ASC-25, `server/occasions.ts`, `web/comingup.js`)
+- The bottom-right tile **rotates** through the coming occasions, one every **20 s**, nearest first. The tile stays put; its icon and text crossfade (0.4 s opacity, skipped under `prefers-reduced-motion`). It holds still while a celebration plays, and a tap celebrates whichever occasion is showing.
+- The rotation is the server's defaults plus everything Eva pushed in `countdowns`:
+  - the **nearest birthday** from the calendar (any event titled "birthday"/"誕生日", yearly repeats included). Always in the rotation, however far off;
+  - the **nearest major holiday**: New Year, Hinamatsuri, Easter, Children's Day, Mother's Day, Father's Day, July 4th, Halloween, Thanksgiving, Christmas;
+  - the **nearest school event**, if the calendar has one: a one-off (non-recurring) event titled like 運動会/体育祭/sports day (`sports`), 発表会/音楽会/学芸会/recital (`recital`), 入学式/卒業式/graduation (`ceremony`), or 始業式/終業式/授業参観/遠足/修学旅行/保護者会/個人面談/学校/school/field trip (`school`).
+- Each strictly after today (on the day it moves to the next one). A birthday wins a tie.
+- Eva's pushes **join** the rotation (they used to replace it). If one of hers falls on the same day as a default with the same kind or label, hers is shown and the default dropped.
 
 ## All-day events (decided 2026-11-15)
 - From the family calendar (school holidays, trips). Pinned at the **top** of the Today card and of ambient "Later today", for the whole day, with "ALL DAY" in the time column.
