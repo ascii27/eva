@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server/index.ts",
     "dev": "node --watch server/index.ts",
-    "test": "node --test 'server/**/*.test.ts' && npm run test:sync",
+    "test": "node --test 'server/**/*.test.ts' 'web/**/*.test.js' && npm run test:sync",
     "test:sync": "cd sync && python3 -m unittest -q test_chores",
     "typecheck": "tsc --noEmit",
     "deploy": "./deploy/deploy.sh",

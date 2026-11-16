@@ -25,12 +25,16 @@
             <p class="amb-date" data-clock="date"></p>
             <p class="amb-clock" data-clock="time"></p>
             <div class="amb-weather" id="amb-weather"></div>
-            <div class="amb-caption" id="amb-caption"></div>
+            <!-- Eva's bubble: bottom of the left column, tail down-left at her -->
+            <div class="eva-say" id="amb-bubble"></div>
           </div>
           <div class="amb-right" id="amb-right"></div>
         </div>
+        <!-- Eva peeks from behind the strip: stacked under its tiles, over the photo -->
+        <div class="eva-spot amb-eva" id="amb-eva" aria-hidden="true"></div>
         <div class="amb-strip" id="amb-strip"></div>
       </div>
+      <div class="amb-caption" id="amb-caption"></div>
       <span class="amb-hint">Tap anywhere for today</span>
       <div class="wb-sky" id="amb-sky" aria-hidden="true" hidden></div>
     </section>
@@ -54,7 +58,14 @@
           </div>
           <div class="card act-bath" id="act-bath"></div>
         </div>
-        <div class="act-side" id="act-side"></div>
+        <div class="act-side">
+          <!-- Eva drops by: the bubble (tail down) with her peeking under it -->
+          <div class="act-eva">
+            <div class="eva-say" id="act-bubble"></div>
+            <div class="eva-spot" id="act-eva" aria-hidden="true"></div>
+          </div>
+          <div class="act-side-cards" id="act-side"></div>
+        </div>
       </div>
       <div class="dim" aria-hidden="true"></div>
     </section>
@@ -65,6 +76,7 @@
         <span class="night-clock" data-clock="time"></span>
         <div class="night-line" id="night-weather"></div>
         <div class="night-line night-tomorrow" id="night-tomorrow"></div>
+        <div class="eva-spot night-eva" id="night-eva" aria-hidden="true"></div>
       </div>
       <span class="night-hint">Tap to wake</span>
     </section>
