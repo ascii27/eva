@@ -16,6 +16,7 @@ Guidance for any Claude session working in `wallboard/`. Read `README.md` (how i
 | Night (bedtime–06:30) | `design/Night.dc.html` |
 | Calm right column through the day | `design/DayFlow.dc.html` (rules in "Calm view: right column changes through the day") |
 | Countdown tile celebrations | `design/EventTiles.dc.html` |
+| Eva bubble (character, placement, states) | `design/EvaCharacter`, `EvaOptA`, `EvaDayPortrait`, `EvaEvening`, `EvaNight`, `EvaActive`, `EvaStates` (`.dc.html`) |
 | **Reference only — do not port** | `LightPaper` (v1, too bright on the Echo), `PaperV2Cards`, `PaperPortraitPair` (pairing dropped), `LightDay`, `LightPastel`, `LightPhoto` |
 
 ## Day theme ("Morning paper v2 · sand")
@@ -38,7 +39,7 @@ Lives in `web/styles.css` under `.stage[data-theme="day"]`. Values come from the
 
 ## Calm view: right column changes through the day (2026-11-15)
 Purpose: **who has what today, so the family can prepare.** Reference: `design/DayFlow.dc.html` (three moments at real size, 744 px wide; sample schedule).
-- **No "Eva says" card on the calm view for now** (removed at the family's request). Keep the `note` panel in the data and the active view; just don't render it on calm.
+- **No "Eva says" card** on the calm view: Eva now appears as the Eva bubble (see "Eva bubble"), on the photo, not in the right column.
 - Nothing in the right column sits on the photo without a card: everything is on solid cards (`--surface-100`, 1px `--line` edge, `--elevation-1`). No halo here.
 
 **1. "Next up" card (top, only when something starts within 60 min)**
@@ -166,6 +167,41 @@ Reference: `design/EventIcons.dc.html` (icon artwork, same line style: 24 grid, 
   - **Rise:** balloons, hearts, music notes, lanterns (soft amber circles), from the bottom edge across the screen.
   - **Fall:** snow, leaves (amber/orange leaf shapes), petals (pink), stars (small violet/amber), beans (small brown dots).
 - Add the new icons to `web/icons.js`; keep keys equal to the Icon column.
+
+## Eva bubble (2026-11-16) — chosen: option A
+References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dark), `design/EvaOptA.dc.html` (day, landscape), `design/EvaDayPortrait.dc.html` (day, single portrait), `design/EvaEvening.dc.html` (evening), `design/EvaNight.dc.html` (night), `design/EvaActive.dc.html` (active view), `design/EvaStates.dc.html` (states + motion). `EvaOptB` / `EvaOptC` are rejected options: reference only.
+
+**Character**
+- Port the SVG from `EvaCharacter.dc.html` exactly (one component, props: `expr`, `theme`, `size`, `peek`). Shell: cream `#fffaf1` / edge `#c9b89c` by day; `#2a303b` / `#46505f` in evening and night. Face screen `#0b0e12`.
+- Eyes: mint `#7cf2c4`, desk proportions scaled ×0.16 (16.6 × 21.1, radius 1.5, gap 48 in a 140 × 84 screen). The glow is two translucent larger rects (32% and 14%): **no blur filters**.
+- Expressions: `happy` (default), `excited` (^ ^ eyes, open mouth, three sparkles), `sleepy` (closed eyes, "o" mouth, z z, dimmed mint; night only).
+
+**Placement (calm view, day and evening)**
+- Eva peeks up from behind the bottom strip at the photo's lower-left: absolutely positioned at `left: 112px; bottom: 188px`, 170 px wide, `peek` (no body), **stacked below the strip tiles and above the photo**, so the strip hides her chin. Eyes and mouth must stay visible above the strip.
+- The bubble sits at the bottom of the left column, `padding-left: 186px`, max width 640, tail pointing down-left at Eva. It is the only solid shape allowed on the photo, and it lives in the lower part of the photo (away from faces).
+- The memories caption moves to a small pill at the top-left of the stage (`left: 104px; top: 28px`).
+- The right column and its space budget are unchanged.
+- **Night:** sleepy Eva, no bubble, about 38% opacity, under the clock block; she drifts with it.
+- **Active view:** the "Eva says" card is replaced by the bubble (tail down) with a 104 px peeking Eva under it, same message.
+
+**Bubble**
+- Day: `#fffaf1`, 1px `#c9b89c`, soft shadow. Evening: `#151a22`, 1px `#2c3544`, light ink. Radius 28, padding 18 × 26.
+- Main line 28/36 px weight 600, max 2 lines then ellipsis (~90 chars). Optional second line 22/30 muted, 1 line (~60 chars).
+- No emoji: strip them from Eva's text (later: map to board icons).
+- Nothing to say: no bubble and no placeholder; Eva still peeks, happy.
+
+**Alive (motion), all one-shot CSS, transforms and opacity only**
+- **Blinking:** a single blink (eyes `scaleY` 1 → 0.12 → 1, 260 ms) at random intervals of 6–20 s while awake. Occasionally (≈1 in 5) a double blink. Never while asleep.
+- **New message arrives:**
+  1. The old bubble fades out (150 ms).
+  2. Eva reacts: she switches to `excited` for ~1.2 s (sparkles appear), with a tiny hop (translateY −6 px and back, 300 ms).
+  3. The new bubble pops in from the tail corner (scale 0.6 → 1 with a small overshoot, 450 ms).
+  4. She blinks once, then settles into the message's `mood` (`happy` or `excited`).
+- **Mood follows context:** `excited` when the message is about an upcoming event or the countdown celebration is playing (she cheers along); `happy` otherwise; `sleepy` at night. When the countdown tile is tapped, Eva goes `excited` for the celebration and then returns.
+- **Idle:** nothing else moves (no bobbing, no looping glow). Respect `prefers-reduced-motion`: no hop or pop, keep the expression change.
+
+**Data (from Eva)**
+- Panel `eva`: `{ "text": "...", "sub": "...", "mood": "happy" | "excited", "at": ISO time }`. Eva pushes a few times a day. Absent panel = nothing to say (no bubble). The old `note` panel maps to this for now.
 
 ## Household and behaviour (don't regress)
 - Only Mariko (11) and Sarina (8) have chores. Michael and Nozomi appear in the schedule only.

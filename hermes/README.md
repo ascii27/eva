@@ -85,6 +85,38 @@ something other than the desk needs to approve.
 
 Design: `docs/superpowers/specs/2026-08-29-action-errands-design.md`.
 
+## The kitchen board bubble
+
+Added 2026-11-16. hermes writes the speech bubble of the small Eva on the
+family wallboard (`wallboard/`, `https://eva-board.exe.xyz`) a few times a day.
+The board side is the `eva` panel (`wallboard/README.md`); this side is
+`skills/eva-board-bubble/`: a `SKILL.md` that says what is worth saying and how,
+and `scripts/eva_bubble.py` (stdlib only) that reads the board and pushes to it.
+The script enforces the length limits and refuses rather than trims, because the
+board would cut an over-long message mid-sentence.
+
+Setup on the hermes host:
+
+1. Copy `skills/eva-board-bubble/` to `~/.hermes/skills/eva-board-bubble/`.
+2. Add to `~/.hermes/.env`:
+   ```
+   WALLBOARD_URL=https://eva-board.exe.xyz
+   WALLBOARD_TOKEN=<the board's HERMES_TOKEN>
+   ```
+   (`ssh eva-board.exe.xyz sudo grep HERMES_TOKEN /etc/wallboard.env`). Check that
+   hermes' terminal tool actually sees it: ask hermes to run
+   `python3 ~/.hermes/skills/eva-board-bubble/scripts/eva_bubble.py read`. A
+   "WALLBOARD_TOKEN is not set" means the variable isn't reaching the subprocess.
+3. Schedule it. Ask hermes for a daily job at 06:30, 12:00, 15:30 and 18:30
+   (Tokyo) whose prompt is: *"Update Eva's bubble on the kitchen board, using the
+   eva-board-bubble skill."* The skill's time-of-day table is written for those
+   four slots; the board hides the bubble from 21:30 to 06:30.
+
+Each run is a full agent run (reading the calendar, maybe news), so it costs a
+few seconds of hermes time, four times a day. The script keeps its own log of
+what it pushed (`~/.hermes/eva-board/bubble-log.jsonl`) so hermes can avoid
+repeating itself without relying on memory.
+
 ## Not here yet
 
 Replay and the mem0 wiring. The outbox records what was sent and never

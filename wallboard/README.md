@@ -36,7 +36,7 @@ npm run seed         # push the dummy chore list (WALLBOARD_URL, HERMES_TOKEN);
 ```
 
 Testing switches on the board URL: `?time=7:42` fakes the clock, `?mode=ambient|active|night`
-pins a view, `?theme=day|evening` pins a theme, `?debug=1` shows Silk's real viewport size and
+pins a view, `?theme=day|evening` pins a theme, `?eva=new` replays Eva's new-message arrival, `?debug=1` shows Silk's real viewport size and
 keep-alive status (and exposes `wb.nextPhoto()` in the console).
 
 ## Why hermes pushes and the board never pulls
@@ -71,9 +71,19 @@ Both are generated into `/etc/wallboard.env` on the first deploy:
 never told us" and the board shouldn't pretend it knows. A panel pushed as `[]`
 means "there is nothing". Only `DELETE` makes a panel absent again.
 
-Panels the board knows (shapes in `web/dummy.js`): `note` (`{text, sub?}` or a
-string), `weather`, `leave-by`, `pickup`, `dinner`, `countdowns`, `schedule`,
+Panels the board knows (shapes in `web/dummy.js`): `eva` (Eva's bubble, below),
+`weather`, `leave-by`, `pickup`, `dinner`, `countdowns`, `schedule`,
 `tomorrow`, `memories`.
+
+`eva` is Eva's speech bubble: `{text, sub?, mood?: "happy" | "excited", at?}`
+(a bare string also works). Keep `text` to ~90 characters (two lines, then
+ellipsis) and `sub` to ~60 (one line); emoji are stripped. A push whose text,
+sub or `at` differs plays the arrival (old bubble fades, Eva hops, the new one
+pops in); re-pushing the same message does nothing. Unlike the other panels it
+has **no dummy fallback**: absent means she has nothing to say, so there is no
+bubble, only Eva peeking. The old `note` panel is still read when `eva` is
+absent. `?eva=new` on the board replays the arrival (with a sample message if
+nothing was pushed). Design and motion: `CLAUDE.md` "Eva bubble".
 
 `weather` is the exception: the server fills it itself from Open-Meteo (no key)
 for Ikejiri, Setagaya every 15 min (`server/weather.ts`), so a push to it is

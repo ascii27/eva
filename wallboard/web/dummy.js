@@ -9,7 +9,9 @@
 
 export function dummy() {
   return {
-    note: { text: 'Rain after 6 pm. Swim bag needs the spare towel tonight.', sub: 'Also: library books due Wednesday.' },
+    // Eva's bubble. Unlike the rest of this file it is NOT a fallback: an absent
+    // `eva` panel means she has nothing to say. Only ?eva=new shows this one.
+    eva: { text: 'Rain after 3 — umbrellas by the door!', sub: 'Swim bag needs the spare towel.', mood: 'happy' },
 
     weather: {
       now: { cond: 'sun', temp: 14, label: 'Sunny' },

@@ -6,11 +6,14 @@
 //   ?mode=ambient|active|night   pin the resting view instead of following the clock
 //   ?time=21:45                  pretend it's this time (the clock still ticks)
 //   ?debug=1                     show Silk's viewport size — DESIGN.md asks to confirm it
+//   ?eva=new                     replay Eva's new-message arrival a moment after load
+//                                (with the dummy message if nothing was pushed)
 
 import { icon, glyph, star, weatherIcon } from './icons.js';
 import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from './celebrate.js';
 import { ORDER, person } from './household.js';
 import { dummy } from './dummy.js';
+import { EvaSpot, evaMessage, evaSig } from './eva.js';
 
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
@@ -194,12 +197,6 @@ function countdown() {
   if (at == null) return null;
   const mins = at - minutesOfDay(now());
   return mins > 0 && mins <= BED_WINDOW_MIN ? { item: bt, mins, icon: 'moon', verb: 'in bed by' } : null;
-}
-
-function note() {
-  const n = content('note');
-  if (!n) return null;
-  return typeof n === 'string' ? { text: n } : n.text ? n : null;
 }
 
 function bathFirst() {
@@ -651,11 +648,13 @@ function celebrate() {
   $('amb-strip').innerHTML = strip().join('');
   $('amb-sky').innerHTML = sky(fx);
   $('amb-sky').hidden = false;
+  evaFace();                                             // she cheers along
   partyTimer = setTimeout(() => {
     partyUntil = 0;
     $('amb-sky').hidden = true;
     $('amb-sky').innerHTML = '';                         // particles removed when the party ends
     renderAmbient();
+    evaFace();
   }, ms);
 }
 
@@ -795,13 +794,9 @@ function renderActive() {
       `<span style="opacity:${i === a.length - 1 ? 1 : 0.55};display:flex">${avatar(id, 32, 12)}</span>`).join('')}
       <span class="note">Last night: ${esc(person(last).name)}${b.tonight === auto ? '' : ' · swapped tonight'}</span></div>`;
 
-  // Right column: Eva, leave/pickup, dinner, countdowns.
+  // Right column: leave/pickup, dinner, countdowns. Eva's bubble sits above
+  // these in its own mount (#act-bubble), so a re-render never restarts her.
   const side = [];
-  const n = note();
-  if (n) {
-    side.push(`<div class="card side-eva"><div class="card-head"><div class="eva-face">${icon('eva', 30)}</div><span class="eyebrow">Eva says</span></div>
-      <span class="text">${esc(n.text)}</span>${n.sub ? `<span class="sub">${esc(n.sub)}</span>` : ''}</div>`);
-  }
   const pickup = content('pickup');
   const due = countdown();
   if (due || pickup) {
@@ -904,7 +899,8 @@ function moveNight() {
   el.style.opacity = '0';
   setTimeout(() => {
     el.style.left = `${120 + Math.round(Math.random() * (stageW - 1020))}px`;
-    el.style.top = `${100 + Math.round(Math.random() * 420)}px`;
+    // Eva hangs under the block now, so keep the whole stack on screen.
+    el.style.top = `${100 + Math.round(Math.random() * Math.max(0, 1080 - 160 - el.offsetHeight))}px`;
     el.style.opacity = '1';
   }, 1600);
 }
@@ -913,6 +909,89 @@ function renderAll() {
   if (view === 'ambient') renderAmbient();
   else if (view === 'active') renderActive();
   else if (view === 'night') renderNight();
+  syncEva();
+}
+
+// ---- Eva (CLAUDE.md "Eva bubble") ----------------------------------------------
+//
+// One message, shown in up to three places: peeking on the calm view, under the
+// bubble in the active view, asleep (no bubble) at night. The spots own their
+// DOM and change it only when the message or her face changes, so the board's
+// frequent re-renders never cut a blink or a pop short.
+
+const EVA = {
+  ambient: new EvaSpot($('amb-eva'), $('amb-bubble'), { size: 170, peek: true }),
+  active: new EvaSpot($('act-eva'), $('act-bubble'), { size: 104, peek: true }),
+  night: new EvaSpot($('night-eva'), null, { size: 130, theme: 'dark' }),
+};
+const BLINK_MIN = 6_000, BLINK_RAND = 14_000;   // a blink every 6–20 s while awake
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let evaShown;              // signature of the message on screen; undefined until first paint
+let evaMsg = null;
+let evaArriving = false;   // inside the ~1.2 s excited reaction to a new message
+let evaTimers = [];
+
+/** The pushed `eva` panel, else the old `note` one. Absent means nothing to say. */
+function evaCurrent() {
+  const p = server?.panels?.eva ?? server?.panels?.note;
+  if (p) return evaMessage(p.data);
+  return q.get('eva') === 'new' ? evaMessage(DUMMY.eva) : null;
+}
+
+const evaExpr = (spot) => spot === EVA.night ? 'sleepy'
+  : evaArriving || Date.now() < partyUntil ? 'excited'
+  : evaMsg?.mood ?? 'happy';
+
+function evaFace() {
+  for (const spot of Object.values(EVA)) spot.setExpr(evaExpr(spot));
+}
+
+function syncEva() {
+  const m = evaCurrent();
+  const sig = evaSig(m);
+  if (evaShown === undefined) {           // first paint: no fanfare
+    // Wait for the server's first state, or every page load would "arrive".
+    if (!server && q.get('eva') !== 'new') return evaFace();
+    evaShown = sig;
+    evaMsg = m;
+    for (const spot of Object.values(EVA)) spot.setMessage(m);
+  } else if (sig !== evaShown) evaArrive(m);
+  evaFace();
+}
+
+/** A new message: old bubble fades → excited hop → new bubble pops → blink → mood. */
+function evaArrive(m) {
+  evaShown = evaSig(m);
+  evaMsg = m;
+  for (const t of evaTimers) clearTimeout(t);
+  const spot = EVA[view];
+  // Only the view on screen performs; the others just take the new text.
+  for (const s of Object.values(EVA)) if (s !== spot) s.setMessage(m);
+  if (!spot?.bubble || !m) { spot?.setMessage(m); evaArriving = false; return evaFace(); }
+  const still = reduceMotion();
+  evaArriving = true;
+  evaFace();
+  spot.fadeOut();
+  if (!still) spot.hop();
+  evaTimers = [
+    setTimeout(() => spot.setMessage(m, { pop: !still }), still ? 0 : 150),
+    setTimeout(() => { if (!still) spot.blink(); }, 1100),
+    setTimeout(() => { evaArriving = false; evaFace(); }, 1200),
+  ];
+}
+
+function evaBlinkLoop() {
+  setTimeout(() => {
+    if (!reduceMotion() && !evaArriving && document.visibilityState === 'visible') EVA[view]?.blink(Math.random() < 0.2);
+    evaBlinkLoop();
+  }, BLINK_MIN + Math.random() * BLINK_RAND);
+}
+
+/** ?eva=new and wb.evaNew(): play the arrival again with whatever is showing. */
+function evaReplay() {
+  evaShown = '\u0000';
+  syncEva();
 }
 
 // ---- clock -------------------------------------------------------------------
@@ -1150,7 +1229,7 @@ addEventListener('resize', fit);
 applyTheme(false);
 if (q.get('debug')) {
   setInterval(fit, 5000);   // keep the keep-alive status in the debug line fresh
-  window.wb = { nextPhoto, applyTheme };   // step photos / themes from the console
+  window.wb = { nextPhoto, applyTheme, evaNew: evaReplay };   // step photos / themes / Eva from the console
 }
 fit();
 show(resting());
@@ -1158,6 +1237,8 @@ tick();
 setInterval(tick, 1000);
 loadPhotos().then(nextPhoto);
 setInterval(nextPhoto, PHOTO_MS);
+evaBlinkLoop();
+if (q.get('eva') === 'new') setTimeout(evaReplay, 1500);
 setInterval(loadPhotos, 30 * 60_000);   // the server swaps a few each hour
 setInterval(moveNight, NIGHT_MOVE_MS);
 connect();
