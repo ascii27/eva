@@ -68,9 +68,9 @@ Both are generated into `/etc/wallboard.env` on the first deploy:
 | `DELETE` | `/api/eva/panels/<name>` | — | Remove a panel. |
 | `PUT` | `/api/eva/chores` | `{"chores": [{"id", "title", "who", "icon", "amount", "schedule": {"every", "unit": "day"\|"week", "start"}}]}` | Replace the chore definitions (a `ChoreDef`). `amount` is yen per completion. Rejects `done`: that is the board's, not hermes'. Owned by the `eva-chores` skill (see "Chores"). `who` is a household id (`mariko`, `sarina`, …); `icon` is a key in `web/icons.js`. |
 | `GET` | `/api/eva/state` | — | The computed view: `{version, chores: [{id, title, who, icon, amount, done}], balances, panels}`. |
-| `GET` | `/api/eva/activity?after=<seq>` | — | Log events with `seq` greater than `after`, in order. |
+| `GET` | `/api/eva/activity?after=<seq>` | — | `{logId, seq, events}`: log events with `seq` greater than `after`, in order, plus the log's id and its highest `seq` so hermes can spot a reset board. |
 | `GET` | `/api/eva/balances` | — | `{balances: {who: {earned, paid, owed, lastPaidAt}}}`, computed from the log. |
-| `POST` | `/api/eva/payments` | `{"who", "amount", "note"?, "id"?}` | Record a payment (a negative amount is a credit). A repeated `id` is not recorded twice. |
+| `POST` | `/api/eva/payments` | `{"who", "amount", "note"?, "id"?}` | Record a payment (a negative amount is a credit). `amount` is a non-zero integer within ±1,000,000 yen. A repeated `id` is not recorded twice. |
 
 **Absent vs empty**, as on the desk: a panel that was never pushed means "Eva
 never told us" and the board shouldn't pretend it knows. A panel pushed as `[]`
@@ -135,8 +135,11 @@ the older `at` field and the old `tomorrow: {at, title}`.
 - `GET /api/state` — the same computed view hermes reads.
 - `PUT /api/chores/<id>` `{"done": true|false}` — a set, not a toggle, so undo
   and retries can't flip a chore the wrong way.
-- `POST /api/pay/<who>` `{"amount"}` — Mark paid: records a payment.
-- `POST /api/cancel/<eventId>` — cancels a logged event (an undo of a tap).
+- `POST /api/pay/<who>` `{"amount"}` — Mark paid: records a payment. `amount` must be
+  positive and equal to what is currently owed; anything else (a double tap's second
+  request, a balance that changed underneath) is `409 {error, owed}` and records nothing.
+- `POST /api/cancel/<eventId>` — cancels a recorded payment (the undo of Mark paid).
+  Completions are undone with `PUT /api/chores/<id>` instead; anything else is 404.
 
 ## Chores
 
@@ -147,7 +150,10 @@ yen. The board, not hermes, decides what is due.
 
 - **What shows:** chores due today, plus overdue ones, which carry over until
   done. Ticking moves a chore to its next occurrence after today; undo
-  restores it, same day only. Policy and tests: `server/schedule.ts`.
+  restores it, same day only. A new chore starts at its `start`, even if past;
+  one dropped from a push and back in a later one is seeded from its last
+  completion in the log, so it keeps its phase and can't be paid twice in a
+  day. Policy and tests: `server/schedule.ts`, `server/state.ts`.
 - **Every tap is an event** in the board's append-only log (`data/state.json`),
   with an event id, a `logId` and a monotonic `seq`. hermes reads
   `GET /api/eva/activity?after=<seq>` and copies new events into the Notion

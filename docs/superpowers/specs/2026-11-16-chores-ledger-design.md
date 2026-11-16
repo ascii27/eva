@@ -1,6 +1,6 @@
 # Chores and allowance: off Apple Reminders, onto the board + a Notion ledger
 
-Linear: ASC-24. Status: design approved in conversation 2026-11-16, awaiting doc review.
+Linear: ASC-24. Status: approved 2026-11-16; implemented. This doc is kept in step with the code; where an early draft left something to the builder, the decision is written in.
 
 ## Why
 
@@ -64,13 +64,14 @@ schedule: { every: N, unit: "day" | "week", start: "YYYY-MM-DD" }
 
 The board replaces the Reminders sync's due-date logic with the same visible behaviour, computed locally (Tokyo time), so the family sees no change:
 
-- A chore has a **next due** date, held by the board. Initialised to `schedule.start` (or today if start is in the past and the chore is new).
+- A chore has a **next due** date, held by the board. A chore new to the board starts at `schedule.start`, even if that is in the past (it shows as overdue).
+- A chore that was on the board before — dropped by one push, back in a later one — is **seeded from the log**, not restarted: from its latest uncancelled `done`, next due is the first occurrence after that day (so it keeps its phase); if that `done` was today it stays done today, with undo restoring it to its first occurrence on or after today. Independently, `chore.set done` refuses a second uncancelled completion of the same chore on the same Tokyo day. Without both, a partial push could make a chore payable twice in a day.
 - Next due on or before today → shown, to do. An overdue chore carries over until done (as Reminders does now).
 - Ticked → done until midnight; next due advances by the schedule to the first occurrence after today.
 - Undo → next due goes back to what it was before the tick.
 - Otherwise hidden.
 
-`chores.replace` keeps next-due for chores whose `id` survives; a changed schedule re-anchors next-due only if the old one no longer falls on the new schedule (builder's call on the exact rule; keep it simple and tested). The `done` field on push is no longer accepted from hermes — done-ness is the board's.
+`chores.replace` keeps next-due for chores whose `id` survives. A changed schedule re-anchors: done today → stays done, next due is the first occurrence after today; otherwise next due is the first occurrence on or after today. The `done` field on push is no longer accepted from hermes — done-ness is the board's. Amounts (chore and payment) are safe integers within ±1,000,000 yen.
 
 ### The activity log
 
@@ -79,10 +80,11 @@ Append-only, persisted with the rest of the state (`data/state.json`). Never edi
 ```
 { id, seq, type, who, at, ... }
 type "done":    { choreId, title, amount }       // amount snapshotted at the time
-type "undone":  { cancels: <event id> }
+type "undone":  { cancels: <event id>, choreId, title }   // choreId/title null for a cancelled payment
 type "payment": { amount, note?, source: "board" | "eva" }
 ```
 
+- Every event carries `delta`, its signed change to what is owed (`done` +amount, `payment` −amount, `undone` −delta of what it cancels), so a balance is the sum of the log.
 - `id`: generated on the board (e.g. `ev-<ulid>`), unique forever. `seq`: monotonically increasing integer, so hermes can ask "everything after N".
 - A tap writes a `done` event at once; Undo writes an `undone` that cancels it. Both are copied to Notion; an undone completion is never counted as earned. (Simpler than holding events back for the undo window, and the ledger shows exactly what happened.)
 - `amount` is snapshotted on `done`, so changing a chore's amount later never rewrites what was already earned.
@@ -93,9 +95,9 @@ type "payment": { amount, note?, source: "board" | "eva" }
 Replaces the localStorage dummy (`local.owed`, `local.paidToday`, "N days to pay") in `web/app.js`:
 
 - **Pay is per chore**: every completed chore earns its amount, whether or not she finished the rest of the day's. The old "finish all N to earn today" rule is gone.
-- Active view shows **¥N to pay** per girl, from the server's balance. Zero → "Paid up".
+- Active view shows **¥N to pay** per girl, from the server's balance. Zero → "Paid up" (or "Nothing owed" before the first payment). Negative (paid more than earned, e.g. Eva recorded extra) → **"¥N credit"** in ink-muted with no button, never "Paid up".
 - Second line (replaces "Includes today" / "Finish all N to earn today" etc., which only made sense for the days model): **"Last paid <Mon 14 Nov>"**, or "Not paid yet" before the first payment. Update `design/` (the pay row in `ActivePaper` / `Active`) and the "Pay" bullet in wallboard/CLAUDE.md "don't regress" first, then port.
-- **Mark paid** writes one `payment` event for the full balance (source `board`), with the existing undo toast; undo appends a cancelling payment of the opposite sign or an `undone` referencing it (builder's call, but it must be append-only).
+- **Mark paid** writes one `payment` event for the full balance (source `board`), with the existing undo toast; undo appends an `undone` referencing it (`POST /api/cancel/<eventId>`, payments only). The amount sent **must equal what is owed**: anything else is `409 {error, owed}` and records nothing, so a double tap's second request can't pay twice. The page also ignores a second tap while one is in flight, and on a 409 toasts that the balance changed.
 - Calm view unchanged (no pay text there, per CLAUDE.md).
 - Port any visual change through `design/` first, per wallboard/CLAUDE.md. The amount string replaces the days string in the existing pay row; no new layout expected.
 
@@ -106,11 +108,11 @@ hermes (bearer):
 | Method | Path | Purpose |
 |---|---|---|
 | `PUT` | `/api/eva/chores` | Existing; now carries `amount` and `schedule`, no `done`. |
-| `GET` | `/api/eva/activity?after=<seq>` | Events with `seq > after`, oldest first, plus the board's current max `seq` and a `logId` (see below). |
+| `GET` | `/api/eva/activity?after=<seq>` | `{logId, seq, events}`: events with `seq > after`, oldest first, plus the board's current max `seq` and its `logId` (see below). |
 | `POST` | `/api/eva/payments` | `{ who, amount, note?, id? }` → appends a `payment` event (source `eva`). Idempotent on a caller-supplied `id` so a retried request doesn't pay twice. |
 | `GET` | `/api/eva/balances` | Per-girl earned / paid / outstanding, for a quick answer. |
 
-Board (cookie): `PUT /api/chores/<id>` stays a set; the server now also appends the matching log event. `POST /api/pay/<who>` for Mark paid.
+Board (cookie): `PUT /api/chores/<id>` stays a set; the server now also appends the matching log event. `POST /api/pay/<who>` `{amount}` for Mark paid (positive, equal to what is owed, else 409). `POST /api/cancel/<eventId>` undoes a recorded payment.
 
 ### `logId` — detecting a reset board
 
@@ -124,15 +126,18 @@ Remove `sync/reminders_sync.py`, `sync/chores.py` (its schedule tests are a usef
 
 Three databases under one page, "Chores & allowance":
 
-**Chores** — one row per chore
-- Name (title), Who (select: Mariko, Sarina), Icon (select: board icon keys), Amount ¥ (number, default from Settings), Schedule every (number), Schedule unit (select: day, week), Start (date), Active (checkbox), Board id (text, stable, generated once).
+Property names are exact (the script reads and writes them); `hermes/skills/eva-chores/SKILL.md` has the full setup tables.
 
-**Ledger** — one row per board event, never deleted
-- Event id (title, the board's id), Type (select: done, undone, payment), Who, Chore (relation → Chores), Amount ¥ (number; negative for payments is a builder's call — pick one convention and make the rollups match), At (date+time), Cancels (text, event id), Source (select: board, eva), Board log id (text).
-- Earned/paid/outstanding per girl via a view or rollup; Michael checks this.
+**Chores** — one row per chore
+- `Name` (title), `Board id` (text, stable, made once by `new-chore-id`), `Who` (select: Mariko, Sarina), `Icon` (select: board icon keys), `Amount ¥` (number, default from Settings), `Every` (number), `Unit` (select: day, week), `Start` (date), `Active` (checkbox; only active rows reach the board).
+
+**Ledger** — one row per board event, never edited or deleted
+- `Event id` (title, the board's id), `Type` (select: done, undone, payment), `Who` (select), `Chore` (text: the chore's name at the time), `Chore id` (text: its Board id), `Amount ¥` (number, **signed, equal to the event's `delta`**: plus for earned, minus for paid or undone), `At` (date+time, Tokyo), `Cancels` (text, event id), `Source` (select: board, eva; payments only), `Note` (text; payments only), `Board log id` (text).
+- No relation to Chores: `Chore id` is text, so a row stays correct if a chore is renamed or retired, and the script can emit it verbatim.
+- Per-girl views ("Mariko", "Sarina") sum `Amount ¥`, which is what she is owed; for Michael to browse. Eva quotes `balances`.
 
 **Settings** — single row
-- Default amount ¥ (100). New chores take it unless told otherwise.
+- `Name` (title, "Settings"), `Default amount ¥` (100; new chores take it unless told otherwise), `Board log id` and `Last seq` (the sync cursor), `Alarm` (text: the recorded alarm JSON) and `Alarm at` (date).
 
 ## The `eva-chores` hermes skill
 
@@ -148,12 +153,13 @@ Money arithmetic stays in code: balances come from the board (`GET /api/eva/bala
 Script commands (shape, final names builder's call):
 
 - `activity --log-id <id> --after <seq>` — reads `/api/eva/activity`, checks `logId`/`seq` for the alarm, and prints JSON: `{alarm: null | {...}, rows: [<exact Ledger row>...], cursor: {logId, seq}}`. Rows are oldest first.
-- `push-chores` — reads chore definitions as JSON on stdin (the agent pipes in what it read from the Chores db), validates them (amount is a non-negative integer, schedule well-formed, icon known) and PUTs them to the board.
+- `push-chores [--allow-empty]` — reads chore definitions as JSON on stdin (a quoted heredoc of what the agent read from the Chores db), validates them (amount an integer from 0 to 1,000,000, schedule well-formed) and PUTs the active ones to the board. Refuses a list with no active chores unless `--allow-empty`, because an empty push wipes the wall and is far more likely a failed read than an intention.
 - `balances` — per-girl earned / paid / outstanding in yen, from the board.
-- `pay <who> <amount> [--note] [--id]` — POSTs a payment to the board (fresh id unless given, so a retry is safe).
+- `pay <who> <amount> [--note] [--id]` — POSTs a payment to the board. The agent always passes its own `--id`, chosen before the first attempt, so a retry with the same id is safe.
+- `new-chore-id <name> --taken <ids...>` — a free `chore-<slug>` Board id.
 
 **The scheduled sync, as SKILL.md spells it out:**
-1. Read the Chores db (MCP); pipe active chores into `push-chores`.
+1. Read **all pages** of the Chores db (MCP); feed every row into `push-chores`. Never push after a failed or partial read — stop the sync instead; the next run tries again.
 2. Read the cursor (`logId`, last seq) from the Settings row (MCP).
 3. Run `activity` with it. If `alarm` is set, follow "The one alarm" and stop.
 4. For each row, check whether a Ledger row with that Event id already exists (MCP query); if not, create it exactly as given. This makes a retried or half-finished run safe.
@@ -178,7 +184,9 @@ SKILL.md must tell hermes, at least:
 
 ### The one alarm
 
-Only one thing is flagged, because it is the only thing that can destroy data: **the board has lost history** (new `logId`, or its max `seq` is below the last one copied, or the activity read shows event ids Notion already has with different contents).
+Only one thing is flagged, because it is the only thing that can destroy data: **the board has lost history**. Two conditions raise it: a new `logId` (`log-replaced`), or the board's max `seq` below the last one copied (`seq-went-back`).
+
+An early draft had a third — the activity read showing event ids Notion already has with different contents. It was dropped: the log is append-only and keeps a stable `logId`, so a board that hasn't been reset can't rewrite an event under the same id, and a reset one already trips the first condition. And the script, which owns alarm detection, never sees Notion, so it couldn't check it anyway.
 
 When that happens the sync **stops copying activity** (step 1 still pushes definitions, so the board keeps working) and hermes, with its MCP tools:
 1. records the alarm on the Settings row (what the script reported, and when) — unless that same alarm is already recorded;
@@ -197,6 +205,6 @@ Michael resolves it by hand; how (e.g. re-seeding the board's log from Notion) i
 - Script: unit tests for the pure parts (alarm detection, event → Ledger row, chore validation) with a fake board. The agent half is checked with one live run against a scratch Notion page before touching the real one.
 - On the device: `?time=` to check midnight rollover and the pay row.
 
-## Left to the builder
+## Decisions made in the build
 
-Exact undo representation for Mark paid; the next-due re-anchor rule on schedule edits; payment sign convention in Notion; cron cadence; script command names; ID format.
+Undo of Mark paid is an `undone` event referencing the payment. A changed schedule re-anchors as described under "Chores and schedules". Ledger `Amount ¥` is the event's signed `delta`. The sync runs every 15 minutes. Script commands are as listed above. Board event ids are `ev-<base36 ms>-<8 hex>`; payments Eva records use `ev-pay-` plus 12 random characters.
