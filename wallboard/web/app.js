@@ -14,6 +14,7 @@ import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from '.
 import { ORDER, person } from './household.js';
 import { dummy } from './dummy.js';
 import { EvaSpot, evaMessage, evaSig } from './eva.js';
+import { comingUp, shownAt } from './comingup.js';
 
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
@@ -103,21 +104,39 @@ function content(key) {
 }
 
 /**
- * Countdowns: what Eva pushed, else the server's default (the next birthday or
- * major holiday, server/occasions.ts), else the dummy ones.
+ * Countdowns, nearest first: what Eva pushed plus the server's defaults (the
+ * nearest birthday, major holiday and school event, server/occasions.ts),
+ * merged in web/comingup.js. The dummy ones only when the server has neither.
  */
 function countdowns() {
-  let list;
-  if (server?.panels?.countdowns) list = server.panels.countdowns.data ?? [];
-  else list = server?.panels?.occasion?.data ? [server.panels.occasion.data] : DUMMY.countdowns;
-  // Eva pushes `{id, label, date, kind, who?}`; the day count comes from the
-  // date when there is one. Nearest first; anything already past is dropped.
+  const pushed = server?.panels?.countdowns ? server.panels.countdowns.data ?? [] : null;
+  const defaults = server?.panels?.occasions ? server.panels.occasions.data ?? [] : null;
   const d = now();
   const today = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
-  return list
-    .map((c) => (/^\d{4}-\d{2}-\d{2}$/.test(c?.date ?? '') ? { ...c, days: Math.round((Date.parse(`${c.date}T00:00:00Z`) - today) / 86_400_000) } : c))
-    .filter((c) => Number.isFinite(Number(c?.days)) && Number(c.days) >= 0)
-    .sort((a, b) => a.days - b.days);
+  return comingUp(pushed ?? (defaults ? null : DUMMY.countdowns), defaults, today);
+}
+
+// The calm tile rotates through them (ASC-25): one every ROTATE_MS, crossfading
+// in place. It holds still mid-celebration and while the calm strip is hidden,
+// and a re-render in between keeps showing the same one.
+const ROTATE_MS = 20_000;
+const FADE_MS = 400;          // matches .sd-count > * in styles.css
+let rotStep = 0;
+let rotFresh = false;         // the next strip render fades the tile's content in
+const shownCountdown = () => shownAt(countdowns(), rotStep);
+
+function rotate() {
+  if (Date.now() < partyUntil || view !== 'ambient' || countdowns().length < 2) return;
+  const tile = document.querySelector('#amb-strip .sd-count');
+  const swap = () => {
+    if (Date.now() < partyUntil) return;           // tapped mid-fade: the party has the tile now
+    rotStep += 1;
+    rotFresh = !reduceMotion();
+    $('amb-strip').innerHTML = strip().join('');
+  };
+  if (!tile || reduceMotion()) return swap();
+  tile.classList.add('is-out');
+  setTimeout(swap, FADE_MS);
 }
 
 function chores() {
@@ -520,8 +539,9 @@ function strip() {
   });
   out.push(`<div class="strip-card sd-bath" aria-label="Bath first tonight: ${esc(bathFirst())}">
     <span class="sd-disc sd-cool">${icon('bath', 56, 1.9)}</span>${who(local.bath.tonight, '<span class="sd-first">1st</span>')}</div>`);
-  const cd = countdowns()[0];
-  if (cd) out.push(countTile(cd, Date.now() < partyUntil));
+  const cd = shownCountdown();
+  if (cd) out.push(countTile(cd, Date.now() < partyUntil, rotFresh));
+  rotFresh = false;
   return out;
 }
 
@@ -637,7 +657,7 @@ let partyTimer = null;
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function countTile(cd, party) {
+function countTile(cd, party, fresh = false) {
   const kind = kindOf(cd);
   const [ic, tone, fx] = KINDS[kind];
   // A birthday in the household takes the birthday person's colours.
@@ -652,12 +672,12 @@ function countTile(cd, party) {
   const text = party
     ? `<span class="wb-party-text wb-fit"><span class="sd-head" style="color:${look.ink}">${esc(cd.headline ?? cd.label)}</span><span class="sd-date">${esc(date)}</span><span class="sd-sleeps">${n} ${n === 1 ? 'sleep' : 'sleeps'} to go</span></span>`
     : `<span class="wb-fit"><span class="sd-num" style="color:${look.ink}">${esc(cd.days)}</span><span class="sd-lbl">${n === 1 ? 'day' : 'days'}</span><span class="sd-what">${esc(cd.label)}</span></span>`;
-  return `<div class="strip-card sd-count wb-event${party ? ' is-party' : ''}" data-action="celebrate" role="button" aria-label="${esc(cd.label)} in ${esc(days(n))}. Tap to celebrate.">
+  return `<div class="strip-card sd-count wb-event${party ? ' is-party' : fresh ? ' is-in' : ''}" data-action="celebrate" role="button" aria-label="${esc(cd.label)} in ${esc(days(n))}. Tap to celebrate.">
     <span class="sd-disc wb-gift" style="background:${look.disc};color:${look.fg}"><svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="overflow:visible">${svg}</svg>${burst}</span>${text}</div>`;
 }
 
 function celebrate() {
-  const fx = KINDS[kindOf(countdowns()[0])][2];
+  const fx = KINDS[kindOf(shownCountdown())][2];
   const ms = partyMs(fx);
   clearTimeout(partyTimer);
   partyUntil = Date.now() + ms;
@@ -1281,6 +1301,7 @@ fit();
 show(resting());
 tick();
 setInterval(tick, 1000);
+setInterval(rotate, ROTATE_MS);
 loadPhotos().then(nextPhoto);
 setInterval(nextPhoto, PHOTO_MS);
 evaBlinkLoop();

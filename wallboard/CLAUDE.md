@@ -103,7 +103,7 @@ The calm view is read from 2–4 m, so it shows a few large signals, **icons fir
       - `winter` (was `holiday`): snowflake icon, blue; ~34 blue flakes drift down across the whole screen (3.5–4.5 s). Full kind list: "Countdown kinds" below.
       - Particle budget on Silk: ≤ 40 elements, transform + opacity only, removed when the effect ends.
       - Party text is always: what (e.g. "Sarina turns 9"), the day ("Sat 28"), "N sleeps to go".
-      - Push shape: `countdowns: [{ id, label, date, kind, who?, headline? }]`. The calm tile shows the nearest one. `headline` is the party's first line ("Grandma comes"); without it the label is used.
+      - Push shape: `countdowns: [{ id, label, date, kind, who?, headline? }]`. The calm tile rotates through them with the server's defaults (see "Household and behaviour"). `headline` is the party's first line ("Grandma comes"); without it the label is used.
 - No counts, chore names, pay text or bath history on the calm view; those live in the active view.
 - Every icon tile has an `aria-label` that says it in words (e.g. "Make bed: done").
 - Rule of thumb: if it can't be read from across the kitchen, it belongs in the active view.
@@ -234,7 +234,7 @@ References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dar
 - Photos: landscape fills the screen; a portrait goes in the left half with the right half plain. **One photo at a time — never pair portraits.**
 - Leave-for-school is real now (`server/routine.ts`): 7:55 Mon–Fri, shown only in the 45 min before (DESIGN.md). Never in the evening, never at weekends.
 - Bedtime 20:30 Sun–Thu, 21:00 Fri–Sat: a schedule row plus the countdown card in the 30 min before; night mode stays 21:30.
-- Countdown tile defaults to the nearest calendar birthday or major JP/US holiday (`server/occasions.ts`, `occasion` panel); Eva's `countdowns` push overrides it. Tapping it celebrates as described above (particles copied into `web/celebrate.js`, `countTile()`/`celebrate()` in app.js).
+- Countdown tile ("Coming up", ASC-25) rotates every 20 s, nearest first, through the nearest calendar birthday (always included), the nearest major JP/US holiday and the nearest one-off school event from the calendar (`server/occasions.ts`, `occasions` panel), plus everything Eva pushed in `countdowns` (merged and deduped in `web/comingup.js`; hers win a same-day clash). DESIGN.md has the rules. Tapping it celebrates as described above (particles copied into `web/celebrate.js`, `countTile()`/`celebrate()` in app.js).
 - The page background is fully solid, so nothing from the Echo's own screen shows through.
 
 ## Silk constraints

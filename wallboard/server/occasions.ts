@@ -1,7 +1,8 @@
-// The countdown tile's default when Eva hasn't pushed `countdowns`: the nearest
-// upcoming birthday (from the calendar) or major Japanese/US holiday. Pure:
-// Tokyo dates in, one countdown out. Published as the `occasion` panel; the
-// board prefers a pushed `countdowns` panel over it.
+// What the countdown tile ("Coming up") rotates through: the nearest birthday
+// (from the calendar), the nearest major Japanese/US holiday and the nearest
+// school event (from the calendar, if there is one). Pure: Tokyo dates in,
+// countdowns out. Published as the `occasions` panel; the board rotates these
+// together with anything Eva pushed in `countdowns` (ASC-25).
 //
 // Decided 2026-11-15. The holiday list is deliberately short — days the family
 // actually looks forward to, not every national holiday.
@@ -62,29 +63,55 @@ export function holidays(y: number): { date: string; label: string; kind: string
 
 const dayNum = (date: string) => Date.parse(`${date}T00:00:00Z`) / 86_400_000;
 
+export interface SchoolEvent { date: string; title: string }
+
 /**
- * The nearest occasion strictly after `today` (on the day itself the tile has
- * already moved on: "0 days" reads as a mistake). A birthday wins a tie.
+ * One countdown per category, each the nearest strictly after `today` (on the
+ * day itself the tile has already moved on: "0 days" reads as a mistake):
+ * birthday, holiday, school event. A category with nothing ahead is left out —
+ * holidays never are, next year's are always ahead. Nearest first; a birthday
+ * wins a tie, then the holiday.
  */
-export function nextOccasion(today: string, birthdays: Birthday[]): Occasion {
+export function comingUp(today: string, birthdays: Birthday[], school: SchoolEvent[] = []): Occasion[] {
   const y = Number(today.slice(0, 4));
-  type Cand = { date: string; rank: number; o: Omit<Occasion, 'days' | 'date'> };
-  const cands: Cand[] = [
-    ...birthdays.map((b) => {
-      // A household birthday is labelled with just the name ("days · Sarina").
-      const name = b.who ? NAMES[b.who] : undefined;
-      const o: Cand['o'] = name
-        ? { label: name, icon: 'cake', kind: 'birthday', who: b.who, headline: `${name}'s birthday` }
-        : { label: b.title, icon: 'cake', kind: 'birthday', headline: b.title };
-      return { date: b.date, rank: 0, o };
-    }),
-    ...[...holidays(y), ...holidays(y + 1)].map((h) => ({
-      date: h.date, rank: 1, o: { label: h.label, icon: h.icon, kind: h.kind, headline: h.label },
-    })),
-  ].filter((c) => c.date > today);
-  cands.sort((a, b) => a.date.localeCompare(b.date) || a.rank - b.rank);
-  const c = cands[0];   // never empty: next year's holidays are always ahead
-  return { ...c.o, days: dayNum(c.date) - dayNum(today), date: c.date };
+  const nearest = <T extends { date: string }>(xs: T[]) =>
+    xs.filter((x) => x.date > today).sort((a, b) => a.date.localeCompare(b.date))[0];
+  const at = (date: string, o: Omit<Occasion, 'days' | 'date'>): Occasion => ({ ...o, days: dayNum(date) - dayNum(today), date });
+
+  const out: Occasion[] = [];
+  const b = nearest(birthdays);
+  if (b) {
+    // A household birthday is labelled with just the name ("days · Sarina").
+    const name = b.who ? NAMES[b.who] : undefined;
+    out.push(at(b.date, name
+      ? { label: name, icon: 'cake', kind: 'birthday', who: b.who, headline: `${name}'s birthday` }
+      : { label: b.title, icon: 'cake', kind: 'birthday', headline: b.title }));
+  }
+  const h = nearest([...holidays(y), ...holidays(y + 1)])!;
+  out.push(at(h.date, { label: h.label, icon: h.icon, kind: h.kind, headline: h.label }));
+  const s = nearest(school);
+  if (s) {
+    const kind = schoolKind(s.title) ?? 'school';
+    out.push(at(s.date, { label: s.title, icon: KIND_ICON[kind], kind, headline: s.title }));
+  }
+  // Stable sort: equal dates keep birthday → holiday → school.
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+const KIND_ICON: Record<string, string> = { sports: 'medal', recital: 'music', ceremony: 'cap', school: 'bag' };
+
+// Which calendar events are school events, and which countdown kind each gets
+// (CLAUDE.md "Countdown kinds"). Titles are mostly Japanese. Only one-off events
+// count (the caller drops recurring ones): a weekly class isn't something to
+// count down to.
+const SCHOOL: [RegExp, string][] = [
+  [/運動会|体育祭|sports ?day|field ?day/i, 'sports'],
+  [/発表会|音楽会|学芸会|recital/i, 'recital'],
+  [/入学式|卒業式|入園式|卒園式|graduation/i, 'ceremony'],
+  [/始業式|終業式|修了式|授業参観|参観日?|遠足|修学旅行|林間学校|臨海学校|保護者会|個人面談|三者面談|学校|field ?trip|parent.?teacher|\bschool\b/i, 'school'],
+];
+export function schoolKind(title: string): string | undefined {
+  return SCHOOL.find(([re]) => re.test(title))?.[1];
 }
 
 const NAMES: Record<string, string> = { mariko: 'Mariko', sarina: 'Sarina', nozomi: 'Nozomi', michael: 'Michael' };

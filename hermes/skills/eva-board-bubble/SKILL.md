@@ -13,7 +13,8 @@ thing** in that bubble, a few times a day.
 
 The rest of the board already shows the facts: the clock, the weather numbers,
 who has what today and tomorrow, the school-run countdown, chores, bath order,
-and a countdown to the next big event. The bubble is not for repeating those.
+and a countdown tile that rotates through the next birthday, holiday and school
+event. The bubble is not for repeating those.
 It is you, dropping by: the human angle on the day, the thing that helps, or
 the thing that makes someone smile.
 
@@ -37,7 +38,7 @@ request yourself: an apostrophe in "Sarina's" breaks a hand-written curl.
 ## Each time
 
 1. **`read`** the board. Note the time, today's and tomorrow's events, the
-   weather, the countdown, and the bubble that is up now.
+   weather, the countdowns, and the bubble that is up now.
 2. **`recent`** to see what you have said lately. Don't repeat a topic from
    the last day, and vary the kind of message (see "What to say").
 3. **Look further** where it helps: the family calendar (you can read it), your

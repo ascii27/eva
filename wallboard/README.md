@@ -95,12 +95,14 @@ for Ikejiri, Setagaya every 15 min (`server/weather.ts`), so a push to it is
 overwritten on the next poll. `WEATHER_LAT`/`WEATHER_LON` move it, `WEATHER=off`
 stops polling.
 
-`occasion` is the server's too: the countdown tile's default when nothing has
-pushed `countdowns` — the nearest birthday in the calendar or major JP/US holiday
-(`server/occasions.ts`). A pushed `countdowns` panel takes over the tile.
-Each countdown is `{id, label, date, kind?, headline?, who?}` (`date` is
-`YYYY-MM-DD`; a bare `days` number also works). The tile shows the nearest one
-and drops past ones. `kind` picks the tile's icon, colour and tap celebration —
+`occasions` is the server's too: the nearest birthday in the calendar, the
+nearest major JP/US holiday and the nearest school event in the calendar, if
+any (`server/occasions.ts`). The countdown tile ("Coming up") rotates through
+those **and** whatever Eva pushed in `countdowns`, nearest first, one every 20 s;
+a pushed countdown on the same day as a default, with the same `kind` or
+`label`, replaces it. An empty `countdowns` push just means Eva has nothing to
+add. Each countdown is `{id, label, date, kind?, headline?, who?}` (`date` is
+`YYYY-MM-DD`; a bare `days` number also works). Past ones are dropped. `kind` picks the tile's icon, colour and tap celebration —
 one of `holiday`, `visit`, `birthday`, `trip`, `move`, `anniversary`, `recital`,
 `sports`, `ceremony`, `school`, `new-year`, `setsubun`, `hinamatsuri`, `hanami`,
 `kodomo`, `tanabata`, `obon`, `tsukimi`, `valentine`, `easter`, `parents-day`,

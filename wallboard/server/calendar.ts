@@ -1,7 +1,7 @@
 // The family's day: an iCloud published calendar (webcal) merged with the fixed
 // routine (routine.ts), published as the panels the board renders —
 // `schedule` (today) and `tomorrow` as event lists (CLAUDE.md "Data"),
-// `leave-by`, `bedtime` and `occasion`. The server owns all five; a hermes push to any is
+// `leave-by`, `bedtime` and `occasions`. The server owns all five; a hermes push to any is
 // overwritten.
 //
 // The URL is a capability: anyone holding it can read the calendar. It lives
@@ -14,7 +14,7 @@
 
 import ICAL from 'ical.js';
 import { bedtimeFor, leaveByFor, type LeaveBy } from './routine.ts';
-import { isBirthday, nextOccasion, type Occasion } from './occasions.ts';
+import { comingUp, isBirthday, schoolKind, type Occasion } from './occasions.ts';
 
 /** One event, the shape Eva pushes too: `{ id, who, start, end?, title, icon, bring? }`. */
 export interface Entry {
@@ -37,8 +37,8 @@ export interface CalendarPanels {
   'leave-by': LeaveBy | null;
   /** Same shape as leave-by; the board counts down to it in the 30 min before. */
   bedtime: LeaveBy;
-  /** The countdown tile's default: next birthday or major holiday (occasions.ts). */
-  occasion: Occasion;
+  /** The countdown tile's rotation: next birthday, holiday, school event (occasions.ts). */
+  occasions: Occasion[];
 }
 
 const TZ = 'Asia/Tokyo';
@@ -98,7 +98,7 @@ function subOf(location: string | null): string {
   return first.length > 40 ? `${first.slice(0, 39)}…` : first;
 }
 
-interface Occurrence { start: number; end: number; allDay: boolean; startDate: string; endDate: string; title: string; location: string | null }
+interface Occurrence { start: number; end: number; allDay: boolean; startDate: string; endDate: string; title: string; location: string | null; recurring: boolean }
 
 /** Every occurrence overlapping [from, to), recurring events expanded. */
 function occurrences(ics: string, from: number, to: number): Occurrence[] {
@@ -118,7 +118,7 @@ function occurrences(ics: string, from: number, to: number): Occurrence[] {
   }
 
   const out: Occurrence[] = [];
-  const push = (item: ICAL.Event, s: ICAL.Time, e: ICAL.Time | null) => {
+  const push = (item: ICAL.Event, s: ICAL.Time, e: ICAL.Time | null, recurring = false) => {
     if (String(item.component.getFirstPropertyValue('status') ?? '').toUpperCase() === 'CANCELLED') return;
     const allDay = s.isDate;
     const start = allDay ? midnight(s.toString()) : toMs(s);
@@ -134,6 +134,7 @@ function occurrences(ics: string, from: number, to: number): Occurrence[] {
       endDate: allDay ? tokyoDate(new Date(end - 1)) : tokyoDate(new Date(start)),
       title: (item.summary ?? '').trim() || '(no title)',
       location: item.location ?? null,
+      recurring,
     });
   };
 
@@ -144,7 +145,7 @@ function occurrences(ics: string, from: number, to: number): Occurrence[] {
     for (let n = 0, t = it.next(); t && n < 10_000; n++, t = it.next()) {
       if (toMs(t) >= to) break;
       const d = ev.getOccurrenceDetails(t);
-      push(d.item, d.startDate, d.endDate);
+      push(d.item, d.startDate, d.endDate, true);
     }
   }
   return out;
@@ -196,12 +197,15 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
     return { date: o.startDate, title: o.title, who: w.length === 1 ? w[0] : undefined };
   });
 
+  const school = occ.filter((o) => !o.recurring && !isBirthday(o.title) && schoolKind(o.title))
+    .map((o) => ({ date: o.startDate, title: o.title }));
+
   return {
     schedule,
     tomorrow: [...tAllDay, ...tTimed],
     'leave-by': leaveByFor(today),
     bedtime: { label: 'Bedtime', who: bed.who, at: bed.at },
-    occasion: nextOccasion(today, birthdays),
+    occasions: comingUp(today, birthdays, school),
   };
 }
 
@@ -221,7 +225,7 @@ export function startCalendar(url: string | undefined, fetchMs: number, publish:
     if (url && ics == null) return;
     try {
       const p = calendarPanels(ics, new Date());
-      for (const name of ['schedule', 'tomorrow', 'leave-by', 'bedtime', 'occasion'] as const) {
+      for (const name of ['schedule', 'tomorrow', 'leave-by', 'bedtime', 'occasions'] as const) {
         const key = JSON.stringify(p[name]);
         if (key !== last[name]) { last[name] = key; publish(name, p[name]); }
       }
