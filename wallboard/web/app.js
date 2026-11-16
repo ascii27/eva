@@ -885,6 +885,8 @@ function payRow(g) {
   const can = owe > 0;
   let color, a;
   if (can) { color = 'var(--warm)'; a = `${yen(owe)} to pay`; }
+  // Paid more than earned (Eva recorded extra): show the credit, never "Paid up".
+  else if (owe < 0) { color = 'var(--ink-muted)'; a = `${yen(-owe)} credit`; }
   else if (last != null) { color = 'var(--success)'; a = 'Paid up'; }
   else { color = 'var(--ink-muted)'; a = 'Nothing owed'; }
   const b = last != null ? `Last paid ${paidDate(last)}` : 'Not paid yet';
@@ -1100,13 +1102,21 @@ function changeLocal(mutate, toast) {
   showToast({ ...toast, undo: () => { local = prev; saveLocal(); renderAll(); } });
 }
 
+// One Mark paid in flight per person: a second tap while the first is pending
+// does nothing. The server also refuses (409) any amount that isn't what is owed.
+const paying = new Set();
 async function pay(who) {
   const amount = owedYen(who);
-  if (amount <= 0) return;
+  if (amount <= 0 || paying.has(who)) return;
+  paying.add(who);
   try {
     const r = await fetch(`/api/pay/${encodeURIComponent(who)}`, {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ amount }),
     });
+    if (r.status === 409) {
+      showToast({ ok: false, title: 'Balance changed', sub: 'Nothing was recorded · check the new amount', undo: null });
+      return;
+    }
     if (!r.ok) throw new Error(String(r.status));
     const { id } = await r.json();
     showToast({
@@ -1115,6 +1125,8 @@ async function pay(who) {
     });
   } catch {
     showToast({ ok: false, title: 'Couldn’t save that', sub: 'Check the connection and tap again', undo: null });
+  } finally {
+    paying.delete(who);
   }
 }
 
@@ -1123,7 +1135,8 @@ async function cancelPayment(id) {
     const r = await fetch(`/api/cancel/${encodeURIComponent(id)}`, { method: 'POST' });
     if (!r.ok) throw new Error(String(r.status));
   } catch {
-    showToast({ ok: false, title: 'Couldn’t save that', sub: 'Check the connection and tap again', undo: null });
+    // No "tap again": the undo button is gone with the toast, so there is nothing to tap.
+    showToast({ ok: false, title: 'Couldn’t undo the payment', sub: 'The payment still stands · check the connection', undo: null });
   }
 }
 

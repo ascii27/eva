@@ -276,6 +276,8 @@ class Component extends DCLogic {
       const paySub = lastPaid ? 'Last paid ' + lastPaid : 'Not paid yet';
       pay[who] = owedYen > 0
         ? { canPay: true, color: 'var(--warm)', text: '¥' + owedYen.toLocaleString('en-US') + ' to pay', sub: paySub }
+        : owedYen < 0
+          ? { canPay: false, color: 'var(--ink-muted)', text: '¥' + (-owedYen).toLocaleString('en-US') + ' credit', sub: paySub }
         : (lastPaid
           ? { canPay: false, color: 'var(--success)', text: 'Paid up', sub: paySub }
           : { canPay: false, color: 'var(--ink-muted)', text: 'Nothing owed', sub: paySub });
