@@ -219,13 +219,13 @@ class Component extends DCLogic {
     const st = this.state || {};
     return {
       done: st.done || { ma: [true, true, true, false], sa: [true, true, true, true] },
-      owed: st.owed || { ma: 1, sa: 0 },
-      paidToday: st.paidToday || { ma: false, sa: false },
+      owed: st.owed || { ma: 300, sa: 0 },
+      lastPaid: st.lastPaid || { ma: 'Mon 14 Nov', sa: null },
       bathTonight: st.bathTonight || 'sa',
       bathHistory: ['sa', 'ma', 'sa', 'sa', 'ma']
     };
   }
-  snap() { const s = this.s(); return { done: s.done, owed: s.owed, paidToday: s.paidToday, bathTonight: s.bathTonight }; }
+  snap() { const s = this.s(); return { done: s.done, owed: s.owed, lastPaid: s.lastPaid, bathTonight: s.bathTonight }; }
   componentWillUnmount() { clearTimeout(this._t); }
   show(toast, patch, fresh) {
     clearTimeout(this._t);
@@ -245,10 +245,10 @@ class Component extends DCLogic {
   }
   pay(who) {
     const s = this.s(); const k = this.kids()[who];
-    const days = this.owedDays(s, who);
+    const amount = s.owed[who];
     const owed = Object.assign({}, s.owed); owed[who] = 0;
-    const paidToday = Object.assign({}, s.paidToday); paidToday[who] = s.done[who].every(Boolean);
-    this.show({ ok: true, text: 'Paid ' + k.name, sub: days + (days === 1 ? ' day' : ' days') + ' of chores · Eva noted it' }, { owed: owed, paidToday: paidToday });
+    const lastPaid = Object.assign({}, s.lastPaid); lastPaid[who] = 'Mon 16 Nov';
+    this.show({ ok: true, text: 'Paid ' + k.name + ' ¥' + amount.toLocaleString('en-US'), sub: 'Eva will note it' }, { owed: owed, lastPaid: lastPaid });
   }
   swap() {
     const s = this.s(); const next = s.bathTonight === 'ma' ? 'sa' : 'ma';
@@ -259,7 +259,6 @@ class Component extends DCLogic {
     clearTimeout(this._t);
     this.setState(Object.assign({}, t.prev, { toast: null, fresh: null }));
   }
-  owedDays(s, who) { return s.owed[who] + (s.done[who].every(Boolean) && !s.paidToday[who] ? 1 : 0); }
   renderVals() {
     const s = this.s(); const kids = this.kids(); const fresh = this.state && this.state.fresh;
     const c = {}, p = {}, pay = {};
@@ -273,12 +272,13 @@ class Component extends DCLogic {
         const key = who + '_' + i;
         c[key] = { cls: d ? (fresh === key ? 'is-done is-fresh' : 'is-done') : '', pressed: d ? 'true' : 'false', tap: () => this.tap(who, i) };
       });
-      const days = this.owedDays(s, who);
-      pay[who] = days > 0
-        ? { canPay: true, color: 'var(--warm)', text: days + (days === 1 ? ' day' : ' days') + ' to pay', sub: s.owed[who] > 0 ? (isAll ? 'Includes today' : 'Today not finished yet') : 'Earned today' }
-        : (s.paidToday[who]
-          ? { canPay: false, color: 'var(--success)', text: 'Paid up', sub: 'Today included' }
-          : { canPay: false, color: 'var(--ink-muted)', text: 'Nothing owed', sub: 'Finish all ' + list.length + ' to earn today' });
+      const owedYen = s.owed[who]; const lastPaid = s.lastPaid[who];
+      const paySub = lastPaid ? 'Last paid ' + lastPaid : 'Not paid yet';
+      pay[who] = owedYen > 0
+        ? { canPay: true, color: 'var(--warm)', text: '¥' + owedYen.toLocaleString('en-US') + ' to pay', sub: paySub }
+        : (lastPaid
+          ? { canPay: false, color: 'var(--success)', text: 'Paid up', sub: paySub }
+          : { canPay: false, color: 'var(--ink-muted)', text: 'Nothing owed', sub: paySub });
       pay[who].tap = () => this.pay(who);
     });
     const first = kids[s.bathTonight];

@@ -230,7 +230,7 @@ References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dar
 ## Household and behaviour (don't regress)
 - Only Mariko (11) and Sarina (8) have chores. Michael and Nozomi appear in the schedule only.
 - Every chore tap answers instantly, with an 8 s Undo toast. Single taps only: no long-press, swipe or text entry.
-- Pay: "N days to pay" + Mark paid (amber) → "Paid up". Bath order alternates nightly; Swap overrides tonight and counts as history.
+- Pay: "¥N to pay" (¥100 per chore, from the board's log) + Mark paid (amber) → "Paid up"; second line "Last paid <date>". Bath order alternates nightly; Swap overrides tonight and counts as history.
 - Photos: landscape fills the screen; a portrait goes in the left half with the right half plain. **One photo at a time — never pair portraits.**
 - Leave-for-school is real now (`server/routine.ts`): 7:55 Mon–Fri, shown only in the 45 min before (DESIGN.md). Never in the evening, never at weekends.
 - Bedtime 20:30 Sun–Thu, 21:00 Fri–Sat: a schedule row plus the countdown card in the 30 min before; night mode stays 21:30.

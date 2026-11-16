@@ -80,17 +80,15 @@ let server = null;               // BoardState from the server
 const pending = new Map();       // chore id → done, sent but not yet confirmed
 const DUMMY = dummy();
 
-// Pay and bath order live only in this browser for now (dummy, no server
-// model yet). Persisted so a reload doesn't reset the experience.
+// Bath order lives only in this browser for now (dummy, no server model yet).
+// Persisted so a reload doesn't reset the experience. Pay is the server's.
 let local = loadLocal();
 function loadLocal() {
   try {
     const s = JSON.parse(localStorage.getItem('wallboard.local') ?? 'null');
-    if (s && s.owed && s.bath) return s;
+    if (s && s.bath) return s;
   } catch {}
   return {
-    owed: { mariko: 1, sarina: 0 },
-    paidToday: { mariko: false, sarina: false },
     bath: { tonight: 'sarina', history: ['sarina', 'mariko', 'sarina', 'sarina', 'mariko'] },
   };
 }
@@ -215,9 +213,14 @@ function schedule() {
   return items.filter((e) => startOf(e) != null).sort((a, b) => startOf(a) - startOf(b));
 }
 
-function owedDays(id) {
-  const g = choreGroups().find((x) => x.id === id);
-  return (local.owed[id] ?? 0) + (g?.all && !local.paidToday[id] ? 1 : 0);
+function owedYen(id) { return server?.balances?.[id]?.owed ?? 0; }
+const yen = (n) => `¥${n.toLocaleString('en-US')}`;
+/** "Mon 14 Nov", the Tokyo date of a timestamp, built by hand so locale order can't change it. */
+function paidDate(ms) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Tokyo', weekday: 'short', day: 'numeric', month: 'short',
+  }).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return `${p.weekday} ${p.day} ${p.month}`;
 }
 const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
 
@@ -877,16 +880,14 @@ function renderChores() {
 }
 
 function payRow(g) {
-  const owe = owedDays(g.id);
-  let color, a, b, can = false;
-  if (owe > 0) {
-    color = 'var(--warm)'; a = `${days(owe)} to pay`; can = true;
-    b = (local.owed[g.id] ?? 0) > 0 ? (g.all ? 'Includes today' : 'Today not finished yet') : 'Earned today';
-  } else if (local.paidToday[g.id]) {
-    color = 'var(--success)'; a = 'Paid up'; b = 'Today included';
-  } else {
-    color = 'var(--ink-muted)'; a = 'Nothing owed'; b = `Finish all ${g.items.length} to earn today`;
-  }
+  const bal = server?.balances?.[g.id];
+  const owe = bal?.owed ?? 0, last = bal?.lastPaidAt ?? null;
+  const can = owe > 0;
+  let color, a;
+  if (can) { color = 'var(--warm)'; a = `${yen(owe)} to pay`; }
+  else if (last != null) { color = 'var(--success)'; a = 'Paid up'; }
+  else { color = 'var(--ink-muted)'; a = 'Nothing owed'; }
+  const b = last != null ? `Last paid ${paidDate(last)}` : 'Not paid yet';
   return `<span style="display:flex;color:${color}">${icon('pay', 30)}</span>
     <div class="txt"><span class="a" style="color:${color}">${a}</span><span class="b">${b}</span></div>
     ${can ? `<button type="button" class="pill-btn pill-warm" data-action="pay" data-who="${esc(g.id)}">Mark paid</button>` : ''}`;
@@ -1099,13 +1100,31 @@ function changeLocal(mutate, toast) {
   showToast({ ...toast, undo: () => { local = prev; saveLocal(); renderAll(); } });
 }
 
-function pay(who) {
-  const n = owedDays(who);
-  const g = choreGroups().find((x) => x.id === who);
-  changeLocal(() => {
-    local.owed[who] = 0;
-    local.paidToday[who] = !!g?.all;
-  }, { ok: true, title: `Paid ${person(who).name}`, sub: `${days(n)} of chores · Eva noted it` });
+async function pay(who) {
+  const amount = owedYen(who);
+  if (amount <= 0) return;
+  try {
+    const r = await fetch(`/api/pay/${encodeURIComponent(who)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ amount }),
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    const { id } = await r.json();
+    showToast({
+      ok: true, title: `Paid ${person(who).name} ${yen(amount)}`, sub: 'Eva will note it',
+      undo: () => cancelPayment(id),
+    });
+  } catch {
+    showToast({ ok: false, title: 'Couldn’t save that', sub: 'Check the connection and tap again', undo: null });
+  }
+}
+
+async function cancelPayment(id) {
+  try {
+    const r = await fetch(`/api/cancel/${encodeURIComponent(id)}`, { method: 'POST' });
+    if (!r.ok) throw new Error(String(r.status));
+  } catch {
+    showToast({ ok: false, title: 'Couldn’t save that', sub: 'Check the connection and tap again', undo: null });
+  }
 }
 
 function swapBath() {
