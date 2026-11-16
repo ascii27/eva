@@ -93,7 +93,23 @@ const EVENTS = {
   snow: '<path d="M12 2.5v19M3.8 7.2l16.4 9.6M20.2 7.2L3.8 16.8M9.5 4l2.5 1.7L14.5 4M9.5 20l2.5-1.7 2.5 1.7"/>',
 };
 
-const ALL = { ...HAVEN, ...GLYPHS, ...CHORES, ...SCHEDULE, ...EVENTS };
+// Weather (design/WeatherIcons.dc.html, CLAUDE.md "Weather: top-right card"),
+// copied verbatim, drawn at 1.9 stroke. Prefixed `wx-` because `sun` and `snow`
+// already name other art (Haven's sun, the winter countdown's snowflake).
+const WEATHER = {
+  'wx-sun': '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.3M12 19.2v2.3M2.5 12h2.3M19.2 12h2.3M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>',
+  'wx-partly': '<path d="M9 3v1.6M3.5 8.5h1.6M5.1 4.6l1.1 1.1M12.9 4.6l-1.1 1.1M6.2 11a3.4 3.4 0 1 1 6.2-2.6"/><path d="M8.5 20h9a3.8 3.8 0 0 0 .4-7.6 5.2 5.2 0 0 0-10 1.4A3.1 3.1 0 0 0 8.5 20z"/>',
+  'wx-cloudy': '<path d="M6.5 19h11a4.5 4.5 0 0 0 .6-9 6 6 0 0 0-11.6 1.6A3.8 3.8 0 0 0 6.5 19z"/>',
+  'wx-rain': '<path d="M6.5 14.5h11a4.5 4.5 0 0 0 .6-9 6 6 0 0 0-11.6 1.6A3.8 3.8 0 0 0 6.5 14.5z"/><path d="M8.5 17.5l-1 3M12.5 17.5l-1 3M16.5 17.5l-1 3"/>',
+  'wx-storm': '<path d="M6.5 14.5h11a4.5 4.5 0 0 0 .6-9 6 6 0 0 0-11.6 1.6A3.8 3.8 0 0 0 6.5 14.5z"/><path d="M12.8 15.5l-2.3 3.5h3.2l-2.2 3.5"/>',
+  'wx-wind': '<path d="M3 8.5h11a3 3 0 1 0-3-3M3 12.5h15.5a3 3 0 1 1-3 3M3 16.5h7"/>',
+  'wx-snow': '<path d="M6.5 14.5h11a4.5 4.5 0 0 0 .6-9 6 6 0 0 0-11.6 1.6A3.8 3.8 0 0 0 6.5 14.5z"/><path d="M8 17v3M6.5 18.5h3M12 18.5v3M10.5 20h3M16 17v3M14.5 18.5h3"/>',
+  'wx-fog': '<path d="M6.5 12h11a4 4 0 0 0 .5-8 5.5 5.5 0 0 0-10.6 1.4A3.3 3.3 0 0 0 6.5 12z"/><path d="M3.5 15.5h17M5.5 19h13"/>',
+  'wx-night': '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  'wx-night-cloud': '<path d="M13.5 3.5a4.8 4.8 0 0 0 6.6 6.4A5 5 0 0 1 13.5 3.5z"/><path d="M6.5 20h10a3.8 3.8 0 0 0 .4-7.6 5.2 5.2 0 0 0-10 1.4A3.1 3.1 0 0 0 6.5 20z"/>',
+};
+
+const ALL = { ...HAVEN, ...GLYPHS, ...CHORES, ...SCHEDULE, ...EVENTS, ...WEATHER };
 
 /** An icon's inner SVG, for callers that draw their own <svg> (the countdown tile). */
 export const glyph = (name) => ALL[name] ?? GLYPHS.chores;
@@ -106,13 +122,22 @@ export function icon(name, size = 24, stroke = 1.75) {
 export const star = (size) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="currentColor" role="img" aria-label="All done"><path d="M12 3l2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8 6.6 19.7l1.1-6.1-4.5-4.2 6.1-.8z"/></svg>`;
 
-/** Weather condition → [icon, colour token]. */
+// Condition key (server/weather.ts `condOf`) → tint. Amber for sun, grey for
+// cloud and fog, blue for rain and snow, violet for storms and night, teal for wind.
+const AMBER = ['var(--warm)', 'var(--warm-soft)'];
+const GREY = ['var(--ink-muted)', 'var(--surface-200)'];
+const BLUE = ['var(--cool)', 'var(--cool-soft)'];
+const VIOLET = ['var(--wx-violet)', 'var(--wx-violet-soft)'];
+const TEAL = ['var(--accent)', 'var(--accent-soft)'];
+const WX_TINT = {
+  sun: AMBER, partly: AMBER, cloudy: GREY, fog: GREY, rain: BLUE, snow: BLUE,
+  storm: VIOLET, wind: TEAL, night: VIOLET, 'night-cloud': VIOLET,
+};
+// The panel's older keys, in case a stale panel or a hermes push still sends them.
+const WX_ALIAS = { cloud: 'cloudy', 'clear-night': 'night' };
+
+/** Weather condition → [icon name, colour, tint background]. Unknown is cloudy. */
 export function weatherIcon(cond) {
-  switch (cond) {
-    case 'sun': return ['sun', 'var(--warm)'];
-    case 'cloud': return ['cloud', 'var(--ink-muted)'];
-    case 'rain': return ['drop', 'var(--cool)'];
-    case 'clear-night': return ['moon', 'var(--ink-muted)'];
-    default: return ['cloud', 'var(--ink-muted)'];
-  }
+  const k = WX_ALIAS[cond] ?? (Object.hasOwn(WX_TINT, cond) ? cond : 'cloudy');
+  return [`wx-${k}`, ...WX_TINT[k]];
 }

@@ -15,15 +15,17 @@ export function dummy() {
 
     weather: {
       now: { cond: 'sun', temp: 14, label: 'Sunny' },
-      summary: 'High 19° · rain from 18:00',
+      high: 19,
+      low: 11,
+      ahead: 'Sunny now · rain from 18:00',
       hourly: [
         { time: '10:00', cond: 'sun', temp: 16 },
-        { time: '13:00', cond: 'sun', temp: 19 },
-        { time: '16:00', cond: 'cloud', temp: 17 },
+        { time: '13:00', cond: 'partly', temp: 19 },
+        { time: '16:00', cond: 'cloudy', temp: 17 },
         { time: '19:00', cond: 'rain', temp: 13 },
         { time: '22:00', cond: 'rain', temp: 11 },
       ],
-      night: { cond: 'clear-night', text: '9° clear · rain clears by morning' },
+      night: { cond: 'night', text: '9° clear · rain clears by morning' },
     },
 
     'leave-by': { label: 'Leave for school', who: ['mariko', 'sarina'], at: '7:55' },

@@ -224,15 +224,6 @@ const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
 // ---- render: ambient -----------------------------------------------------------
 
 function renderAmbient() {
-  const w = content('weather');
-  if (w?.now) {
-    const [ic, col] = weatherIcon(w.now.cond);
-    $('amb-weather').innerHTML = `
-      <div style="display:flex;color:${col}">${icon(ic, 72)}</div>
-      <span class="amb-temp">${esc(w.now.temp)}°</span>
-      <div class="amb-wtext"><b>${esc(w.now.label)}</b><span>${esc(w.summary ?? '')}</span></div>`;
-  } else $('amb-weather').innerHTML = '';
-
   fitRightColumn();
 
   // Mid-celebration, leave the strip alone: a re-render would restart the burst.
@@ -282,7 +273,7 @@ function rainBefore(endMin) {
   const t = minutesOfDay(now());
   return (content('weather')?.hourly ?? []).some((h) => {
     const m = parseHM(h.time);
-    return m != null && m > t - 60 && m < endMin && h.cond === 'rain';
+    return m != null && m > t - 60 && m < endMin && (h.cond === 'rain' || h.cond === 'storm');
   });
 }
 
@@ -334,6 +325,29 @@ function dayOver() {
 
 const rcHead = (ic, label, extra = '') =>
   `<div class="rc-eyebrow">${icon(ic, 30, ic === 'clock' || ic === 'moon' ? 1.75 : 1.9)}<span>${esc(label)}</span>${extra}</div>`;
+
+/**
+ * Weather, the right column's first card (CLAUDE.md "Weather: top-right card"):
+ * condition in a tinted circle, the temperature now, today's high ↑ and low ↓,
+ * and one line of what's coming. Never trimmed by the space budget.
+ */
+function weatherCard() {
+  const w = content('weather');
+  if (!w?.now) return '';
+  const [ic, fg, bg] = weatherIcon(w.now.cond);
+  const arrow = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+  const hl = [
+    w.high != null ? `<span class="rc-wx-up">${arrow('M12 19V5M6 11l6-6 6 6')}<b>${esc(w.high)}°</b></span>` : '',
+    w.low != null ? `<span class="rc-wx-down">${arrow('M12 5v14M6 13l6 6 6-6')}<b>${esc(w.low)}°</b></span>` : '',
+  ].join('');
+  // `summary` is the panel's older one-liner ("High 19° · rain from 18:00").
+  const ahead = w.ahead ?? w.summary ?? '';
+  const said = [w.now.label, `${w.now.temp}°`, w.high != null && `high ${w.high}°`, w.low != null && `low ${w.low}°`].filter(Boolean).join(', ');
+  return `<div class="rc-wx" role="group" aria-label="${esc(`${said}. ${ahead}`)}">
+    <span class="rc-wx-disc" style="background:${bg};color:${fg}">${icon(ic, 64, 1.9)}</span>
+    <span class="rc-wx-temp">${esc(w.now.temp)}°</span>
+    <div class="rc-wx-text">${hl ? `<div class="rc-wx-hl">${hl}</div>` : ''}<span class="rc-wx-ahead">${esc(ahead)}</span></div></div>`;
+}
 
 const bringPills = (list) => list.map((b) => `<span class="rc-bp">${icon(b.icon ?? 'bag', 26, 1.9)}${esc(b.label)}</span>`).join('');
 
@@ -416,7 +430,7 @@ function listRows(list, t, nextIds, level) {
   const shared = rows.some((r) => r.who.length > 1);
   const face = (r) => {
     const avs = r.who.length
-      ? r.who.map((id, i) => `<span class="rc-ov"${i ? ' style="margin-left:-14px"' : ''}>${avatar(id, 56, 20)}</span>`).join('')
+      ? r.who.map((id, i) => `<span class="rc-ov"${i ? ' style="margin-left:-14px"' : ''}>${avatar(id, 48, 20)}</span>`).join('')
       : `<span class="avatar rc-home" aria-label="Everyone">${icon('home', 30, 1.9)}</span>`;
     return shared ? `<span class="rc-slot">${avs}</span>` : avs;
   };
@@ -441,7 +455,7 @@ function rightColumn(level = 0) {
   const up = nextUp();
   const nextIds = up?.ids ?? new Set();
   const evening = dayOver();
-  const out = [];
+  const out = [weatherCard()];
   if (up) {
     const avs = up.who.length ? `<span class="rc-avs">${up.who.map((id) => avatar(id, 44, 16)).join('')}</span>` : '';
     out.push(`<div class="rc-card rc-next">${rcHead(up.icon, up.label, avs)}

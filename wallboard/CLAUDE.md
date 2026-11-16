@@ -17,6 +17,7 @@ Guidance for any Claude session working in `wallboard/`. Read `README.md` (how i
 | Calm right column through the day | `design/DayFlow.dc.html` (rules in "Calm view: right column changes through the day") |
 | Countdown tile celebrations | `design/EventTiles.dc.html` |
 | Eva bubble (character, placement, states) | `design/EvaCharacter`, `EvaOptA`, `EvaDayPortrait`, `EvaEvening`, `EvaNight`, `EvaActive`, `EvaStates` (`.dc.html`) |
+| Weather card + icons | `design/WeatherIcons.dc.html` |
 | **Reference only — do not port** | `LightPaper` (v1, too bright on the Echo), `PaperV2Cards`, `PaperPortraitPair` (pairing dropped), `LightDay`, `LightPastel`, `LightPhoto` |
 
 ## Day theme ("Morning paper v2 · sand")
@@ -65,7 +66,7 @@ Purpose: **who has what today, so the family can prepare.** Reference: `design/D
 
 **Space budget — the right column must never run under the bottom strip** (seen on the Echo 2026-11-15: Bedtime + Tonight + Tomorrow overflowed)
 - The calm stage is a fixed layout: top area above the strip, then the 168 px strip. Build it as a grid with the strip in its own row (`grid-template-rows: minmax(0, 1fr) 168px`) and give the right column `min-height: 0; overflow: hidden`, so content can only be trimmed, never overlap. At 1920×1080 the right column has ~740 px of height.
-- **At most 2 cards** in the right column: the "Next up" card (if any) + one list card (Today, or Tomorrow after the switch).
+- **Weather card first, then at most 2 cards** in the right column: the "Next up" card (if any) + one list card (Today, or Tomorrow after the switch).
 - **No separate "Tonight" card.** Bath order goes inside the evening "Next up" card (e.g. Bedtime) as a row: tub icon, "Bath first", avatar, name. If there's no Next-up card, put that row at the top of the Tomorrow card.
 - **Compact list rules**, applied in this order until it fits:
   1. Merge people who share the same event (same title and time) into one row with overlapping avatars (e.g. Mariko + Sarina, 7:55 School).
@@ -167,6 +168,29 @@ Reference: `design/EventIcons.dc.html` (icon artwork, same line style: 24 grid, 
   - **Rise:** balloons, hearts, music notes, lanterns (soft amber circles), from the bottom edge across the screen.
   - **Fall:** snow, leaves (amber/orange leaf shapes), petals (pink), stars (small violet/amber), beans (small brown dots).
 - Add the new icons to `web/icons.js`; keep keys equal to the Icon column.
+
+## Weather: top-right card (2026-11-16)
+**Decided:** the full-width weather card at the top of the right column, as shown in `design/EvaOptA.dc.html`, with the compacted DayFlow cards below it. The side-by-side (weather next to "Next up") variant is not being pursued for now.
+References: `design/WeatherIcons.dc.html` (icons, day + dark, example cards), `design/EvaOptA.dc.html` / `EvaDayPortrait` / `EvaEvening` (in place).
+- **Weather leaves the photo.** Remove the haloed weather row under the clock; the left side is now date, clock, Eva's bubble.
+- **New first item in the right column**: a solid card (same style as the other cards), 128 px tall, full column width:
+  - A 100 px tinted circle with the condition icon (64 px).
+  - Temperature now at 96 px (display font).
+  - High ↑ and low ↓ at 38 px (amber up arrow, blue down arrow, numbers in ink).
+  - One line, 24 px muted, of what's coming ("Sunny now · rain from 15:00", "Rain until 22:00", "Gusts up to 40 km/h").
+- **Conditions → icon key → tint** (add to `web/icons.js`):
+  - `sun` and `partly`: amber.
+  - `cloudy` and `fog`: grey (`--surface-200` with `--ink-muted`).
+  - `rain` and `snow`: blue.
+  - `storm`: violet.
+  - `wind` (breezy): teal.
+  - `night` and `night-cloud`: violet. Use these instead of sun icons after sunset.
+- Map Open-Meteo weather codes to these keys in `server/weather.ts` (clear 0 → sun/night, 1–2 → partly/night-cloud, 3 → cloudy, 45/48 → fog, 51–67 and 80–82 → rain, 71–77 and 85–86 → snow, 95–99 → storm). Use `wind` when gusts ≥ 35 km/h and nothing wetter is happening.
+- **Space budget update.** The right column is now: weather (128) + "Next up" + Today/Tomorrow, still ≤ ~740 px and never under the strip. To make it fit, the DayFlow cards are compacted:
+  - Next-up countdown at 80 px (was 104); card padding 20 × 28.
+  - Today/Tomorrow rows: 48 px avatars, 48 px pills, 24 px text, row gap 10.
+  - Check: busiest morning (weather + leave-for-school + 4 people) and busiest evening (weather + bedtime with bath + tomorrow with pack row) both fit. If not, the existing trim rules apply.
+- The active view keeps its hourly strip in the header (unchanged).
 
 ## Eva bubble (2026-11-16) — chosen: option A
 References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dark), `design/EvaOptA.dc.html` (day, landscape), `design/EvaDayPortrait.dc.html` (day, single portrait), `design/EvaEvening.dc.html` (evening), `design/EvaNight.dc.html` (night), `design/EvaActive.dc.html` (active view), `design/EvaStates.dc.html` (states + motion). `EvaOptB` / `EvaOptC` are rejected options: reference only.
