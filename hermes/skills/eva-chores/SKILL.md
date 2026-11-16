@@ -53,7 +53,7 @@ python3 eva_chores.py activity --log-id <Board log id> --after <Last seq>   # ne
 python3 eva_chores.py activity                                             # first run only: no cursor yet
 echo '<JSON array of Chores rows>' | python3 eva_chores.py push-chores      # replace the board's chore list
 python3 eva_chores.py balances                                             # what each girl is owed
-python3 eva_chores.py pay sarina 500 --note "Michael: paid Sarina 500 yen"  # record a payment
+python3 eva_chores.py pay sarina 500 --note "Michael: paid Sarina 500 yen" --id ev-pay-71b0d4e8a2c6   # record a payment
 python3 eva_chores.py new-chore-id "Feed the fish" --taken chore-dishes chore-bed   # a Board id for a new chore
 ```
 
@@ -167,13 +167,17 @@ only thing that can lose money records. When it is set, `rows` is empty and
    moves as the girls keep ticking; that is the same alarm, not a new one.)
 3. **If it is already recorded, do nothing more.** One alarm, one task. Never a
    task every 15 minutes.
-4. **If `Alarm` is empty or holds a different alarm**: write the `alarm` JSON,
-   exactly as printed, into `Alarm`, and now into `Alarm at`. Then create one
+4. **If `Alarm` is empty or holds a different alarm**, first create one
    Todoist task for Michael:
    - title: **Chores ledger: the board lost history — check Notion**
    - priority: p1 (urgent)
    - due: today
    - description: the link to the Settings page, and the alarm JSON.
+5. **Only after the task exists**, write the `alarm` JSON, exactly as printed,
+   into `Alarm`, and now into `Alarm at`. This order matters: a recorded alarm
+   is never announced again, so recording it before the task exists would lose
+   the warning if Todoist failed. If creating the task fails, leave `Alarm`
+   as it was; the next run tries again.
 
 **Never repair it.** Don't reset the cursor, don't copy anyway, don't
 re-create anything on the board. Michael decides what happened and fixes it by
@@ -215,23 +219,27 @@ When a parent tells you they paid a girl, record it on the board, never
 straight into Notion:
 
 ```bash
-python3 eva_chores.py pay sarina 700 --note "Nozomi: gave Sarina her 700 yen"
+python3 eva_chores.py pay sarina 700 --note "Nozomi: gave Sarina her 700 yen" --id ev-pay-3f9a1c7e2b4d
 ```
 
 `WHO` is lowercase: `mariko` or `sarina`. `AMOUNT` is whole yen. `--note` is
 what they said, in their words. Then run the sync, so the payment reaches the
 Ledger now rather than in 15 minutes.
 
-If `pay` fails, check `balances` before trying again: if the payment is already
-in `paid`, it got through and only the answer was lost. Paying twice would
-take money off a girl that she is still owed.
+**Always pass your own `--id`**, chosen before the first attempt: `ev-pay-`
+followed by 12 random letters or digits, new for every payment. If `pay` fails
+or you aren't sure it got through, run exactly the same command again with the
+**same** `--id`. The board records each id once: a repeat that already landed
+comes back as `"duplicate": true` and changes nothing. A new id on a retry
+could record the payment twice and take money off a girl that she is still
+owed.
 
 **An opening balance or a correction** is a payment with a negative amount,
 which is a credit (it adds to what she is owed). Always with a note saying why:
 
 ```bash
-python3 eva_chores.py pay mariko -1200 --note "Opening balance from Michael"
-python3 eva_chores.py pay sarina -100 --note "Correction: paid 100 too much on Friday"
+python3 eva_chores.py pay mariko -1200 --note "Opening balance from Michael" --id ev-pay-8d20e6b1a95c
+python3 eva_chores.py pay sarina -100 --note "Correction: paid 100 too much on Friday" --id ev-pay-c47f0a3e91d2
 ```
 
 Do this only when Michael asks for it.
