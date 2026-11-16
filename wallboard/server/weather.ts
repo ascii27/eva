@@ -8,15 +8,19 @@
 // (timezone=Asia/Tokyo), so the VM's clock and timezone never enter into it.
 
 export interface Forecast {
-  current: { time: string; temperature_2m: number; weather_code: number; is_day: number };
-  hourly: { time: string[]; temperature_2m: number[]; weather_code: number[]; precipitation_probability: (number | null)[]; is_day: number[] };
+  current: { time: string; temperature_2m: number; weather_code: number; is_day: number; wind_gusts_10m?: number | null };
+  hourly: { time: string[]; temperature_2m: number[]; weather_code: number[]; precipitation_probability: (number | null)[]; is_day: number[]; wind_gusts_10m?: (number | null)[] };
   daily: { time: string[]; temperature_2m_max: number[]; temperature_2m_min: number[]; weather_code: number[] };
 }
 
 /** The panel the board renders (see renderAmbient / renderActive / renderNight in app.js). */
 export interface WeatherPanel {
   now: { cond: string; temp: number; label: string };
-  summary: string;
+  /** Today's high and low, for the card's ↑ / ↓. */
+  high: number;
+  low: number;
+  /** One line of what's coming ("Sunny now · rain from 15:00", "Rain until 22:00"). */
+  ahead: string;
   hourly: { time: string; cond: string; temp: number }[];
   night: { cond: string; text: string };
 }
@@ -26,14 +30,27 @@ export const IKEJIRI = { lat: 35.6505, lon: 139.6835 };
 
 const RAINY = (c: number) => (c >= 51 && c <= 67) || (c >= 80 && c <= 82) || c >= 95;
 const SNOWY = (c: number) => (c >= 71 && c <= 77) || c === 85 || c === 86;
+const STORMY = (c: number) => c >= 95;
 /** Wet enough to mention: the code says so, or it's more likely than not. */
 const wet = (code: number, prob: number | null) => RAINY(code) || SNOWY(code) || (prob ?? 0) >= 50;
 
-/** WMO code → the board's icon keys (sun, cloud, rain, clear-night). */
-export function condOf(code: number, isDay: boolean): string {
-  if (code <= 1) return isDay ? 'sun' : 'clear-night';
+/** Gusts at or above this (km/h) make a dry hour `wind` (CLAUDE.md "Weather: top-right card"). */
+export const BREEZY_KMH = 35;
+
+/**
+ * WMO code → the board's icon keys (web/icons.js `weatherIcon`): sun, partly,
+ * cloudy, fog, rain, snow, storm, wind, and after sunset night / night-cloud.
+ * `wind` replaces the sky only when nothing wetter is happening.
+ */
+export function condOf(code: number, isDay: boolean, gusts: number | null = null): string {
+  if (STORMY(code)) return 'storm';
+  if (SNOWY(code)) return 'snow';
   if (RAINY(code)) return 'rain';
-  return 'cloud';   // partly cloudy, overcast, fog, snow: the board has no snow icon
+  if ((gusts ?? 0) >= BREEZY_KMH) return 'wind';
+  if (code === 0) return isDay ? 'sun' : 'night';
+  if (code <= 2) return isDay ? 'partly' : 'night-cloud';
+  if (code === 45 || code === 48) return 'fog';
+  return 'cloudy';
 }
 
 export function labelOf(code: number, isDay: boolean): string {
@@ -64,25 +81,32 @@ export function weatherPanel(f: Forecast): WeatherPanel {
   const i0 = Math.max(0, h.time.findIndex((t) => t.slice(0, 13) === c.time.slice(0, 13)));
   const isDay = c.is_day === 1;
 
-  // Summary: today's high, then what the rest of today does.
+  const gustAt = (i: number) => h.wind_gusts_10m?.[i] ?? null;
+  const nowGusts = c.wind_gusts_10m ?? gustAt(i0);
+
+  // What's coming, one line: the rest of today (and tonight, after dark).
   const rest: number[] = [];
   for (let i = i0 + 1; i < h.time.length && h.time[i].startsWith(day); i++) rest.push(i);
   const wetAt = (i: number) => wet(h.weather_code[i], h.precipitation_probability[i]);
-  let tail: string;
+  const wetWord = (code: number) => (STORMY(code) ? 'thunder' : SNOWY(code) ? 'snow' : 'rain');
+  const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+  let ahead: string;
   if (wet(c.weather_code, null)) {
+    const word = cap(wetWord(c.weather_code));
     const dry = rest.find((i) => !wetAt(i));
-    tail = dry == null ? 'rain all evening' : `dry from ${hm(h.time[dry])}`;
-    if (dry == null && hourOf(c.time) < 12) tail = 'rain all day';
+    ahead = dry != null ? `${word} until ${hm(h.time[dry])}` : `${word} all ${hourOf(c.time) < 12 ? 'day' : 'evening'}`;
   } else {
     const rain = rest.find(wetAt);
-    tail = rain == null ? `low ${deg(f.daily.temperature_2m_min[0])}°` : `rain from ${hm(h.time[rain])}`;
+    const gust = Math.max(nowGusts ?? 0, ...rest.map((i) => gustAt(i) ?? 0));
+    if (rain != null) ahead = `${labelOf(c.weather_code, isDay)} now · ${wetWord(h.weather_code[rain])} from ${hm(h.time[rain])}`;
+    else if (gust >= BREEZY_KMH) ahead = `Gusts up to ${deg(gust)} km/h`;
+    else ahead = hourOf(c.time) < 17 ? 'Dry all day' : 'Dry tonight';
   }
-  const summary = `High ${deg(f.daily.temperature_2m_max[0])}° · ${tail}`;
 
   // Hourly strip: every 3 h from the next whole hour, five slots (may cross midnight).
   const hourly = [];
   for (let k = 0, i = i0 + 1; k < 5 && i < h.time.length; k++, i += 3) {
-    hourly.push({ time: hm(h.time[i]), cond: condOf(h.weather_code[i], h.is_day[i] === 1), temp: deg(h.temperature_2m[i]) });
+    hourly.push({ time: hm(h.time[i]), cond: condOf(h.weather_code[i], h.is_day[i] === 1, gustAt(i)), temp: deg(h.temperature_2m[i]) });
   }
 
   // Night view (21:30–06:30): now, and the day the family wakes into.
@@ -94,8 +118,14 @@ export function weatherPanel(f: Forecast): WeatherPanel {
   };
 
   return {
-    now: { cond: condOf(c.weather_code, isDay), temp: deg(c.temperature_2m), label: labelOf(c.weather_code, isDay) },
-    summary,
+    now: {
+      cond: condOf(c.weather_code, isDay, nowGusts),
+      temp: deg(c.temperature_2m),
+      label: condOf(c.weather_code, isDay, nowGusts) === 'wind' ? 'Breezy' : labelOf(c.weather_code, isDay),
+    },
+    high: deg(f.daily.temperature_2m_max[0]),
+    low: deg(f.daily.temperature_2m_min[0]),
+    ahead,
     hourly,
     night,
   };
@@ -110,8 +140,8 @@ export function forecastUrl(lat: number, lon: number, host = HOSTS[0]): string {
   const q = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lon),
-    current: 'temperature_2m,weather_code,is_day',
-    hourly: 'temperature_2m,weather_code,precipitation_probability,is_day',
+    current: 'temperature_2m,weather_code,is_day,wind_gusts_10m',
+    hourly: 'temperature_2m,weather_code,precipitation_probability,is_day,wind_gusts_10m',
     daily: 'temperature_2m_max,temperature_2m_min,weather_code',
     timezone: 'Asia/Tokyo',
     forecast_days: '2',

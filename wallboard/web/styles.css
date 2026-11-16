@@ -28,6 +28,7 @@
   --halo: none;   /* day: cream halo on text over the photo (v3) */
   --ma-bg: #c4a4ff; --ma-fg: #1b1030;
   --sa-bg: #ff9cc0; --sa-fg: #2e0c19;
+  --wx-violet: #c4a4ff; --wx-violet-soft: #241a3a;   /* storm and night tint (WeatherIcons.dc.html) */
   --label: 0.08em;
 }
 
@@ -52,6 +53,7 @@
   --halo: 0 0 2px #fffaf1, 0 0 6px #fffaf1, 0 0 22px rgba(255, 250, 241, 0.95);
   --ma-bg: #e7defa; --ma-fg: #4a3480;
   --sa-bg: #fbdde6; --sa-fg: #8c2a4f;
+  --wx-violet: #4a3480; --wx-violet-soft: #e7defa;
 }
 
 /* The 1.5 s crossfade between themes: only while switching, so it never fights
@@ -118,11 +120,6 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .amb-left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .amb-date { font-size: 28px; line-height: 36px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; color: var(--ink-muted); }
 .amb-clock { margin-top: 8px; font-family: var(--font-display); font-size: 300px; line-height: 272px; font-weight: 300; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
-.amb-weather { display: flex; align-items: center; gap: 28px; margin-top: 56px; }
-.amb-temp { font-family: var(--font-display); font-size: 128px; line-height: 116px; font-weight: 300; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
-.amb-wtext { display: flex; flex-direction: column; gap: 6px; }
-.amb-wtext b { font-size: 36px; line-height: 44px; font-weight: 500; }
-.amb-wtext span { font-size: 28px; line-height: 36px; color: var(--ink-muted); }
 /* Memories caption: a small pill at the stage's top-left (Eva bubble designs),
    so the bottom of the left column is free for Eva's bubble. */
 .amb-caption { position: absolute; left: 104px; top: 28px; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 4px 14px; border-radius: 999px; background: var(--surface-100); color: var(--ink); font-size: 18px; line-height: 24px; }
@@ -130,35 +127,47 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 /* Clips (CLAUDE.md "Space budget"), so it bleeds 36 px past the 744 px column
    on top and sides to keep the cards' glow and shadow; the bottom edge is the
    hard stop above the strip. */
-.amb-right { width: calc(744px + 72px); flex: none; display: flex; flex-direction: column; gap: 24px; min-height: 0; overflow: hidden; margin: -36px -36px 0; padding: 36px 36px 0; }
-/* Calm right column (design/DayFlow.dc.html): every piece on a solid card, no halo. */
-.rc-card { flex: none; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); padding: 26px 32px 30px; display: flex; flex-direction: column; gap: 14px; }
-.rc-next { border: 0; box-shadow: var(--glow-accent); padding: 26px 32px; gap: 12px; }
+.amb-right { width: calc(744px + 72px); flex: none; display: flex; flex-direction: column; gap: 20px; min-height: 0; overflow: hidden; margin: -36px -36px 0; padding: 36px 36px 0; }
+/* Weather, the column's first card (CLAUDE.md "Weather: top-right card", design/EvaOptA.dc.html). */
+.rc-wx { flex: none; box-sizing: border-box; height: 128px; padding: 0 28px 0 16px; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); display: flex; align-items: center; gap: 22px; }
+.rc-wx-disc { width: 100px; height: 100px; flex: none; border-radius: 50%; display: grid; place-items: center; }
+.rc-wx-temp { font-family: var(--font-display); font-size: 96px; line-height: 96px; font-weight: 400; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.rc-wx-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.rc-wx-hl { display: flex; align-items: center; gap: 18px; font-family: var(--font-display); font-size: 38px; line-height: 44px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.rc-wx-hl > span { display: inline-flex; align-items: center; gap: 4px; }
+.rc-wx-hl b { font-weight: inherit; color: var(--ink); }
+.rc-wx-up { color: var(--warm); }
+.rc-wx-down { color: var(--cool); }
+.rc-wx-ahead { font-size: 24px; line-height: 30px; font-weight: 600; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Calm right column (design/DayFlow.dc.html, compacted for the weather card): every piece on a solid card, no halo. */
+.rc-card { flex: none; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); padding: 20px 28px 22px; display: flex; flex-direction: column; gap: 10px; }
+.rc-next { border: 0; box-shadow: var(--glow-accent); padding: 20px 28px; gap: 10px; }
 .rc-eyebrow { display: flex; align-items: center; gap: 12px; color: var(--ink-muted); font-size: 22px; line-height: 28px; font-weight: 700; letter-spacing: var(--label); text-transform: uppercase; }
 .rc-next .rc-eyebrow { color: var(--accent); }
 .rc-avs { margin-left: auto; display: flex; gap: 6px; text-transform: none; letter-spacing: normal; }
 .rc-count { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
-.rc-count .big { font-family: var(--font-display); font-size: 104px; line-height: 100px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--accent); }
+.rc-count .big { font-family: var(--font-display); font-size: 80px; line-height: 80px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--accent); }
 .rc-count .unit { font-size: 38px; font-weight: 600; color: var(--accent); }
 .rc-count .what { margin-left: 8px; font-size: 32px; line-height: 40px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rc-bring { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .rc-k { font-size: 22px; font-weight: 700; letter-spacing: var(--label); text-transform: uppercase; color: var(--ink-muted); }
 .rc-bp { display: inline-flex; align-items: center; gap: 8px; height: 48px; padding: 0 16px; border-radius: 999px; background: var(--warm-soft); color: var(--warm); font-size: 24px; font-weight: 600; }
 .rc-pack { padding-top: 14px; border-top: 1px solid var(--line); }
-.rc-row { display: flex; align-items: center; gap: 16px; min-height: 64px; }
+.rc-row { display: flex; align-items: center; gap: 16px; min-height: 56px; }
 .rc-pills { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 10px; }
-.rc-pill { height: 56px; max-width: 100%; padding: 0 16px 0 12px; border-radius: 999px; background: var(--surface-200); border: 2px solid var(--line); color: var(--ink); display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
+.rc-pill { height: 48px; max-width: 100%; padding: 0 14px 0 10px; border-radius: 999px; background: var(--surface-200); border: 2px solid var(--line); color: var(--ink); display: inline-flex; align-items: center; gap: 10px; white-space: nowrap; }
 .rc-pill svg { flex: none; }
-.rc-pill .t { font-family: var(--font-display); font-size: 26px; font-variant-numeric: tabular-nums; }
-.rc-pill .w { font-size: 26px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.rc-pill.more { padding: 0 16px; }
+.rc-pill .t { font-family: var(--font-display); font-size: 24px; font-variant-numeric: tabular-nums; }
+.rc-pill .w { font-size: 24px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.rc-pill.more { padding: 0 14px; }
 .rc-pill.next { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 .rc-pill.done { background: transparent; border: 2px dashed var(--line); color: var(--ink-faint); }
-.rc-free { font-size: 26px; color: var(--ink-muted); font-weight: 500; }
+.rc-free { font-size: 24px; color: var(--ink-muted); font-weight: 500; }
 /* A row shared by several people: overlapping avatars in a fixed slot, so every row's pills line up. */
 .rc-slot { display: flex; flex: none; width: 112px; }
 .rc-ov { display: flex; border-radius: 50%; box-shadow: 0 0 0 3px var(--surface-100); }
-.rc-home { width: 56px; height: 56px; background: var(--surface-300); color: var(--ink); }
+.rc-home { width: 48px; height: 48px; background: var(--surface-300); color: var(--ink); }
 /* Bath order, inside the evening's Next-up card (or atop Tomorrow). */
 .rc-bathrow { display: flex; align-items: center; gap: 12px; }
 .rc-bath { width: 48px; height: 48px; flex: none; border-radius: 50%; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center; }
@@ -174,11 +183,9 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 /* Day calm view · v3 halo (PaperV3HaloLandscape.dc.html; PaperV3Halo for a
    portrait). Text over the photo gets a cream halo and full ink; the caption
    sits on a solid pill. */
-.amb-date, .amb-clock, .amb-temp, .amb-wtext b, .amb-wtext span, .amb-hint { text-shadow: var(--halo); }
+.amb-date, .amb-clock, .amb-hint { text-shadow: var(--halo); }
 [data-theme="day"] .amb-date { font-weight: 700; color: var(--ink); }
-[data-theme="day"] .amb-clock, [data-theme="day"] .amb-temp { font-weight: 400; }
-[data-theme="day"] .amb-wtext b { font-weight: 600; }
-[data-theme="day"] .amb-wtext span { font-weight: 500; color: var(--ink); }
+[data-theme="day"] .amb-clock { font-weight: 400; }
 .amb-caption:empty { display: none; }
 
 /* Calm strip, both themes (v3 day board; Main.dc.html in the evening). */
