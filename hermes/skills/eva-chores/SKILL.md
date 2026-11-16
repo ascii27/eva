@@ -51,11 +51,20 @@ through your own tools.
 ```bash
 python3 eva_chores.py activity --log-id <Board log id> --after <Last seq>   # new board events as Ledger rows
 python3 eva_chores.py activity                                             # first run only: no cursor yet
-echo '<JSON array of Chores rows>' | python3 eva_chores.py push-chores      # replace the board's chore list
+python3 eva_chores.py push-chores <<'EOF'                                  # replace the board's chore list
+[<JSON array of every Chores row>]
+EOF
 python3 eva_chores.py balances                                             # what each girl is owed
-python3 eva_chores.py pay sarina 500 --note "Michael: paid Sarina 500 yen" --id ev-pay-71b0d4e8a2c6   # record a payment
+python3 eva_chores.py pay sarina 500 --note 'Michael: paid Sarina 500 yen' --id ev-pay-71b0d4e8a2c6   # record a payment
 python3 eva_chores.py new-chore-id "Feed the fish" --taken chore-dishes chore-bed   # a Board id for a new chore
 ```
+
+Always feed `push-chores` through a quoted heredoc (`<<'EOF'`) as above, never
+`echo '...' |`: chore names contain apostrophes ("Mariko's bed"), and a quoted
+heredoc passes the JSON through untouched. Likewise put `--note` in single
+quotes, and write an apostrophe inside it as `'\''` (e.g.
+`--note 'Nozomi: paid Sarina'\''s 700 yen'`), so the shell never expands `$`,
+backticks or `!` in what the parent said.
 
 Output is JSON on stdout. On an error it prints `error: ...` on stderr and
 exits non-zero; nothing was changed on the board in that case.
@@ -126,13 +135,17 @@ sync, using the eva-chores skill."*
 
 ## The scheduled sync
 
-1. **Push the definitions.** Read every row of the Chores database. Pipe them
-   all, as a JSON array keyed by the property names above, into
-   `push-chores`. Include every row, not only the ones you think changed:
-   the board replaces its whole list with what you send, so a missing row is a
-   chore that disappears from the wall. (The script skips rows whose `Active`
-   is not ticked.) If it fails, note the error and carry on; the next run
-   pushes again.
+1. **Push the definitions.** Read **all pages** of the Chores database (keep
+   paging until there are no more results). Feed every row, as a JSON array
+   keyed by the property names above, into `push-chores` through a quoted
+   heredoc. Include every row, not only the ones you think changed: the board
+   replaces its whole list with what you send, so a missing row is a chore that
+   disappears from the wall. (The script skips rows whose `Active` is not
+   ticked, and refuses a list with no active chores at all.) **Never push after
+   a failed or partial read**: if any page of the query failed, or you aren't
+   sure you have every row, don't push, and stop the sync here; the next run
+   tries again. Never pass `--allow-empty` in the sync. If the push itself
+   fails, stop the sync here too and say what the error was.
 2. **Read the cursor** from the Settings row: `Board log id` and `Last seq`.
 3. **Read the activity.** Run
    `activity --log-id <Board log id> --after <Last seq>`. If both are empty
@@ -204,8 +217,9 @@ truth; the board is a copy of it.
   applies to chores added from now on. Change existing chores' `Amount ¥` only
   if he asks.
 
-Then re-read the whole Chores database and pipe it into `push-chores`, as in
-step 1 of the sync. The change is not done until both have succeeded. If the
+Then re-read the whole Chores database (all pages) and feed it into
+`push-chores`, as in step 1 of the sync. Use `--allow-empty` only when Michael
+has retired every chore and the list really should be empty. The change is not done until both have succeeded. If the
 push fails, say so plainly: "Notion has the change, but the board didn't take
 it: <error>. The next sync will try again." If the script refused a row
 (`Nothing was sent.`), fix that row in Notion and push again.
@@ -219,11 +233,12 @@ When a parent tells you they paid a girl, record it on the board, never
 straight into Notion:
 
 ```bash
-python3 eva_chores.py pay sarina 700 --note "Nozomi: gave Sarina her 700 yen" --id ev-pay-3f9a1c7e2b4d
+python3 eva_chores.py pay sarina 700 --note 'Nozomi: gave Sarina her 700 yen' --id ev-pay-3f9a1c7e2b4d
 ```
 
 `WHO` is lowercase: `mariko` or `sarina`. `AMOUNT` is whole yen. `--note` is
-what they said, in their words. Then run the sync, so the payment reaches the
+what they said, in their words, in single quotes (an apostrophe inside is
+written `'\''`). Then run the sync, so the payment reaches the
 Ledger now rather than in 15 minutes.
 
 **Always pass your own `--id`**, chosen before the first attempt: `ev-pay-`
@@ -238,8 +253,8 @@ owed.
 which is a credit (it adds to what she is owed). Always with a note saying why:
 
 ```bash
-python3 eva_chores.py pay mariko -1200 --note "Opening balance from Michael" --id ev-pay-8d20e6b1a95c
-python3 eva_chores.py pay sarina -100 --note "Correction: paid 100 too much on Friday" --id ev-pay-c47f0a3e91d2
+python3 eva_chores.py pay mariko -1200 --note 'Opening balance from Michael' --id ev-pay-8d20e6b1a95c
+python3 eva_chores.py pay sarina -100 --note 'Correction: paid 100 too much on Friday' --id ev-pay-c47f0a3e91d2
 ```
 
 Do this only when Michael asks for it.

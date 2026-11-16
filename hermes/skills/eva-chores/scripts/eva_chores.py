@@ -18,8 +18,11 @@ Commands (JSON on stdout; errors on stderr, exit 1):
                              {"alarm", "rows", "cursor"}. On an alarm (the board's
                              log was replaced, or its seq went backwards) rows is
                              [] and cursor is the OLD one; tell Michael, don't copy.
-  push-chores                JSON array of chore rows on stdin (Notion property
-                             names) -> replaces the board's chore list
+  push-chores [--allow-empty]
+                             JSON array of chore rows on stdin (Notion property
+                             names) -> replaces the board's chore list. Refuses a
+                             list with no active chores (it would empty the
+                             wall) unless --allow-empty
   balances                   {who: {owed, earned, paid, lastPaid}}
   pay WHO AMOUNT [--note TEXT] [--id ID]
                              record a payment (negative AMOUNT = credit); a repeat
@@ -44,6 +47,7 @@ TOKYO = dt.timezone(dt.timedelta(hours=9))
 PEOPLE = {"mariko": "Mariko", "sarina": "Sarina", "nozomi": "Nozomi", "michael": "Michael"}
 ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+MAX_YEN = 1_000_000  # the board refuses anything larger, either sign
 
 
 # ---- pure -------------------------------------------------------------------
@@ -122,8 +126,8 @@ def chore_defs(rows: list):
         else:
             return f'{label}: unknown "Who" {who_raw!r}'
         amount = _int(r.get("Amount ¥"))
-        if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
-            return f'{label}: "Amount ¥" must be an integer >= 0, got {amount!r}'
+        if isinstance(amount, bool) or not isinstance(amount, int) or not 0 <= amount <= MAX_YEN:
+            return f'{label}: "Amount ¥" must be an integer from 0 to {MAX_YEN}, got {amount!r}'
         every = _int(r.get("Every"))
         if isinstance(every, bool) or not isinstance(every, int) or every < 1:
             return f'{label}: "Every" must be an integer >= 1, got {every!r}'
@@ -213,7 +217,7 @@ def cmd_activity(args) -> None:
     out({"alarm": None, "rows": rows, "cursor": {"logId": resp["logId"], "seq": seq}})
 
 
-def cmd_push_chores(_args) -> None:
+def cmd_push_chores(args) -> None:
     try:
         rows = json.load(sys.stdin)
     except json.JSONDecodeError as e:
@@ -223,6 +227,11 @@ def cmd_push_chores(_args) -> None:
     defs = chore_defs(rows)
     if isinstance(defs, str):
         die(f"{defs}. Nothing was sent.", 2)
+    if not defs and not args.allow_empty:
+        # An empty list wipes every chore off the wall. Far more often it is a
+        # failed or partial Notion read than a real intention.
+        die("no active chores in the input; that would empty the board. "
+            "Nothing was sent. (Pass --allow-empty only if every chore really is retired.)", 2)
     call("PUT", "/api/eva/chores", {"chores": defs})
     out({"ok": True, "count": len(defs)})
 
@@ -244,8 +253,8 @@ def cmd_balances(_args) -> None:
 def cmd_pay(args) -> None:
     if args.who not in PEOPLE:
         die(f"unknown person {args.who!r}; expected one of {', '.join(PEOPLE)}")
-    if args.amount == 0:
-        die("amount must be a non-zero integer (negative = credit)")
+    if args.amount == 0 or abs(args.amount) > MAX_YEN:
+        die(f"amount must be a non-zero integer within ±{MAX_YEN} (negative = credit)")
     pid = args.id or f"ev-{secrets.token_hex(6)}"
     if not ID.match(pid):
         die(f"id must match {ID.pattern}")
@@ -267,7 +276,9 @@ def main() -> None:
     a.add_argument("--log-id")
     a.add_argument("--after", type=int)
     a.set_defaults(fn=cmd_activity)
-    sp.add_parser("push-chores").set_defaults(fn=cmd_push_chores)
+    pc = sp.add_parser("push-chores")
+    pc.add_argument("--allow-empty", action="store_true")
+    pc.set_defaults(fn=cmd_push_chores)
     sp.add_parser("balances").set_defaults(fn=cmd_balances)
     p = sp.add_parser("pay")
     p.add_argument("who")

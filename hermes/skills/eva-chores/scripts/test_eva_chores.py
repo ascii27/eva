@@ -1,5 +1,10 @@
+import contextlib
 import datetime as dt
+import io
+import json
+import types
 import unittest
+from unittest import mock
 
 import eva_chores as ec
 
@@ -123,6 +128,46 @@ class ChoreDefs(unittest.TestCase):
         self.assertIsInstance(ec.chore_defs([row(Unit="month")]), str)
         self.assertIsInstance(ec.chore_defs([row(Start="2026-13-45")]), str)
         self.assertIsInstance(ec.chore_defs([row(Start="")]), str)
+
+
+class PushChores(unittest.TestCase):
+    def run_push(self, rows, allow_empty=False):
+        calls, out, err = [], io.StringIO(), io.StringIO()
+        args = types.SimpleNamespace(allow_empty=allow_empty)
+        with mock.patch.object(ec, "call", lambda *a: calls.append(a) or {}), \
+                mock.patch("sys.stdin", io.StringIO(json.dumps(rows))), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                ec.cmd_push_chores(args)
+                code = 0
+            except SystemExit as e:
+                code = e.code
+        return code, calls, err.getvalue()
+
+    def test_refuses_empty_list(self):
+        code, calls, err = self.run_push([])
+        self.assertEqual(code, 2)
+        self.assertEqual(calls, [])
+        self.assertIn("Nothing was sent", err)
+
+    def test_refuses_all_inactive(self):
+        code, calls, _ = self.run_push([row(Active=False)])
+        self.assertEqual(code, 2)
+        self.assertEqual(calls, [])
+
+    def test_allow_empty_sends_empty_list(self):
+        code, calls, _ = self.run_push([], allow_empty=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(calls, [("PUT", "/api/eva/chores", {"chores": []})])
+
+    def test_sends_active_chores(self):
+        code, calls, _ = self.run_push([row()])
+        self.assertEqual(code, 0)
+        self.assertEqual([c["id"] for c in calls[0][2]["chores"]], ["dishes"])
+
+    def test_amount_bound(self):
+        self.assertEqual(ec.chore_defs([row(**{"Amount ¥": 1_000_000})])[0]["amount"], 1_000_000)
+        self.assertIsInstance(ec.chore_defs([row(**{"Amount ¥": 1_000_001})]), str)
 
 
 class NewChoreId(unittest.TestCase):
