@@ -63,6 +63,16 @@ test("tick records a done event worth the chore's amount and hides nothing until
   assert.deepEqual(shown(s, D('2026-11-17')), [['dishes', false], ['bath', false]]);
 });
 
+test('the day turns at Tokyo midnight, not UTC', () => {
+  const lastMinute = Date.parse('2026-11-16T14:59:00Z'); // 23:59 Tokyo on the 16th
+  const firstMinute = Date.parse('2026-11-16T15:01:00Z'); // 00:01 Tokyo on the 17th
+  const s = tick(twoChores(), 'dishes', lastMinute)!;
+  assert.equal(s.chores[0].doneOn, '2026-11-16');
+  assert.equal(s.chores[0].nextDue, '2026-11-17');
+  assert.deepEqual(view(s, firstMinute).chores.find((c) => c.id === 'dishes')?.done, false);
+  assert.equal(untick(s, 'dishes', firstMinute), null);
+});
+
 test('bath not due on its off day', () => {
   assert.deepEqual(shown(twoChores(), D('2026-11-16')), [['dishes', false]]);
 });
