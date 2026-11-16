@@ -1,91 +1,360 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { apply, emptyState, parseChores, reviveState, type BoardState } from './state.ts';
+import {
+  activityAfter,
+  apply,
+  balances,
+  boardPayConflict,
+  emptyState,
+  MAX_YEN,
+  parseChores,
+  reviveState,
+  view,
+  type BoardState,
+  type ChoreDef,
+} from './state.ts';
 
-const withChores = (): BoardState =>
-  apply(emptyState(), {
-    type: 'chores.replace',
-    at: 1,
-    chores: [
-      { id: 'dishes', title: 'Dishes', who: 'kid-a', icon: null },
-      { id: 'trash', title: 'Trash', who: null, icon: null },
-    ],
-  })!;
+/** Noon in Tokyo on the given day, so the tests never sit near midnight. */
+const D = (iso: string) => Date.parse(iso + 'T03:00:00Z');
 
-test('set marks done with a timestamp, and setting it back is the undo', () => {
-  const a = apply(withChores(), { type: 'chore.set', id: 'dishes', done: true, at: 100 })!;
-  assert.deepEqual(a.chores[0], { id: 'dishes', title: 'Dishes', who: 'kid-a', icon: null, done: true, doneAt: 100 });
-  const b = apply(a, { type: 'chore.set', id: 'dishes', done: false, at: 200 })!;
-  assert.equal(b.chores[0].done, false);
-  assert.equal(b.chores[0].doneAt, null);
-  assert.equal(b.version, a.version + 1);
+const dishes: ChoreDef = {
+  id: 'dishes',
+  title: 'Dishes',
+  who: 'mariko',
+  icon: null,
+  amount: 100,
+  schedule: { every: 1, unit: 'day', start: '2026-11-16' },
+};
+const bath: ChoreDef = {
+  id: 'bath',
+  title: 'Bath',
+  who: 'sarina',
+  icon: 'bath',
+  amount: 100,
+  schedule: { every: 2, unit: 'day', start: '2026-11-15' },
+};
+
+/**
+ * Steady state on the 16th: bath was done on the 15th (outside this log), so it
+ * is next due on the 17th. Pushed fresh it would sit at its start, overdue.
+ */
+const twoChores = (): BoardState => {
+  const s = apply(emptyState('log-t'), { type: 'chores.replace', chores: [dishes, bath], at: D('2026-11-16') })!;
+  return { ...s, chores: [s.chores[0], { ...s.chores[1], nextDue: '2026-11-17' }] };
+};
+
+const tick = (s: BoardState, id: string, at: number, eventId = `ev-${id}-${at}`) =>
+  apply(s, { type: 'chore.set', id, done: true, at, eventId });
+const untick = (s: BoardState, id: string, at: number, eventId = `ev-un-${id}-${at}`) =>
+  apply(s, { type: 'chore.set', id, done: false, at, eventId });
+const pay = (s: BoardState, eventId: string, who: string, amount: number, at = D('2026-11-16')) =>
+  apply(s, { type: 'payment', eventId, who, amount, source: 'board', note: null, at });
+const shown = (s: BoardState, at: number) => view(s, at).chores.map((c) => [c.id, c.done]);
+
+test("tick records a done event worth the chore's amount and hides nothing until midnight", () => {
+  const s = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  assert.equal(s.log.length, 1);
+  const [e] = s.log;
+  assert.equal(e.type, 'done');
+  assert.equal(e.seq, 1);
+  assert.equal(e.delta, 100);
+  assert.equal(e.who, 'mariko');
+  assert.equal(e.type === 'done' && e.amount, 100);
+  assert.equal(s.seq, 1);
+  assert.deepEqual(shown(s, D('2026-11-16')), [['dishes', true]]);
+  assert.deepEqual(shown(s, D('2026-11-17')), [['dishes', false], ['bath', false]]);
 });
 
-test('setting a chore to the state it already has is a no-op, so a repeated undo cannot flip it', () => {
-  const a = apply(withChores(), { type: 'chore.set', id: 'dishes', done: true, at: 100 })!;
-  assert.equal(apply(a, { type: 'chore.set', id: 'dishes', done: true, at: 101 }), null);
+test('the day turns at Tokyo midnight, not UTC', () => {
+  const lastMinute = Date.parse('2026-11-16T14:59:00Z'); // 23:59 Tokyo on the 16th
+  const firstMinute = Date.parse('2026-11-16T15:01:00Z'); // 00:01 Tokyo on the 17th
+  const s = tick(twoChores(), 'dishes', lastMinute)!;
+  assert.equal(s.chores[0].doneOn, '2026-11-16');
+  assert.equal(s.chores[0].nextDue, '2026-11-17');
+  assert.deepEqual(view(s, firstMinute).chores.find((c) => c.id === 'dishes')?.done, false);
+  assert.equal(untick(s, 'dishes', firstMinute), null);
 });
 
-test('setting an unknown chore is a no-op, not an error', () => {
-  assert.equal(apply(withChores(), { type: 'chore.set', id: 'nope', done: true, at: 1 }), null);
+test('bath not due on its off day', () => {
+  assert.deepEqual(shown(twoChores(), D('2026-11-16')), [['dishes', false]]);
 });
 
-test('replacing the list keeps done-ness for chores that survive it', () => {
-  const ticked = apply(withChores(), { type: 'chore.set', id: 'trash', done: true, at: 50 })!;
-  const next = apply(ticked, {
-    type: 'chores.replace',
-    at: 60,
-    chores: [
-      { id: 'trash', title: 'Take out trash', who: null, icon: null },
-      { id: 'bed', title: 'Make bed', who: 'kid-b', icon: 'bed' },
-    ],
-  })!;
+test('an overdue chore carries over until done', () => {
+  assert.deepEqual(shown(twoChores(), D('2026-11-20')), [['dishes', false], ['bath', false]]);
+  const s = tick(twoChores(), 'bath', D('2026-11-20'))!;
+  // Ticked on the 20th: the next occurrence strictly after it (15 + 2k) is the 21st.
+  assert.equal(s.chores[1].nextDue, '2026-11-21');
+  assert.deepEqual(shown(s, D('2026-11-21')), [['dishes', false], ['bath', false]]);
+});
+
+test('undo the same day appends undone and restores due', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  const s = untick(t, 'dishes', D('2026-11-16'))!;
+  assert.deepEqual(s.log.map((e) => e.type), ['done', 'undone']);
+  const [done, undone] = s.log;
+  assert.equal(undone.type === 'undone' && undone.cancels, done.id);
+  assert.equal(undone.delta, -100);
+  assert.equal(undone.seq, 2);
+  assert.equal(balances(s).mariko.owed, 0);
+  assert.equal(balances(s).mariko.earned, 0);
+  assert.deepEqual(shown(s, D('2026-11-16')), [['dishes', false]]);
+  assert.deepEqual(s.chores[0], { ...dishes, nextDue: '2026-11-16', doneOn: null, prevDue: null, doneEvent: null });
+});
+
+test('undo after midnight is a no-op', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  assert.equal(untick(t, 'dishes', D('2026-11-17')), null);
+});
+
+test('ticking a chore not due is a no-op, and so is ticking twice or an unknown id', () => {
+  assert.equal(tick(twoChores(), 'bath', D('2026-11-16')), null);
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  assert.equal(tick(t, 'dishes', D('2026-11-16'), 'ev-other'), null);
+  assert.equal(tick(twoChores(), 'nope', D('2026-11-16')), null);
+  assert.equal(untick(twoChores(), 'dishes', D('2026-11-16')), null);
+});
+
+test('amount is snapshotted', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  const s = apply(t, { type: 'chores.replace', chores: [{ ...dishes, amount: 200 }, bath], at: D('2026-11-16') })!;
+  assert.equal(s.chores[0].amount, 200);
+  assert.equal(balances(s).mariko.earned, 100);
+});
+
+test('payment is idempotent on its id', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  const p = pay(t, 'pay-1', 'mariko', 100)!;
+  assert.equal(pay(p, 'pay-1', 'mariko', 100), null);
+  assert.deepEqual(balances(p).mariko, { earned: 100, paid: 100, owed: 0, lastPaidAt: D('2026-11-16') });
+  const e = p.log[1];
+  assert.equal(e.type === 'payment' && e.source, 'board');
+  assert.equal(e.delta, -100);
+});
+
+test('a negative payment is an opening-balance credit and does not count as last paid', () => {
+  const p = pay(twoChores(), 'open-1', 'sarina', -500)!;
+  assert.deepEqual(balances(p).sarina, { earned: 0, paid: -500, owed: 500, lastPaidAt: null });
+  assert.equal(pay(twoChores(), 'zero', 'sarina', 0), null);
+});
+
+test('cancel only cancels a payment, once', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'), 'ev-done')!;
+  assert.equal(apply(t, { type: 'cancel', eventId: 'c-0', cancels: 'ev-done', at: D('2026-11-16') }), null);
+  const p = pay(t, 'pay-1', 'mariko', 100, D('2026-11-16'))!;
+  assert.equal(balances(p).mariko.owed, 0);
+  const c = apply(p, { type: 'cancel', eventId: 'c-1', cancels: 'pay-1', at: D('2026-11-17') })!;
+  assert.deepEqual(balances(c).mariko, { earned: 100, paid: 0, owed: 100, lastPaidAt: null });
+  const undone = c.log[2];
   assert.deepEqual(
-    next.chores.map((c) => [c.id, c.title, c.done, c.doneAt]),
-    [
-      ['trash', 'Take out trash', true, 50],
-      ['bed', 'Make bed', false, null],
-    ],
+    [undone.type, undone.who, undone.delta, undone.type === 'undone' && undone.choreId],
+    ['undone', 'mariko', 100, null],
   );
+  assert.equal(apply(c, { type: 'cancel', eventId: 'c-2', cancels: 'pay-1', at: D('2026-11-17') }), null);
+  assert.equal(apply(c, { type: 'cancel', eventId: 'c-3', cancels: 'nope', at: D('2026-11-17') }), null);
+});
+
+test('owed equals the sum of every delta', () => {
+  let s = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  s = tick(s, 'dishes', D('2026-11-17'))!;
+  s = untick(s, 'dishes', D('2026-11-17'))!;
+  s = pay(s, 'p1', 'mariko', 50)!;
+  s = pay(s, 'p2', 'mariko', 30)!;
+  s = apply(s, { type: 'cancel', eventId: 'c1', cancels: 'p2', at: D('2026-11-17') })!;
+  const sum = s.log.filter((e) => e.who === 'mariko').reduce((n, e) => n + e.delta, 0);
+  assert.equal(balances(s).mariko.owed, sum);
+  assert.equal(sum, 50);
+});
+
+test('every change bumps version; events take consecutive seqs', () => {
+  const a = twoChores();
+  const b = tick(a, 'dishes', D('2026-11-16'))!;
+  const c = pay(b, 'p1', 'sarina', 10)!;
+  assert.deepEqual([b.version, c.version], [a.version + 1, a.version + 2]);
+  assert.deepEqual(c.log.map((e) => e.seq), [1, 2]);
+});
+
+test('replace keeps progress; a changed schedule re-anchors', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  const newbie: ChoreDef = { ...bath, id: 'bed', who: 'mariko', schedule: { every: 1, unit: 'week', start: '2026-11-01' } };
+  const s = apply(t, {
+    type: 'chores.replace',
+    chores: [newbie, { ...dishes, schedule: { every: 2, unit: 'day', start: '2026-11-16' } }],
+    at: D('2026-11-16'),
+  })!;
+  assert.deepEqual(s.chores.map((c) => c.id), ['bed', 'dishes']);
+  const d = s.chores[1];
+  assert.equal(d.doneOn, '2026-11-16');
+  assert.equal(d.prevDue, '2026-11-16');
+  assert.equal(d.nextDue, '2026-11-18');
+  assert.equal(d.doneEvent, t.log[0].id);
+  // A new chore starts at its start, even in the past: it shows as overdue.
+  assert.equal(s.chores[0].nextDue, '2026-11-01');
+  assert.deepEqual(shown(s, D('2026-11-16')), [['bed', false], ['dishes', true]]);
+  // Removed chores leave the list; their events stay in the log.
+  assert.equal(s.log.length, 1);
+  // Undo after the re-anchor goes back to the re-anchored due day.
+  const u = untick(s, 'dishes', D('2026-11-16'))!;
+  assert.equal(u.chores[1].nextDue, '2026-11-16');
+});
+
+test('a changed schedule on a chore not done today re-anchors to its first day on or after today', () => {
+  const s = apply(twoChores(), {
+    type: 'chores.replace',
+    chores: [dishes, { ...bath, schedule: { every: 1, unit: 'week', start: '2026-11-10' } }],
+    at: D('2026-11-16'),
+  })!;
+  assert.equal(s.chores[1].nextDue, '2026-11-17');
+  const same = apply(twoChores(), { type: 'chores.replace', chores: [dishes, { ...bath }], at: D('2026-11-20') })!;
+  assert.equal(same.chores[1].nextDue, '2026-11-17'); // unchanged schedule: overdue stays overdue
+});
+
+const replace = (s: BoardState, chores: ChoreDef[], at: number) => apply(s, { type: 'chores.replace', chores, at })!;
+
+test('a chore dropped by one push and back in the next keeps today\'s tick and cannot be ticked again', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  const gone = replace(t, [bath], D('2026-11-16'));
+  const back = replace(gone, [dishes, bath], D('2026-11-16'));
+  const d = back.chores[0];
+  assert.equal(d.doneOn, '2026-11-16');
+  assert.equal(d.doneEvent, t.log[0].id);
+  assert.equal(d.prevDue, '2026-11-16'); // first occurrence on or after today
+  assert.equal(d.nextDue, '2026-11-17');
+  assert.deepEqual(shown(back, D('2026-11-16')), [['dishes', true]]);
+  assert.equal(tick(back, 'dishes', D('2026-11-16'), 'ev-again'), null);
+  assert.equal(balances(back).mariko.earned, 100);
+  // Undo still works on the seeded tick, and then it can be ticked again.
+  const u = untick(back, 'dishes', D('2026-11-16'))!;
+  assert.equal(u.chores[0].nextDue, '2026-11-16');
+  assert.equal(balances(u).mariko.earned, 0);
+  assert.ok(tick(u, 'dishes', D('2026-11-16'), 'ev-redo'));
+});
+
+test('a returning chore done on an earlier day keeps its phase instead of restarting at start', () => {
+  const weekly: ChoreDef = { ...dishes, id: 'bins', schedule: { every: 1, unit: 'week', start: '2026-10-01' } };
+  // Due Thursdays from 2026-10-01; ticked on Thursday 2026-11-12.
+  let s = replace(emptyState('log-t'), [weekly], D('2026-11-12'));
+  s = { ...s, chores: [{ ...s.chores[0], nextDue: '2026-11-12' }] };
+  s = tick(s, 'bins', D('2026-11-12'))!;
+  const back = replace(replace(s, [], D('2026-11-16')), [weekly], D('2026-11-16'));
+  const b = back.chores[0];
+  assert.equal(b.nextDue, '2026-11-19');
+  assert.equal(b.doneOn, null);
+  assert.equal(b.doneEvent, null);
+  assert.deepEqual(shown(back, D('2026-11-16')), []);
+  // An undone completion is not history: with only that, it starts at start.
+  const undone = untick(tick(twoChores(), 'dishes', D('2026-11-16'))!, 'dishes', D('2026-11-16'))!;
+  const again = replace(replace(undone, [bath], D('2026-11-16')), [dishes, bath], D('2026-11-16'));
+  assert.equal(again.chores[0].nextDue, dishes.schedule.start);
+  assert.equal(again.chores[0].doneOn, null);
+});
+
+test('chore.set refuses a second completion on a day the log already has one', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  // Runtime fields wiped (as an older replace used to): the log still says no.
+  const wiped = { ...t, chores: t.chores.map((c) => (c.id === 'dishes' ? { ...c, nextDue: '2026-11-16', doneOn: null, prevDue: null, doneEvent: null } : c)) };
+  assert.equal(tick(wiped, 'dishes', D('2026-11-16'), 'ev-twice'), null);
+  // The next day is a new day.
+  assert.ok(tick(wiped, 'dishes', D('2026-11-17'), 'ev-tomorrow'));
+});
+
+test('board pay must equal what is owed', () => {
+  const t = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  assert.equal(boardPayConflict(t, 'mariko', 100), null);
+  assert.match(boardPayConflict(t, 'mariko', 50)!, /match/);
+  const p = pay(t, 'pay-1', 'mariko', 100)!;
+  assert.match(boardPayConflict(p, 'mariko', 100)!, /nothing/); // the double tap
+  assert.match(boardPayConflict(p, 'nobody', 100)!, /nothing/);
+  const over = pay(p, 'pay-2', 'mariko', 100)!; // Eva recorded more than was owed
+  assert.equal(balances(over).mariko.owed, -100);
+  assert.match(boardPayConflict(over, 'mariko', 100)!, /nothing/);
+});
+
+test('payments and chore amounts are bounded', () => {
+  assert.ok(pay(twoChores(), 'big', 'mariko', MAX_YEN));
+  assert.equal(pay(twoChores(), 'too-big', 'mariko', MAX_YEN + 1), null);
+  assert.equal(pay(twoChores(), 'too-small', 'mariko', -MAX_YEN - 1), null);
+  assert.equal(pay(twoChores(), 'unsafe', 'mariko', 2 ** 53), null);
+  const valid = { id: 'a', title: 'x', schedule: { every: 1, unit: 'day', start: '2026-11-16' } };
+  assert.ok(Array.isArray(parseChores({ chores: [{ ...valid, amount: MAX_YEN }] })));
+  assert.match(parseChores({ chores: [{ ...valid, amount: MAX_YEN + 1 }] }) as string, /amount/);
+  assert.match(parseChores({ chores: [{ ...valid, amount: 2 ** 53 }] }) as string, /amount/);
+});
+
+test('parseChores rejects done and bad schedules', () => {
+  const valid = { id: 'a', title: ' Dishes ', amount: 100, schedule: { every: 1, unit: 'day', start: '2026-11-16' } };
+  assert.deepEqual(parseChores({ chores: [valid] }), [
+    { id: 'a', title: 'Dishes', who: null, icon: null, amount: 100, schedule: { every: 1, unit: 'day', start: '2026-11-16' } },
+  ]);
+  assert.match(parseChores({ chores: [{ ...valid, done: true }] }) as string, /done/);
+  assert.match(parseChores({ chores: [{ ...valid, done: false }] }) as string, /done/);
+  assert.match(parseChores({ chores: [{ ...valid, amount: -1 }] }) as string, /amount/);
+  assert.match(parseChores({ chores: [{ ...valid, amount: 1.5 }] }) as string, /amount/);
+  assert.match(parseChores({ chores: [{ ...valid, amount: undefined }] }) as string, /amount/);
+  assert.match(parseChores({ chores: [{ ...valid, schedule: undefined }] }) as string, /schedule/);
+  assert.match(parseChores({ chores: [{ ...valid, schedule: { every: 0, unit: 'day', start: '2026-11-16' } }] }) as string, /schedule.*every/);
+});
+
+test('parseChores rejects malformed input with a usable message', () => {
+  const ok = { amount: 0, schedule: { every: 1, unit: 'day', start: '2026-11-16' } };
+  assert.match(parseChores({}) as string, /expected/);
+  assert.match(parseChores({ chores: [{ ...ok, id: 'a b', title: 'x' }] }) as string, /id: invalid/);
+  assert.match(parseChores({ chores: [{ ...ok, id: 'a', title: ' ' }] }) as string, /title/);
+  assert.match(parseChores({ chores: [{ ...ok, id: 'a', title: 'x' }, { ...ok, id: 'a', title: 'y' }] }) as string, /duplicate/);
+  assert.match(parseChores({ chores: [{ ...ok, id: 'a', title: 'x', who: 3 }] }) as string, /who/);
+});
+
+test('activityAfter returns events after a seq', () => {
+  let s = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  s = untick(s, 'dishes', D('2026-11-16'))!;
+  s = pay(s, 'p1', 'sarina', 100)!;
+  const a = activityAfter(s, 1);
+  assert.deepEqual(a.events.map((e) => e.seq), [2, 3]);
+  assert.equal(a.logId, 'log-t');
+  assert.equal(a.seq, 3);
+  assert.deepEqual(activityAfter(s, 3).events, []);
+});
+
+test('view lists balances for everyone in the chores or the log', () => {
+  const s = pay(twoChores(), 'p1', 'mom', 1)!;
+  const zero = { earned: 0, paid: 0, owed: 0, lastPaidAt: null };
+  const v = view(s, D('2026-11-16'));
+  assert.deepEqual(v.balances.mariko, zero);
+  assert.deepEqual(v.balances.sarina, zero);
+  assert.equal(v.balances.mom.paid, 1);
+  assert.equal(v.version, s.version);
+  assert.deepEqual(v.chores[0], { id: 'dishes', title: 'Dishes', who: 'mariko', icon: null, amount: 100, done: false });
+});
+
+test('reviveState upgrades an old file', () => {
+  const s = reviveState(
+    {
+      version: 7,
+      chores: [{ id: 'x', title: 'X', who: null, icon: null, done: true, doneAt: 1 }],
+      panels: { eva: { data: 'hi', updatedAt: 1 } },
+    },
+    'log-new',
+  );
+  assert.equal(s.logId, 'log-new');
+  assert.deepEqual(s.chores, []);
+  assert.deepEqual(s.log, []);
+  assert.equal(s.seq, 0);
+  assert.deepEqual(s.panels, { eva: { data: 'hi', updatedAt: 1 } });
+  assert.equal(s.version, 7);
+});
+
+test('reviveState round-trips a current file and falls back to empty on a corrupt one', () => {
+  let s = tick(twoChores(), 'dishes', D('2026-11-16'))!;
+  s = pay(s, 'p1', 'mariko', 100)!;
+  assert.deepEqual(reviveState(JSON.parse(JSON.stringify(s)), 'other'), s);
+  assert.equal(reviveState({ ...s, seq: undefined }, 'other').seq, 2);
+  assert.deepEqual(reviveState(null, 'log-x'), emptyState('log-x'));
+  assert.deepEqual(reviveState({ chores: 'x' }, 'log-x'), emptyState('log-x'));
 });
 
 test('a panel set to empty data is present; a cleared panel is absent', () => {
-  const s = apply(emptyState(), { type: 'panel.set', name: 'schedule', data: [], at: 5 })!;
+  const s = apply(emptyState('log-t'), { type: 'panel.set', name: 'schedule', data: [], at: 5 })!;
   assert.deepEqual(s.panels.schedule, { data: [], updatedAt: 5 });
   const cleared = apply(s, { type: 'panel.clear', name: 'schedule' })!;
   assert.equal('schedule' in cleared.panels, false);
   assert.equal(apply(cleared, { type: 'panel.clear', name: 'schedule' }), null);
-});
-
-test('parseChores rejects malformed input with a usable message', () => {
-  assert.match(parseChores({}) as string, /expected/);
-  assert.match(parseChores({ chores: [{ id: 'a b', title: 'x' }] }) as string, /id: invalid/);
-  assert.match(parseChores({ chores: [{ id: 'a', title: ' ' }] }) as string, /title/);
-  assert.match(parseChores({ chores: [{ id: 'a', title: 'x' }, { id: 'a', title: 'y' }] }) as string, /duplicate/);
-  assert.deepEqual(parseChores({ chores: [{ id: 'a', title: ' Dishes ' }] }), [{ id: 'a', title: 'Dishes', who: null, icon: null }]);
-});
-
-test('reviveState falls back to empty on a corrupt file', () => {
-  assert.deepEqual(reviveState(null), emptyState());
-  assert.deepEqual(reviveState({ chores: 'x' }), emptyState());
-});
-
-test('reviveState fills in fields an older file predates', () => {
-  const s = reviveState({ version: 3, chores: [{ id: 'a', title: 'A', done: false, doneAt: null }], panels: {} });
-  assert.equal(s.chores[0].icon, null);
-  assert.equal(s.chores[0].who, null);
-});
-
-test('a pushed done wins and keeps its doneAt until it changes; omitted done keeps the tick', () => {
-  let s = apply(emptyState(), { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null }], at: 1 })!;
-  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null, done: true }], at: 2 })!;
-  assert.deepEqual([s.chores[0].done, s.chores[0].doneAt], [true, 2]);
-  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null, done: true }], at: 3 })!;
-  assert.equal(s.chores[0].doneAt, 2);
-  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null }], at: 4 })!;
-  assert.equal(s.chores[0].done, true);
-  assert.ok(!('done' in (parseChores({ chores: [{ id: 'a', title: 'A' }] }) as object[])[0]));
-  s = apply(s, { type: 'chores.replace', chores: [{ id: 'a', title: 'A', who: null, icon: null, done: false }], at: 5 })!;
-  assert.deepEqual([s.chores[0].done, s.chores[0].doneAt], [false, null]);
-  assert.match(parseChores({ chores: [{ id: 'a', title: 'A', done: 'yes' }] }) as string, /done/);
 });

@@ -36,13 +36,8 @@ sudo cp ~/wallboard/deploy/wallboard.service /etc/systemd/system/wallboard.servi
 sudo systemctl daemon-reload
 sudo systemctl enable --now wallboard >/dev/null 2>&1
 sudo systemctl restart wallboard
-# Chores from Apple Reminders. Idle (skipped by its ConditionPathExists) until an
-# iCloud session is copied to ~/.wallboard-icloud — see README "Chores".
-command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh >/dev/null
-sudo cp ~/wallboard/deploy/wallboard-reminders.service /etc/systemd/system/wallboard-reminders.service
-sudo systemctl daemon-reload
-sudo systemctl enable wallboard-reminders >/dev/null 2>&1
-sudo systemctl restart wallboard-reminders
+# Chores no longer come from Apple Reminders; retire the old sync unit if present.
+sudo systemctl disable --now wallboard-reminders 2>/dev/null || true; sudo rm -f /etc/systemd/system/wallboard-reminders.service; sudo systemctl daemon-reload
 sleep 1
 curl -fsS localhost:8080/healthz && echo
 REMOTE

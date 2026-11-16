@@ -40,6 +40,12 @@ it with a different `baseUrl` and two headers.
   well. Optional for correctness, load-bearing for quality.
 - `schemas/bundle.schema.json` — the contract.
 
+## Skills
+
+- `skills/eva-bundle/` — gathering the context bundle for the device.
+- `skills/eva-board-bubble/` — Eva's speech bubble on the kitchen board.
+- `skills/eva-chores/` — the chores ledger: copies board activity into Notion, pushes chore definitions, records payments, answers allowance questions.
+
 ## Where the contract actually lives
 
 `schemas/bundle.schema.json` is the reference copy, and the schema the skill is

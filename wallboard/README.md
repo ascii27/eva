@@ -9,7 +9,8 @@ Separate from the phone app: its own Node project, its own deploy, hosted at
 
 ## Shape
 
-- `server/state.ts` — the board's state and every way it changes. Pure, tested.
+- `server/state.ts`, `server/schedule.ts` — the board's state, each chore's
+  schedule, the append-only activity log, and every way they change. Pure, tested.
 - `server/index.ts` — Node `http`, no framework, no runtime deps. Holds state in
   one JSON file (`data/state.json`, atomic writes) and streams every change to
   open boards over SSE.
@@ -20,8 +21,9 @@ Separate from the phone app: its own Node project, its own deploy, hosted at
   day: "Morning paper" 06:30–21:00, dark Haven Night until bedtime, switched
   with a 1.5 s crossfade, no reload.
 - `web/dummy.js` — **dummy content** for everything Eva doesn't push yet. Each
-  key is replaced by the pushed panel of the same name. Pay and bath order are
-  dummy too and live only in the board's browser (localStorage).
+  key is replaced by the pushed panel of the same name. Bath order is
+  still dummy and lives only in the board's browser (localStorage). Pay is real:
+  it comes from the board's activity log.
 
 Node 24 runs the TypeScript directly (type stripping), so there is no build step.
 
@@ -64,8 +66,11 @@ Both are generated into `/etc/wallboard.env` on the first deploy:
 |---|---|---|---|
 | `PUT` | `/api/eva/panels/<name>` | `{"data": <any JSON>}` | Set a panel. `name` matches `^[a-z][a-z0-9-]{0,31}$`. |
 | `DELETE` | `/api/eva/panels/<name>` | — | Remove a panel. |
-| `PUT` | `/api/eva/chores` | `{"chores": [{"id", "title", "who"?, "icon"?, "done"?}], "ifVersion"?}` | Replace the chore list. Chores that keep their `id` keep their done state unless the push sends `done`. With `ifVersion`, 409 if the state moved on. The Reminders sync owns this list (see "Chores"). `who` is a household id (`mariko`, `sarina`, …); `icon` is a key in `web/icons.js` (`bed`, `bag`, `table`, `shoes`, `laundry`, `plants`). |
-| `GET` | `/api/eva/state` | — | Read everything, including what the family ticked. |
+| `PUT` | `/api/eva/chores` | `{"chores": [{"id", "title", "who", "icon", "amount", "schedule": {"every", "unit": "day"\|"week", "start"}}]}` | Replace the chore definitions (a `ChoreDef`). `amount` is yen per completion. Rejects `done`: that is the board's, not hermes'. Owned by the `eva-chores` skill (see "Chores"). `who` is a household id (`mariko`, `sarina`, …); `icon` is a key in `web/icons.js`. |
+| `GET` | `/api/eva/state` | — | The computed view: `{version, chores: [{id, title, who, icon, amount, done}], balances, panels}`. |
+| `GET` | `/api/eva/activity?after=<seq>` | — | `{logId, seq, events}`: log events with `seq` greater than `after`, in order, plus the log's id and its highest `seq` so hermes can spot a reset board. |
+| `GET` | `/api/eva/balances` | — | `{balances: {who: {earned, paid, owed, lastPaidAt}}}`, computed from the log. |
+| `POST` | `/api/eva/payments` | `{"who", "amount", "note"?, "id"?}` | Record a payment (a negative amount is a credit). `amount` is a non-zero integer within ±1,000,000 yen. A repeated `id` is not recorded twice. |
 
 **Absent vs empty**, as on the desk: a panel that was never pushed means "Eva
 never told us" and the board shouldn't pretend it knows. A panel pushed as `[]`
@@ -127,46 +132,40 @@ the older `at` field and the old `tomorrow: {at, title}`.
 
 - `GET /api/events` — SSE: `hello {build}` then `state` on connect and on every change.
   A new `build` means a redeploy, and the page reloads.
+- `GET /api/state` — the same computed view hermes reads.
 - `PUT /api/chores/<id>` `{"done": true|false}` — a set, not a toggle, so undo
   and retries can't flip a chore the wrong way.
+- `POST /api/pay/<who>` `{"amount"}` — Mark paid: records a payment. `amount` must be
+  positive and equal to what is currently owed; anything else (a double tap's second
+  request, a balance that changed underneath) is `409 {error, owed}` and records nothing.
+- `POST /api/cancel/<eventId>` — cancels a recorded payment (the undo of Mark paid).
+  Completions are undone with `PUT /api/chores/<id>` instead; anything else is 404.
 
-## Chores (Apple Reminders)
+## Chores
 
-The chore list comes from the family's shared **Family** list in Apple
-Reminders: every reminder tagged **#Chore**, titled `Chore - Name` (`Dishes -
-Mariko`; the name after the last " - " becomes `who`, same spellings as the
-calendar). `sync/reminders_sync.py` runs beside the board
-(`wallboard-reminders.service`) and owns the chore list: it pushes
-`PUT /api/eva/chores` with `done` and an `ifVersion`, so a tap made while it
-was talking to iCloud is never overwritten (409, retried).
+Chore definitions live in Notion and reach the board through hermes' `eva-chores`
+skill (`hermes/skills/eva-chores/SKILL.md`, `scripts/eva_chores.py`), which
+pushes `PUT /api/eva/chores`. Each chore carries its own schedule and its pay in
+yen. The board, not hermes, decides what is due.
 
-- **What shows:** chores due today or overdue (to do), and chores that were due
-  today and have since moved on (done, until midnight). Policy and tests:
-  `sync/chores.py`, `sync/test_chores.py` (`npm run test:sync`).
-- **Ticking is what the iPhone does.** The chores repeat, and ticking a
-  repeating reminder on a phone moves its due date to the next occurrence: no
-  completed flag, no completed copy. A tap on the board does the same (past
-  today, if it was overdue); Undo puts the old date back. A tick on a phone
-  shows on the board within `ICLOUD_POLL` (120 s); a tap on the board reaches
-  Reminders within a few seconds.
-- **Icons** are guessed from the chore's name (`table`, `bath`, …); a chore
-  with no icon of its own gets the board's generic one.
+- **What shows:** chores due today, plus overdue ones, which carry over until
+  done. Ticking moves a chore to its next occurrence after today; undo
+  restores it, same day only. A new chore starts at its `start`, even if past;
+  one dropped from a push and back in a later one is seeded from its last
+  completion in the log, so it keeps its phase and can't be paid twice in a
+  day. Policy and tests: `server/schedule.ts`, `server/state.ts`.
+- **Every tap is an event** in the board's append-only log (`data/state.json`),
+  with an event id, a `logId` and a monotonic `seq`. hermes reads
+  `GET /api/eva/activity?after=<seq>` and copies new events into the Notion
+  ledger, so a retry never duplicates a row.
+- **Pay** is per chore, in yen. **Mark paid** records a payment in the same log,
+  and balances (`earned`, `paid`, `owed`) are computed from it, never stored.
+- **Icons** come from the chore definition; a chore with none gets the board's
+  generic one.
 
-**Login.** No password lives on the VM. Log in on a Mac (password + 2FA,
-prompted, never stored), then copy the session:
-
-```bash
-uv run scripts/probe-reminders.py    # in a real terminal, from wallboard/
-scp -r ~/.wallboard-icloud eva-board.exe.xyz:
-ssh eva-board.exe.xyz 'chmod -R go-rwx ~/.wallboard-icloud && sudo systemctl restart wallboard-reminders'
-```
-
-The session's file name stands in for the Apple ID, so the address isn't in
-`/etc/wallboard.env` either. When Apple expires the session the sync stops
-touching iCloud, keeps the last list on the board, logs "login needed", and
-publishes the `chores-sync` panel as `{ok: false, reason: "login"}` (`{ok:
-true}` otherwise) — repeat the three lines above. `scripts/probe-reminder-tick.py`
-ticks or un-ticks one reminder titled "Test…" by hand.
+**Migration.** The old Apple Reminders sync is gone. To export the current
+#Chore reminders once, run on the Mac (iCloud login, password + 2FA, prompted
+and never stored): `uv run scripts/export-chores.py > chores.json`.
 
 ## Memories (iCloud shared albums)
 
