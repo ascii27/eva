@@ -1,12 +1,14 @@
 """python3 -m unittest wallboard/scripts/test_export_chores.py  (no deps, no iCloud)"""
 
 import importlib.util
+import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
 spec = importlib.util.spec_from_file_location("export_chores", Path(__file__).with_name("export-chores.py"))
 ec = importlib.util.module_from_spec(spec)
+sys.modules["export_chores"] = ec
 spec.loader.exec_module(ec)
 
 
