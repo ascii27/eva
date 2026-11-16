@@ -48,3 +48,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Playwright MCP screenshots and logs
+/.playwright-mcp/
