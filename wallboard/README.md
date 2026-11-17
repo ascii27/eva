@@ -122,8 +122,13 @@ merged with the family's iCloud calendar when
 (`server/calendar.ts`): fetched every 15 min, recomputed every minute so the day
 rolls over at midnight, all times in Tokyo time. The link is a secret — anyone
 holding it can read the calendar — so it lives only on the VM, never in git or
-logs. `who` is read from the title (まりこ/さりな/のぞみ/マイケル or romaji; キッズ =
-both girls). `schedule` (today) and `tomorrow` are event lists:
+logs. `who` is everyone **invited** to the event (its attendees, minus the
+organizer and anyone who declined), matched to the household by name or
+address, plus anyone the title names (まりこ/さりな/のぞみ/マイケル or romaji;
+キッズ = both girls). An invitee whose name and address don't say who they are
+(a child's Apple ID) is mapped with `CALENDAR_PEOPLE="addr@example.com=sarina …"`
+in `/etc/wallboard.env`; after each fetch the journal logs how many invitees
+matched nobody (counts only, never names or addresses). `schedule` (today) and `tomorrow` are event lists:
 `[{id, who, start, end?, title, icon, bring?: [{icon, label}]}]` — `start` is
 `H:MM` (`null` with `allDay: true` for all-day events), `end` defaults to start
 + 60 min, `icon` is a key in `web/icons.js` (the server guesses it from the

@@ -74,10 +74,78 @@ const WHO: [RegExp, string[]][] = [
   [/マイケル|michael/i, ['michael']],
   [/キッズ|kids|girls/i, ['mariko', 'sarina']],
 ];
+const ORDER = ['mariko', 'sarina', 'nozomi', 'michael'];
+const ordered = (ids: Iterable<string>) => { const s = new Set(ids); return ORDER.filter((i) => s.has(i)); };
+
 export function whoOf(title: string): string[] {
   const out = new Set<string>();
   for (const [re, ids] of WHO) if (re.test(title)) ids.forEach((i) => out.add(i));
-  return ['mariko', 'sarina', 'nozomi', 'michael'].filter((i) => out.has(i));
+  return ordered(out);
+}
+
+/** One invitee as the feed lists them: display name (CN) and address, lower-cased. */
+export interface Attendee { name: string; email: string }
+
+/**
+ * Who was invited to an event: its ATTENDEEs, minus anyone who declined, any
+ * non-participant, and the organizer — the parent who put a lesson in the
+ * calendar and invited the child is not themselves going to it.
+ */
+function attendeesOf(c: ICAL.Component): Attendee[] {
+  const addr = (v: unknown) => String(v ?? '').replace(/^mailto:/i, '').trim().toLowerCase();
+  const organizer = addr(c.getFirstPropertyValue('organizer'));
+  const out: Attendee[] = [];
+  for (const p of c.getAllProperties('attendee')) {
+    const email = addr(p.getFirstValue());
+    if (String(p.getParameter('partstat') ?? '').toUpperCase() === 'DECLINED') continue;
+    if (String(p.getParameter('role') ?? '').toUpperCase() === 'NON-PARTICIPANT') continue;
+    if (organizer && email === organizer) continue;
+    out.push({ name: String(p.getParameter('cn') ?? '').trim(), email });
+  }
+  return out;
+}
+
+/**
+ * `CALENDAR_PEOPLE`: `address=id` pairs, comma or space separated, for
+ * invitees whose name and address don't say who they are (a child's Apple ID).
+ * Addresses are personal, so this lives in /etc/wallboard.env, not in git.
+ */
+export function parsePeople(spec: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const pair of (spec ?? '').split(/[\s,]+/)) {
+    const i = pair.lastIndexOf('=');
+    if (i > 0) out.set(pair.slice(0, i).replace(/^mailto:/i, '').toLowerCase(), pair.slice(i + 1).trim().toLowerCase());
+  }
+  return out;
+}
+
+/** Household id for one invitee: the configured address first, then their name, then the address itself. */
+export function personOf(a: Attendee, people: Map<string, string> = new Map()): string | null {
+  const mapped = people.get(a.email);
+  if (mapped) return mapped;
+  for (const s of [a.name, a.email.split('@')[0]]) {
+    const ids = whoOf(s);
+    if (ids.length === 1) return ids[0];
+  }
+  return null;
+}
+
+/**
+ * Who an event is for: everyone invited that we can place, plus anyone the
+ * title names. Invitees are the real answer (ASC-30); the title still counts,
+ * so an uninvited "キッズ" event, or one shared from outside the family, keeps
+ * its people.
+ */
+export function whoFor(title: string, attendees: Attendee[], people?: Map<string, string>): string[] {
+  const ids = new Set(whoOf(title));
+  const extra: string[] = [];
+  for (const a of attendees) {
+    const id = personOf(a, people);
+    if (!id) continue;
+    if (ORDER.includes(id)) ids.add(id);
+    else if (!extra.includes(id)) extra.push(id);
+  }
+  return [...ordered(ids), ...extra];
 }
 
 // Which icon a calendar title gets; the board falls back to a calendar.
@@ -98,7 +166,7 @@ function subOf(location: string | null): string {
   return first.length > 40 ? `${first.slice(0, 39)}…` : first;
 }
 
-interface Occurrence { start: number; end: number; allDay: boolean; startDate: string; endDate: string; title: string; location: string | null; recurring: boolean }
+interface Occurrence { start: number; end: number; allDay: boolean; startDate: string; endDate: string; title: string; location: string | null; recurring: boolean; attendees: Attendee[] }
 
 /** Every occurrence overlapping [from, to), recurring events expanded. */
 function occurrences(ics: string, from: number, to: number): Occurrence[] {
@@ -135,6 +203,7 @@ function occurrences(ics: string, from: number, to: number): Occurrence[] {
       title: (item.summary ?? '').trim() || '(no title)',
       location: item.location ?? null,
       recurring,
+      attendees: attendeesOf(item.component),
     });
   };
 
@@ -158,7 +227,7 @@ const hmKey = (hm: string) => { const [h, m] = hm.split(':').map(Number); return
  * merged with the routine (routine.ts). The leave-by is its own panel — the
  * board folds it into the schedule itself, inside its window.
  */
-export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
+export function calendarPanels(ics: string | null, now: Date, people?: Map<string, string>): CalendarPanels {
   const today = tokyoDate(now);
   const t0 = midnight(today);
   const tomorrow = tokyoDate(new Date(t0 + DAY + 1));
@@ -167,7 +236,7 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
 
   const entry = (o: Occurrence): Entry => {
     const start = o.allDay ? null : tokyoHM(new Date(o.start));
-    const e: Entry = { id: `${o.startDate}-${start ?? 'allday'}-${o.title}`, start, title: o.title, who: whoOf(o.title), icon: iconOf(o.title), sub: subOf(o.location) };
+    const e: Entry = { id: `${o.startDate}-${start ?? 'allday'}-${o.title}`, start, title: o.title, who: whoFor(o.title, o.attendees, people), icon: iconOf(o.title), sub: subOf(o.location) };
     // A same-day end only; past midnight the default (start + 60) is the better guess.
     if (!o.allDay && o.end > o.start && tokyoDate(new Date(o.end - 1)) === o.startDate) e.end = tokyoHM(new Date(o.end));
     if (o.allDay) e.allDay = true;
@@ -193,7 +262,7 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
   tTimed.sort((a, b) => hmKey(a.start!) - hmKey(b.start!));
 
   const birthdays = occ.filter((o) => isBirthday(o.title)).map((o) => {
-    const w = whoOf(o.title);
+    const w = whoFor(o.title, o.attendees, people);
     return { date: o.startDate, title: o.title, who: w.length === 1 ? w[0] : undefined };
   });
 
@@ -209,6 +278,28 @@ export function calendarPanels(ics: string | null, now: Date): CalendarPanels {
   };
 }
 
+/**
+ * After each fetch, say how much of the calendar is attributed by invitation,
+ * so a feed that stops carrying attendees (or a new invitee nobody mapped) is
+ * visible in the journal. Counts only: names and addresses stay out of logs.
+ */
+let lastAttendeeLog = '';
+function logAttendees(ics: string, people?: Map<string, string>): void {
+  try {
+    const root = new ICAL.Component(ICAL.parse(ics));
+    const events = root.getAllSubcomponents('vevent');
+    const unplaced = new Set<string>();
+    let invited = 0;
+    for (const c of events) {
+      const as = attendeesOf(c);
+      if (as.length) invited++;
+      for (const a of as) if (!personOf(a, people)) unplaced.add(a.email || a.name);
+    }
+    const line = `[calendar] ${events.length} events, ${invited} with invitees, ${unplaced.size} invitee(s) not matched to anyone (CALENDAR_PEOPLE)`;
+    if (line !== lastAttendeeLog) { lastAttendeeLog = line; console.log(line); }
+  } catch { /* recompute reports parse errors */ }
+}
+
 /** webcal:// is just https:// with a different scheme. */
 export const httpsUrl = (url: string) => url.replace(/^webcals?:\/\//i, 'https://');
 
@@ -217,14 +308,14 @@ export const httpsUrl = (url: string) => url.replace(/^webcals?:\/\//i, 'https:/
  * the day rolls over at midnight without waiting for a fetch. A failed fetch
  * keeps the last copy: an absent panel would fall back to dummy events.
  */
-export function startCalendar(url: string | undefined, fetchMs: number, publish: (name: keyof CalendarPanels, data: unknown) => void): void {
+export function startCalendar(url: string | undefined, fetchMs: number, publish: (name: keyof CalendarPanels, data: unknown) => void, people?: Map<string, string>): void {
   let ics: string | null = null;
   const last: Record<string, string> = {};
   const recompute = () => {
     // With a URL, wait for the first fetch rather than publish a calendar-less day.
     if (url && ics == null) return;
     try {
-      const p = calendarPanels(ics, new Date());
+      const p = calendarPanels(ics, new Date(), people);
       for (const name of ['schedule', 'tomorrow', 'leave-by', 'bedtime', 'occasions'] as const) {
         const key = JSON.stringify(p[name]);
         if (key !== last[name]) { last[name] = key; publish(name, p[name]); }
@@ -238,6 +329,7 @@ export function startCalendar(url: string | undefined, fetchMs: number, publish:
       const r = await fetch(httpsUrl(src), { signal: AbortSignal.timeout(30_000) });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       ics = await r.text();
+      logAttendees(ics, people);
       recompute();
     } catch (e) {
       // Never log the URL: it is the calendar's only secret.
