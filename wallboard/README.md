@@ -38,8 +38,9 @@ npm run seed         # push the dummy chore list (WALLBOARD_URL, HERMES_TOKEN);
 ```
 
 Testing switches on the board URL: `?time=7:42` fakes the clock, `?mode=ambient|active|night`
-pins a view, `?theme=day|evening` pins a theme, `?eva=new` replays Eva's new-message arrival, `?debug=1` shows Silk's real viewport size and
-keep-alive status (and exposes `wb.nextPhoto()` in the console).
+pins a view, `?theme=day|evening` pins a theme, `?eva=new` replays Eva's new-message arrival, `?sound=off` mutes the countdown chimes and
+`?sound=announce|alarm` plays one on every tap, `?debug=1` shows Silk's real viewport size and
+keep-alive status (and exposes `wb.nextPhoto()` and `wb.chime('announce'|'alarm')` in the console).
 
 ## Why hermes pushes and the board never pulls
 

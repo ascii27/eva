@@ -8,6 +8,8 @@
 //   ?debug=1                     show Silk's viewport size — DESIGN.md asks to confirm it
 //   ?eva=new                     replay Eva's new-message arrival a moment after load
 //                                (with the dummy message if nothing was pushed)
+//   ?sound=off                   no countdown chimes; ?sound=announce|alarm plays that
+//                                cue on every tap (to hear it on the Echo's speaker)
 
 import { icon, glyph, star, weatherIcon } from './icons.js';
 import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from './celebrate.js';
@@ -15,6 +17,7 @@ import { ORDER, person } from './household.js';
 import { dummy } from './dummy.js';
 import { EvaSpot, evaMessage, evaSig } from './eva.js';
 import { comingUp, shownAt } from './comingup.js';
+import { ANNOUNCE, ALARM, render as renderCue, wav, cueFor } from './chime.js';
 
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
@@ -947,6 +950,52 @@ function renderAll() {
   else if (view === 'active') renderActive();
   else if (view === 'night') renderNight();
   syncEva();
+  chimeCheck();
+}
+
+// ---- countdown chimes (ASC-32, web/chime.js) ---------------------------------
+//
+// A beep-boop when the Next-up card starts counting down, and a music-box alarm
+// at five minutes out. Each plays once per event per day; what has played is
+// kept in localStorage so a redeploy's reload doesn't replay it. Never at night.
+// Silk only lets audio start after a tap, which the keep-alive's first tap
+// already gives the page; a cue the browser refuses is still marked played, so
+// it can't go off stale when someone finally touches the board.
+
+const CUES = {};
+function cueAudio(name) {
+  CUES[name] ??= URL.createObjectURL(new Blob([wav(renderCue(name === 'alarm' ? ALARM : ANNOUNCE))], { type: 'audio/wav' }));
+  return new Audio(CUES[name]);
+}
+function playCue(name) {
+  try { cueAudio(name).play().catch(() => {}); } catch {}
+}
+
+const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+function loadPlayed(day) {
+  try {
+    const s = JSON.parse(localStorage.getItem('wallboard.chimes') ?? 'null');
+    if (s?.day === day && Array.isArray(s.played)) return new Set(s.played);
+  } catch {}
+  return new Set();
+}
+let chimes = { day: null, played: new Set() };
+
+function chimeCheck() {
+  if (q.get('sound') === 'off') return;
+  const d = now();
+  const day = dayKey(d);
+  if (chimes.day !== day) chimes = { day, played: loadPlayed(day) };
+  if (isNight(d) || !server) return;
+  const up = nextUp();
+  // Only real events ring: never one the dummy content is standing in for.
+  const source = up?.id === 'leave' ? 'leave-by' : up?.id === 'bedtime' ? 'bedtime' : 'schedule';
+  if (up && !server.panels?.[source]) return;
+  const { cue, mark } = cueFor(up && { key: `${up.id}@${up.start}`, mins: up.mins }, chimes.played);
+  if (!cue) return;
+  mark.forEach((m) => chimes.played.add(m));
+  try { localStorage.setItem('wallboard.chimes', JSON.stringify({ day, played: [...chimes.played] })); } catch {}
+  playCue(cue);
 }
 
 // ---- Eva (CLAUDE.md "Eva bubble") ----------------------------------------------
@@ -1288,14 +1337,19 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') { holdWakeLock(); playSilence(); }
 });
 
-addEventListener('pointerup', () => { goFullscreen(); armKeepAlive(); });
+addEventListener('pointerup', () => {
+  goFullscreen();
+  armKeepAlive();
+  const test = q.get('sound');
+  if (test === 'announce' || test === 'alarm') playCue(test);
+});
 
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon, 32);
 addEventListener('resize', fit);
 applyTheme(false);
 if (q.get('debug')) {
   setInterval(fit, 5000);   // keep the keep-alive status in the debug line fresh
-  window.wb = { nextPhoto, applyTheme, evaNew: evaReplay };   // step photos / themes / Eva from the console
+  window.wb = { nextPhoto, applyTheme, evaNew: evaReplay, chime: playCue };   // step photos / themes / Eva from the console
 }
 fit();
 show(resting());

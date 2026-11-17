@@ -235,6 +235,7 @@ References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dar
 - Leave-for-school is real now (`server/routine.ts`): 7:55 Mon–Fri, shown only in the 45 min before (DESIGN.md). Never in the evening, never at weekends.
 - Bedtime 20:30 Sun–Thu, 21:00 Fri–Sat: a schedule row plus the countdown card in the 30 min before; night mode stays 21:30.
 - Countdown tile ("Coming up", ASC-25) rotates every 20 s, nearest first, through the nearest calendar birthday (always included), the nearest major JP/US holiday and the nearest one-off school event from the calendar (`server/occasions.ts`, `occasions` panel), plus everything Eva pushed in `countdowns` (merged and deduped in `web/comingup.js`; hers win a same-day clash). DESIGN.md has the rules. Tapping it celebrates as described above (particles copied into `web/celebrate.js`, `countTile()`/`celebrate()` in app.js).
+- Countdown chimes (ASC-32, DESIGN.md "Countdown chimes"): beep-boop when the Next-up card appears, a music-box alarm at 5 min out, once per event per day, never at night or for dummy content. Policy and synthesis are pure in `web/chime.js` (tested); `chimeCheck()` in app.js owns the clock and the Audio element.
 - The page background is fully solid, so nothing from the Echo's own screen shows through.
 
 ## Silk constraints
