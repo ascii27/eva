@@ -228,7 +228,7 @@ describe('parseSse tool calls', () => {
 /**
  * Named events — the shape hermes-agent's API server adds to an otherwise
  * OpenAI-compatible stream. Measured payloads, verbatim from
- * `PROBE_RAW=1 npm run probe:brain -- 5`:
+ * the since-removed brain probe (case 5, PROBE_RAW=1; 401fe07):
  *
  *   event: hermes.tool.progress
  *   data: {"tool":"terminal","label":"date …","toolCallId":"call_x","status":"running"}

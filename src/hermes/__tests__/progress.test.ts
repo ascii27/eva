@@ -4,7 +4,7 @@ import { startedTools } from '../progress';
 
 /**
  * Payloads measured against the live gateway with
- * `PROBE_RAW=1 npm run probe:brain -- 5`, verbatim:
+ * the since-removed brain probe (case 5, PROBE_RAW=1; 401fe07), verbatim:
  *
  *   {"tool":"terminal","emoji":"…","label":"date '+…'","toolCallId":"call_x","status":"running"}
  *   {"tool":"terminal","toolCallId":"call_x","status":"completed"}
