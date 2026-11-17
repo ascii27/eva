@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calendarPanels, httpsUrl, iconOf, whoOf } from './calendar.ts';
+import { calendarPanels, httpsUrl, iconOf, parsePeople, personOf, whoFor, whoOf } from './calendar.ts';
 
 // Synthetic feed — never the family's real calendar.
 const LA = `BEGIN:VTIMEZONE
@@ -103,6 +103,28 @@ test('whoOf reads names in kana and romaji; httpsUrl rewrites webcal', () => {
   assert.deepEqual(whoOf('Sarina swim'), ['sarina']);
   assert.deepEqual(whoOf('チア@下北沢'), []);
   assert.equal(httpsUrl('webcal://p1-caldav.icloud.com/published/2/x'), 'https://p1-caldav.icloud.com/published/2/x');
+});
+
+test('who comes from the invitees (ASC-30): by name, by address, minus the organizer and anyone who declined', () => {
+  const ics = cal(
+    // Nozomi made it and invited Sarina: it is Sarina's, not Nozomi's.
+    ev('UID:i1\nDTSTART;TZID=Asia/Tokyo:20261116T150000\nDTEND;TZID=Asia/Tokyo:20261116T160000\nSUMMARY:チア@下北沢\nORGANIZER;CN=Nozomi:mailto:mom@example.com\nATTENDEE;CN=Nozomi;PARTSTAT=ACCEPTED:mailto:mom@example.com\nATTENDEE;CN=Sarina G;PARTSTAT=NEEDS-ACTION:mailto:s123@example.com'),
+    // Two girls invited, Michael declined; one invitee is only an address, mapped by CALENDAR_PEOPLE.
+    ev('UID:i2\nDTSTART;TZID=Asia/Tokyo:20261116T170000\nDTEND;TZID=Asia/Tokyo:20261116T180000\nSUMMARY:Dinner out\nATTENDEE;CN=Michael;PARTSTAT=DECLINED:mailto:dad@example.com\nATTENDEE:mailto:mariko.g@example.com\nATTENDEE:mailto:kid2@example.com'),
+    // No invitees: the title still decides, and nobody named means nobody.
+    ev('UID:i3\nDTSTART;TZID=Asia/Tokyo:20261116T190000\nDTEND;TZID=Asia/Tokyo:20261116T193000\nSUMMARY:さりな ピアノ'),
+    ev('UID:i4\nDTSTART;TZID=Asia/Tokyo:20261116T193000\nDTEND;TZID=Asia/Tokyo:20261116T200000\nSUMMARY:Delivery'),
+  );
+  const people = parsePeople('KID2@example.com=sarina, mailto:gran@example.com=grandma');
+  const who = calOnly(calendarPanels(ics, at('2026-11-16T07:00:00'), people)).map((e: any) => `${e.title}: ${e.who.join('+')}`);
+  assert.deepEqual(who, ['チア@下北沢: sarina', 'Dinner out: mariko+sarina', 'さりな ピアノ: sarina', 'Delivery: ']);
+});
+
+test('whoFor merges title and invitees in household order; personOf skips ambiguous names', () => {
+  assert.deepEqual(whoFor('まりこ swim', [{ name: 'Sarina', email: 'x@y' }]), ['mariko', 'sarina']);
+  assert.deepEqual(whoFor('Visit', [{ name: '', email: 'gran@example.com' }], parsePeople('gran@example.com=grandma')), ['grandma']);
+  assert.equal(personOf({ name: 'Mariko & Sarina', email: 'shared@example.com' }), null);
+  assert.equal(personOf({ name: '', email: 'unknown@example.com' }), null);
 });
 
 test('routine: leave at 7:55 Mon–Fri only, bedtime 20:30 Sun–Thu and 21:00 Fri–Sat, timed in order', () => {
