@@ -3,6 +3,9 @@
     "name": "Eva",
     "slug": "eva",
     "version": "1.0.0",
+    "platforms": [
+      "ios"
+    ],
     "orientation": "landscape",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -50,6 +53,12 @@
       "eas": {
         "projectId": "91095e59-30b5-4174-889e-e391ded54307"
       }
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/91095e59-30b5-4174-889e-e391ded54307"
     }
   }
 }
