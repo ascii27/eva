@@ -36,6 +36,7 @@ import {
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
 import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
+import { useOtaUpdates } from '../updates/useOtaUpdates';
 import { useVision } from '../vision/useVision';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
@@ -532,6 +533,21 @@ export function FaceScreen() {
     });
   }, []);
 
+  // Over-the-air updates, applied without a relaunch. Everything that would be
+  // lost to a reload is in memory here — the backlog, the errands, the round —
+  // so this is the one place that can see all of it. The rule is reload.ts.
+  const errandsInFlightRef = useRef(0);
+  errandsInFlightRef.current = errands.inFlight;
+  const updates = useOtaUpdates({
+    idle: mode === 'idle' && !echoBusy,
+    gate: () => ({
+      backlog: backlog.current.length,
+      errandsInFlight: errandsInFlightRef.current,
+      overlayOpen: devVisibleRef.current,
+    }),
+    onIssue: log,
+  });
+
   // Manual mode picks abandon any in-flight speech round, like the design's pick().
   const pickMode = useCallback(
     (m: FaceMode) => {
@@ -715,6 +731,8 @@ export function FaceScreen() {
           bundleLabel={describeBundle(bundle.configured, bundle.state)}
           onBundleRefresh={bundle.refresh}
           errandsInFlight={errands.configured ? errands.inFlight : null}
+          updateLabel={updates.label}
+          onCheckUpdate={() => void updates.checkNow()}
           slackStatus={slack.status}
           onSlackPair={() => setPairingVisible(true)}
           onSlackReconnect={slack.reconnect}
