@@ -99,6 +99,26 @@
 // seconds. If Eva is to say small things while hermes works, that is where they
 // come from — the device, not the model.
 
+// ── MEASURED 2026-10-04, THE TOOLLESS DESK (why cases 4/6/8 now assert)
+//
+// For two days the api_server surface answered every question with no tools at
+// all: "I can't access your live Todoist tasks from this session", 3.2s, zero
+// progress frames. Not the device — `platform_toolsets.api_server` on the hermes
+// host had been narrowed to `[todoist, notion]`, neither of which is a toolset
+// name, so the resolver's native branch produced nothing and the agent was built
+// empty. The gateway said so plainly in ~/.hermes/logs/errors.log ("platform
+// 'api_server' has no valid toolsets configured"); nothing on this side did.
+//
+// The tell was visible here all along and this probe printed straight past it:
+// case 4 ran with `started: []` and reported only a latency. So `expectsTool`
+// now FAILS the run (exit 1) when a question that cannot be answered from the
+// prompt comes back without a single `hermes.tool.progress` frame. The fix was
+// adding the `hermes-api-server` composite back to that list.
+//
+// Note what this cannot see: it asserts that SOME tool ran, not that the right
+// one did. A turn that reaches Todoist by shelling out to curl instead of the
+// MCP tool passes this. That distinction lives in the progress labels.
+
 import { readFileSync } from 'node:fs';
 import { envHermesConfig, hermesHeaders } from '../src/hermes/config.ts';
 import { emptySse, parseSse, type SseEvent, type SseState } from '../src/agent/sse.ts';
@@ -189,6 +209,8 @@ interface Turnout {
   firstToolMs: number | null;
   /** Every content delta with its arrival time, so bursts can be separated. */
   timeline: { at: number; text: string }[];
+  /** This question cannot be answered from the prompt — a tool MUST run. */
+  expectsTool: boolean;
   status: number;
   error: string | null;
 }
@@ -207,6 +229,8 @@ async function streamTurn(opts: {
   tools?: ToolSpec[];
   /** Send DESK_PREAMBLE, exactly as the shipped brain does. */
   preamble?: boolean;
+  /** Assert a server-side tool actually ran. See the toolset note in the header. */
+  expectsTool?: boolean;
 }): Promise<Turnout> {
   // Exactly what useHermes sends — no persona and no history, because hermes
   // brings its own and holds the transcript server-side. The probe drives the
@@ -230,6 +254,7 @@ async function streamTurn(opts: {
     started: [],
     firstToolMs: null,
     timeline: [],
+    expectsTool: opts.expectsTool ?? false,
     status: 0,
     error: null,
   };
@@ -376,6 +401,13 @@ function report(t: Turnout): void {
     const gap = t.firstDeltaMs === null ? '?' : ms(t.firstDeltaMs - (t.firstToolMs ?? 0));
     console.log(`   startedTools → [${t.started.join(', ')}] at ${cover}; silence it has to cover ${gap}`);
   }
+  if (t.expectsTool) {
+    console.log(
+      t.started.length
+        ? `   ✓ a server-side tool ran (${t.started.join(', ')})`
+        : '   ✗ NO TOOL RAN — hermes answered from the prompt alone. The desk surface has no tools.',
+    );
+  }
   if (t.toolCalls.length) {
     console.log(`   tool_calls: ${t.toolCalls.map((c) => `${c.name}(${c.arguments.slice(0, 60)})`).join(', ')}`);
   }
@@ -438,6 +470,7 @@ const CASES: { n: number; run: () => Promise<Turnout> }[] = [
         label: '4 · forced tool run (calendar)',
         question: 'What is on my calendar for the rest of today?',
         sessionId: `${RUN}-calendar`,
+        expectsTool: true,
       }),
   },
   {
@@ -465,6 +498,7 @@ CASES.push(
         question: 'What is on my calendar for the rest of today?',
         sessionId: `${RUN}-pre-calendar`,
         preamble: true,
+        expectsTool: true,
       }),
   },
   {
@@ -492,6 +526,7 @@ CASES.push({
         'Look at my calendar and my tasks, then tell me what I should focus on for the rest of the afternoon.',
       sessionId: `${RUN}-pre-long`,
       preamble: true,
+      expectsTool: true,
     }),
 });
 
@@ -522,6 +557,22 @@ if (chat && !chat.error && chat.firstDeltaMs !== null) {
   console.log(`\n   conversational first word ${ms(chat.firstDeltaMs)} vs OpenAI chat 512–1982ms → ${verdict}`);
 }
 
+// A question about today's calendar cannot be answered from a 20k-token prompt.
+// If one comes back with no `hermes.tool.progress` frame at all, the desk surface
+// is answering with no tools — which is exactly how the 2026-10-03 outage looked
+// from here, and exactly what the probe failed to notice at the time. Measurements
+// print; this one fails, because a silently toolless brain still sounds fluent.
+const toolless = results.filter((t) => t.expectsTool && !t.error && !t.started.length);
+if (toolless.length) {
+  console.log(`\n   ✗ FAIL — ${toolless.length} case(s) that require a tool ran none:`);
+  for (const t of toolless) console.log(`      ${t.label}`);
+  console.log(
+    '      Check `platform_toolsets.api_server` on the hermes host: it must include the\n' +
+      "      `hermes-api-server` composite. A list of only MCP server names resolves to\n" +
+      '      nothing and the agent is built with zero tools (see ~/.hermes/logs/errors.log).',
+  );
+}
+
 const toolCase = results.find((t) => t.label.startsWith('5'));
 if (toolCase) {
   console.log(
@@ -534,3 +585,5 @@ if (toolCase) {
     }`,
   );
 }
+
+if (toolless.length) process.exit(1);
