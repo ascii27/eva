@@ -90,6 +90,10 @@ interface DevControlsProps {
   onBundleRefresh: () => void;
   /** Errands out to hermes, or null when none is configured. */
   errandsInFlight: number | null;
+  /** The running OTA update, and whether a newer one is waiting. */
+  updateLabel: string;
+  /** Fetch and reload into a new update now; says so when there is none. */
+  onCheckUpdate: () => void;
 }
 
 export function DevControls(props: DevControlsProps) {
@@ -244,6 +248,9 @@ export function DevControls(props: DevControlsProps) {
                 "she doesn't know about the two o'clock" looks identical whether
                 the bundle is stale, unparseable, or was never fetched at all. */}
             <Btn label="Bundle" sub={props.bundleLabel} onPress={props.onBundleRefresh} />
+          </View>
+          <View style={styles.row}>
+            <Btn label="Check for update" sub={props.updateLabel} onPress={props.onCheckUpdate} />
           </View>
           {props.errandsInFlight !== null && (
             <Text style={styles.note}>

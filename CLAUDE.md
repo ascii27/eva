@@ -100,6 +100,12 @@ Speech (`src/speech/`):
 - `useEcho.ts` is the round choreographer: listen → thinking → speak. Without an `ask` handler it falls back to the Phase-1 echo (speak the transcript back); with one it asks whichever brain is selected and speaks the reply. `announce()` is the reverse direction — Eva speaking first.
 - Policy lives in pure, unit-tested modules with no React, and all timing/side effects stay in the hooks: `conversation.ts` (follow-up window), `asides.ts` (filler cadence), `proactive.ts` (thread adoption + backlog for Eva-initiated messages). Follow that split when adding behavior.
 
+OTA updates (`src/updates/`) — the preview build applies `eas update` bundles without a relaunch:
+- expo-updates alone checks at launch and applies on the *next* launch, and Eva launches once a week. `useOtaUpdates` checks hourly and reloads into a downloaded update — including one the launch-time check fetched — once `reloadBlocker` (pure, tested) clears.
+- A reload restarts all JS, so the blockers are a list of what lives only in memory: errands in flight (an `ask_other_half` answer would vanish silently), the proactive backlog, a busy face, the open overlay, and two quiet minutes after idle (covers a re-wake and the realtime socket's 45s grace).
+- The overlay's "Check for update" reloads at once — the person pressing it is the speech check — but still defers over an errand, which nobody at the desk can see. `Updates.isEnabled` is false in dev builds, so everything is a no-op there.
+- Publish with `eas update --channel preview --environment preview`; without `--environment` the bundle has no keys.
+
 ## Wallboard (`wallboard/`)
 
 A separate Node project, not device code: the family's kitchen board on an Echo Show 15 (Silk), hosted on the exe.dev VM `eva-board.exe.xyz`. It has its own `package.json`, tests (`node:test`) and deploy (`npm run deploy` from inside it). Root jest, tsc and Metro all exclude it. See `wallboard/README.md` for the push API hermes writes to.
