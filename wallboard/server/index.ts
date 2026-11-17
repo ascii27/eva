@@ -14,7 +14,7 @@ import { tokyoDay } from './schedule.ts';
 import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
 import { IKEJIRI, startWeather } from './weather.ts';
-import { startCalendar } from './calendar.ts';
+import { parsePeople, startCalendar } from './calendar.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -104,7 +104,7 @@ if (process.env.WEATHER !== 'off') {
 // a secret, never log it) plus the fixed routine — published as `schedule`,
 // `tomorrow`, `leave-by` and `bedtime`. Without a URL, the routine alone. DAY=off: dummy.
 if (process.env.DAY !== 'off') {
-  startCalendar(process.env.CALENDAR_URL || undefined, 15 * 60_000, (name, data) => dispatch({ type: 'panel.set', name, data, at: Date.now() }));
+  startCalendar(process.env.CALENDAR_URL || undefined, 15 * 60_000, (name, data) => dispatch({ type: 'panel.set', name, data, at: Date.now() }), parsePeople(process.env.CALENDAR_PEOPLE));
 }
 
 // ---- http helpers ----------------------------------------------------------
