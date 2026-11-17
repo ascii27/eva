@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The device app: pure face/agent/speech logic under jest, plus the typecheck.
+  # Nothing here touches the network or a device — live checks live in scripts/.
+  app:
+    name: App (typecheck + jest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx jest --ci
+
+  # The kitchen wallboard is its own Node project (root jest and tsc exclude it).
+  wallboard:
+    name: Wallboard (typecheck + node:test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: wallboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: wallboard/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
