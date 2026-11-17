@@ -10,9 +10,23 @@
  * - react-native-audio-api downloads prebuilt binaries into its own package
  *   directory during `pod install`, which runs on EAS and not here. They are
  *   pinned by the package version, which is already hashed.
+ *
+ * And two inputs skipped outright, because neither reaches the native build:
+ *
+ * - package.json `scripts`: the default only skips the ios/android ones, so
+ *   removing a probe script (PR #37) changed the runtime version and stranded
+ *   every OTA update published after it. Scripts here come and go with probes.
+ * - .gitignore: hashed by default, and edited for reasons that have nothing to
+ *   do with native code.
  */
+const { SourceSkips } = require('expo/fingerprint');
+
 /** @type {import('expo/fingerprint').Config} */
 module.exports = {
+  sourceSkips:
+    SourceSkips.PackageJsonAndroidAndIosScriptsIfNotContainRun |
+    SourceSkips.PackageJsonScriptsAll |
+    SourceSkips.GitIgnore,
   ignorePaths: [
     'ios/**/*',
     'android/**/*',
