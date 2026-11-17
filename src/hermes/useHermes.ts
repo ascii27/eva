@@ -8,7 +8,7 @@
 // already use, but streaming.
 //
 // What makes this brain different is how little of the device it uses, and all
-// three absences were measured rather than chosen (scripts/probe-hermes-brain.ts):
+// three absences were measured rather than chosen (by the since-removed scripts/probe-hermes-brain.ts, 401fe07):
 //
 //   - **No tools.** The API server is an agent runtime, not an LLM proxy: it
 //     builds its own AIAgent per request and runs its own toolset server-side.

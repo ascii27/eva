@@ -10,7 +10,8 @@
 // model's own "let me look that up" is what covers the gap. A lookup turn was
 // 8.8s and a memory turn 16.3s of pure silence. These frames are the only
 // warning the round gets, so they are what arms the TOOL_LINES fallback and
-// speech.hold(). See scripts/probe-hermes-brain.ts for the measurements.
+// speech.hold(). The measurements are in the since-removed
+// scripts/probe-hermes-brain.ts (`git show 401fe07:scripts/probe-hermes-brain.ts`).
 
 import type { SseEvent } from '../agent/sse';
 

@@ -48,8 +48,7 @@
     "probe:realtime": "node scripts/probe-realtime.ts",
     "probe:tavily": "node scripts/probe-tavily.ts",
     "probe:tools": "node scripts/probe-tools.ts",
-    "probe:vision": "node scripts/probe-vision.ts",
-    "probe:brain": "node scripts/probe-hermes-brain.ts"
+    "probe:vision": "node scripts/probe-vision.ts"
   },
   "private": true,
   "jest": {
