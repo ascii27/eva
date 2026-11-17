@@ -88,6 +88,12 @@ Layout is chosen per photo by aspect ratio (width ÷ height), checked once when 
 - Faces: the clock sits over the portrait; if face boxes become available, prefer crops that keep the face below the clock.
 - Mockup: `design/PaperPortraitSingle.dc.html` (left half, right blank). `PaperPortraitPair.dc.html` is superseded — pairing was dropped. Placeholders `assets/portrait-a.svg`, `assets/portrait-b.svg`.
 
+## Countdown chimes (ASC-32, decided 2026-11-17, `web/chime.js`)
+- When the "Next up" card starts counting down (school run 45 min before, bedtime 30, a calendar event 60), the board plays a short robot **beep boop… bip!** (~0.5 s).
+- At **5 minutes** out it plays a cute music-box **alarm**: a rising C-major arpeggio twice, ending on a held high C (~2.8 s). A card that first appears inside 5 minutes plays the alarm alone.
+- Each cue plays **once per event per day**, remembered across reloads. Never in night mode, and never for dummy content.
+- Synthesized in the page (no audio files). Silk only allows sound after the board has been tapped once, which the keep-alive's first tap already does; after a reload, sound resumes on the next tap.
+
 ## Always-on / burn-in
 - Memory photo crossfades every 3–5 min (CSS opacity transition, pre-sized JPEGs ≤ 1920 px, dimmed with a flat 62% overlay — no blur filters).
 - Ambient content block drifts ±16 px on a 10-min cycle (CSS transform); night block relocates every 10 min.
