@@ -114,9 +114,10 @@ describe('clampCorners', () => {
 });
 
 describe('helpers', () => {
-  it('isSleepyHour matches the design window (before 7, from 22)', () => {
+  it('isSleepyHour is the night window (before 6, from 22; ASC-33 moved it from 7)', () => {
     expect(isSleepyHour(3)).toBe(true);
-    expect(isSleepyHour(6)).toBe(true);
+    expect(isSleepyHour(5)).toBe(true);
+    expect(isSleepyHour(6)).toBe(false);
     expect(isSleepyHour(7)).toBe(false);
     expect(isSleepyHour(12)).toBe(false);
     expect(isSleepyHour(21)).toBe(false);

@@ -1,0 +1,51 @@
+// When Eva sleeps at the desk (ASC-33). Pure policy, no React and no native
+// modules: useSleep owns the clock and the screen brightness.
+//
+// Night is the sleepy-hour window (22:00–06:00, SLEEPY_START/END_HOUR). In it
+// she is dimmed; after SLEEP_AFTER_MS of quiet she also looks asleep, and the
+// screen goes darker still. Anything that happens — a wake, a touch, a
+// message she speaks — brightens her for the conversation, and the quiet
+// clock restarts when it's over. Quiet only counts from the start of the
+// night, so at 22:00 she dims first and dozes off ten minutes later rather
+// than falling straight asleep because the evening was quiet.
+
+import { isSleepyHour } from './geometry';
+import { SLEEPY_START_HOUR } from './constants';
+
+export type SleepPhase = 'awake' | 'dim' | 'asleep';
+
+/** Quiet time at night before she looks asleep. */
+export const SLEEP_AFTER_MS = 10 * 60_000;
+/** After a conversation or a touch at night, stay bright this long before dimming. */
+export const NIGHT_AWAKE_GRACE_MS = 60_000;
+
+/** Screen brightness (0–1) by phase; never brighter than the daytime level. */
+export const NIGHT_TALK_BRIGHTNESS = 0.5;
+export const DIM_BRIGHTNESS = 0.1;
+export const ASLEEP_BRIGHTNESS = 0.02;
+
+/** Local time of the night window's most recent start (22:00), in ms. */
+export function nightStart(now: Date): number {
+  const d = new Date(now);
+  if (d.getHours() < SLEEPY_START_HOUR) d.setDate(d.getDate() - 1);
+  d.setHours(SLEEPY_START_HOUR, 0, 0, 0);
+  return d.getTime();
+}
+
+/**
+ * The phase at `now`, given whether a round is under way (`busy`) and when
+ * anything last happened (`lastActive`, ms).
+ */
+export function sleepPhase(now: Date, busy: boolean, lastActive: number): SleepPhase {
+  if (!isSleepyHour(now.getHours())) return 'awake';
+  const t = now.getTime();
+  if (busy || t - lastActive < NIGHT_AWAKE_GRACE_MS) return 'awake';
+  const quiet = t - Math.max(lastActive, nightStart(now));
+  return quiet >= SLEEP_AFTER_MS ? 'asleep' : 'dim';
+}
+
+/** Screen brightness for a night phase, capped at the daytime level `day`. */
+export function nightBrightness(phase: SleepPhase, day: number): number {
+  const level = phase === 'asleep' ? ASLEEP_BRIGHTNESS : phase === 'dim' ? DIM_BRIGHTNESS : NIGHT_TALK_BRIGHTNESS;
+  return Math.min(day, level);
+}
