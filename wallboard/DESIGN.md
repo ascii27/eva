@@ -14,14 +14,14 @@ Nozomi amber (Haven `warm`), Michael blue (Haven `cool`). Always shown with name
 |---|---|---|
 | Ambient | default; 60 s after last touch | Clock, weather now, one live countdown (leave-by), Eva's note, next 3 events, chore progress strip, one countdown, dimmed memory photo behind |
 | Active | any tap on ambient | Hourly weather, full day schedule, tappable chores per person, Eva, leave/pickup, dinner, countdowns |
-| Night | bedtime (~21:30)–06:30 (or ambient light sensor if exposed) | Clock, tomorrow's first commitment, weather. Pure black, warm dim text, no photo. Tap → dimmed active view |
+| Night | 22:00–06:00 (or ambient light sensor if exposed) | Clock, tomorrow's first commitment, weather. Pure black, warm dim text, no photo. Tap → dimmed active view |
 
 ## Themes by time of day
 | Window | Theme | Notes |
 |---|---|---|
-| ~06:30–21:00 | **Day — "Morning paper v3 · halo"** | v2 sand colours (v1 was too bright and flat on the Echo): ground #d6c7ae, cards #fffaf1 with 1px #c9b89c edge and a stronger shadow, ink #1d1712, muted #4b4034, done-teal #0b6760. Memory photo under a 35% sand veil; text sits directly on the photo with a cream halo (`text-shadow: 0 0 2px #fffaf1, 0 0 6px #fffaf1, 0 0 22px rgba(255,250,241,.95)`), heavier weights (clock 400, date 700) and full ink. Same treatment for landscape and single portrait (portraits are never paired). Caption on a cream pill. References: `design/PaperV3HaloLandscape.dc.html`, `PaperV3Halo.dc.html` |
+| 06:00–21:00 | **Day — "Morning paper v3 · halo"** | v2 sand colours (v1 was too bright and flat on the Echo): ground #d6c7ae, cards #fffaf1 with 1px #c9b89c edge and a stronger shadow, ink #1d1712, muted #4b4034, done-teal #0b6760. Memory photo under a 35% sand veil; text sits directly on the photo with a cream halo (`text-shadow: 0 0 2px #fffaf1, 0 0 6px #fffaf1, 0 0 22px rgba(255,250,241,.95)`), heavier weights (clock 400, date 700) and full ink. Same treatment for landscape and single portrait (portraits are never paired). Caption on a cream pill. References: `design/PaperV3HaloLandscape.dc.html`, `PaperV3Halo.dc.html` |
 | 21:00–bedtime | **Evening — Haven Night** (dark) | Current dark design (`Main`, `Active`) |
-| bedtime–06:30 | **Night mode** | Pure black, warm dim text |
+| 22:00–06:00 | **Night mode** | Pure black, warm dim text |
 
 - Switch with a 1.5 s background/colour crossfade (CSS variables on `:root`, `transition` on background/color only). No reload.
 - Paper runs into the evening on purpose (changed from 17:30 on 2026-11-15): the family wanted the light board until 21:00, not tied to sunset.
@@ -52,7 +52,7 @@ At rest the tile reads number / "days" / label, each line single with an ellipsi
 
 ## Routine (decided 2026-11-15, `server/routine.ts`)
 - Leave for school: Mariko & Sarina, **7:55 every weekday** (Mon–Fri), even on school holidays in the calendar. The card shows in the 45 min before.
-- Bedtime: **20:30 Sun–Thu, 21:00 Fri–Sat**, as a "Bedtime" row in today's schedule, plus the same teal countdown card as the school run (moon icon, "in bed by 20:30") in the **30 min** before. They never overlap. It does **not** move night mode, which stays 21:30–06:30.
+- Bedtime: **20:30 Sun–Thu, 21:00 Fri–Sat**, as a "Bedtime" row in today's schedule, plus the same teal countdown card as the school run (moon icon, "in bed by 20:30") in the **30 min** before. They never overlap. It does **not** move night mode, which runs 22:00–06:00 (changed from 21:30–06:30 on 2026-11-18).
 - Night view's "Tomorrow" line: the earlier of tomorrow's school run and tomorrow's first timed event; bedtime never counts.
 
 ## Countdown tile: "Coming up" rotation (decided 2026-11-15, rotation 2026-11-16 / ASC-25, `server/occasions.ts`, `web/comingup.js`)

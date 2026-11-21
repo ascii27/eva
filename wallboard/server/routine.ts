@@ -4,7 +4,7 @@
 //
 // Decided 2026-11-15: leave every weekday at 7:55 regardless of the calendar
 // (school holidays don't suppress it); bedtime 20:30 Sun–Thu, 21:00 Fri–Sat.
-// Bedtime does not move night mode, which stays at 21:30.
+// Bedtime does not move night mode, which runs 22:00–06:00.
 
 const GIRLS = ['mariko', 'sarina'];
 

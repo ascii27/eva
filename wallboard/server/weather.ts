@@ -109,7 +109,7 @@ export function weatherPanel(f: Forecast): WeatherPanel {
     hourly.push({ time: hm(h.time[i]), cond: condOf(h.weather_code[i], h.is_day[i] === 1, gustAt(i)), temp: deg(h.temperature_2m[i]) });
   }
 
-  // Night view (21:30–06:30): now, and the day the family wakes into.
+  // Night view (22:00–06:00): now, and the day the family wakes into.
   const d = hourOf(c.time) < 12 ? 0 : 1;
   const when = d === 0 ? 'today' : 'tomorrow';
   const night = {

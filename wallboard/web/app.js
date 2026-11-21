@@ -17,6 +17,7 @@ import { ORDER, person } from './household.js';
 import { dummy } from './dummy.js';
 import { EvaSpot, evaMessage, evaSig } from './eva.js';
 import { comingUp, shownAt } from './comingup.js';
+import { rollBath } from './bath.js';
 import { ANNOUNCE, ALARM, render as renderCue, wav, cueFor } from './chime.js';
 
 const $ = (id) => document.getElementById(id);
@@ -40,6 +41,8 @@ const offset = (() => {
 })();
 const now = () => new Date(Date.now() + offset);
 const minutesOfDay = (d) => d.getHours() * 60 + d.getMinutes();
+/** The board's local date, "2026-11-18". */
+const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 /** "7:55" / "18:30" → minutes since midnight. */
 function parseHM(s) {
@@ -50,18 +53,21 @@ const fmtHM = (d) => `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// Night view 22:00–06:00; the day theme starts as night ends.
+const NIGHT_START = 22 * 60;
+const NIGHT_END = 6 * 60;
 function isNight(d) {
   const m = minutesOfDay(d);
-  return m >= 21 * 60 + 30 || m < 6 * 60 + 30;
+  return m >= NIGHT_START || m < NIGHT_END;
 }
 
-// Themes by time of day (DESIGN.md): Morning paper 06:30–21:00, Haven Night
-// (dark) until bedtime, then the night view. ?theme=day|evening pins it.
+// Themes by time of day (DESIGN.md): Morning paper 06:00–21:00, Haven Night
+// (dark) until 22:00, then the night view. ?theme=day|evening pins it.
 function themeFor(d) {
   const pinned = q.get('theme');
   if (pinned === 'day' || pinned === 'evening') return pinned;
   const m = minutesOfDay(d);
-  return m >= 6 * 60 + 30 && m < 21 * 60 ? 'day' : 'evening';
+  return m >= NIGHT_END && m < 21 * 60 ? 'day' : 'evening';
 }
 
 let themeTimer = null;
@@ -84,16 +90,18 @@ let server = null;               // BoardState from the server
 const pending = new Map();       // chore id → done, sent but not yet confirmed
 const DUMMY = dummy();
 
-// Bath order lives only in this browser for now (dummy, no server model yet).
-// Persisted so a reload doesn't reset the experience. Pay is the server's.
+// Bath order lives only in this browser for now (no server model yet), and
+// rolls forward a night at a time (web/bath.js, ASC-34). Persisted so a reload
+// doesn't reset it. Pay is the server's.
 let local = loadLocal();
+saveLocal();   // pin the rolled bath state's date, or a reload tomorrow would adopt it as new
 function loadLocal() {
   try {
     const s = JSON.parse(localStorage.getItem('wallboard.local') ?? 'null');
-    if (s && s.bath) return s;
+    if (s && s.bath) return { ...s, bath: rollBath(s.bath, dayKey(now())) };
   } catch {}
   return {
-    bath: { tonight: 'sarina', history: ['sarina', 'mariko', 'sarina', 'sarina', 'mariko'] },
+    bath: { date: dayKey(now()), tonight: 'sarina', history: [] },
   };
 }
 function saveLocal() {
@@ -823,7 +831,7 @@ function renderActive() {
 
   renderChores();
 
-  // Bath order (local dummy).
+  // Bath order (this browser's, rolled nightly by web/bath.js).
   const b = local.bath;
   const last = b.history[b.history.length - 1];
   const auto = last === 'mariko' ? 'sarina' : 'mariko';
@@ -832,7 +840,7 @@ function renderActive() {
       <button type="button" class="pill-btn pill-neutral" style="margin-left:auto" data-action="swap">${icon('swap', 26, 2)}Swap</button></div>
     <div class="bath-hist"><span class="k">Went first</span>${b.history.map((id, i, a) =>
       `<span style="opacity:${i === a.length - 1 ? 1 : 0.55};display:flex">${avatar(id, 32, 12)}</span>`).join('')}
-      <span class="note">Last night: ${esc(person(last).name)}${b.tonight === auto ? '' : ' · swapped tonight'}</span></div>`;
+      ${last ? `<span class="note">Last night: ${esc(person(last).name)}${b.tonight === auto ? '' : ' · swapped tonight'}</span>` : ''}</div>`;
 
   // Right column: leave/pickup, dinner, countdowns. Eva's bubble sits above
   // these in its own mount (#act-bubble), so a re-render never restarts her.
@@ -971,7 +979,6 @@ function playCue(name) {
   try { cueAudio(name).play().catch(() => {}); } catch {}
 }
 
-const dayKey = (d) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 function loadPlayed(day) {
   try {
     const s = JSON.parse(localStorage.getItem('wallboard.chimes') ?? 'null');
@@ -1093,6 +1100,7 @@ function tick() {
   const m = minutesOfDay(d);
   if (m !== lastMinute) {
     lastMinute = m;
+    rollBathToday();
     applyTheme(true);
     // Day/night handover happens on its own, but never yanks the active view from under a finger.
     if (view !== 'active' && view !== resting()) show(resting());
@@ -1207,6 +1215,14 @@ async function cancelPayment(id) {
     // No "tap again": the undo button is gone with the toast, so there is nothing to tap.
     showToast({ ok: false, title: 'Couldn’t undo the payment', sub: 'The payment still stands · check the connection', undo: null });
   }
+}
+
+/** A new day: last night's first goes on the history and the other girl is up. */
+function rollBathToday() {
+  const b = rollBath(local.bath, dayKey(now()));
+  if (b.date === local.bath.date && b.tonight === local.bath.tonight) return;
+  local.bath = b;
+  saveLocal();
 }
 
 function swapBath() {
