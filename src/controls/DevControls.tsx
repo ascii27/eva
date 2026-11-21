@@ -91,6 +91,9 @@ interface DevControlsProps {
   /** Errands out to hermes, or null when none is configured. */
   errandsInFlight: number | null;
   /** The running OTA update, and whether a newer one is waiting. */
+  /** Night sleep (ASC-33): auto, or pinned to dim / asleep to see it now. */
+  sleepLabel: string;
+  onCycleSleep: () => void;
   updateLabel: string;
   /** Fetch and reload into a new update now; says so when there is none. */
   onCheckUpdate: () => void;
@@ -251,6 +254,10 @@ export function DevControls(props: DevControlsProps) {
           </View>
           <View style={styles.row}>
             <Btn label="Check for update" sub={props.updateLabel} onPress={props.onCheckUpdate} />
+          </View>
+          <View style={styles.row}>
+            {/* Pinned phases still give way to a round, like the real night. */}
+            <Btn label="Sleep" sub={props.sleepLabel} onPress={props.onCycleSleep} />
           </View>
           {props.errandsInFlight !== null && (
             <Text style={styles.note}>

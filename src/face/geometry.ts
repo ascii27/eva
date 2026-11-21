@@ -1,4 +1,7 @@
 import {
+  ASLEEP_G,
+  ASLEEP_SH,
+  ASLEEP_SW,
   BLINK_MS,
   EYE_H,
   EYE_RADIUS,
@@ -97,6 +100,11 @@ export function yawnFactor(
 /**
  * The heart of the face: one eye's deformation at time t (ms) for a mode.
  * side is -1 (left) or 1 (right). Direct port of geo() in Eva Face.dc.html.
+ *
+ * `sleepK` (0 awake … 1 asleep) blends whatever the mode drew toward the
+ * asleep pose (ASC-33): eyes held at the yawn's nearly-shut hold, centred,
+ * with idle's slow glow pulse as breathing. It is a blend rather than a mode
+ * so the face stays 'idle' — the wake watcher only listens while it is.
  */
 export function eyeGeo(
   side: number,
@@ -104,6 +112,7 @@ export function eyeGeo(
   mode: FaceMode,
   blinkT: number,
   yawnT: number,
+  sleepK = 0,
 ): EyeGeo {
   'worklet';
   let sw = 1;
@@ -164,6 +173,16 @@ export function eyeGeo(
     sh *= yn.sh;
     sw *= yn.sw;
     g *= yn.g;
+  }
+
+  if (sleepK > 0) {
+    const s = Math.min(1, sleepK);
+    const breathe = 0.9 + 0.08 * Math.sin(t / 2000);
+    sw += (ASLEEP_SW - sw) * s;
+    sh += (ASLEEP_SH - sh) * s;
+    x -= x * s;
+    y -= y * s;
+    g += (ASLEEP_G * breathe - g) * s;
   }
 
   return { sw, sh, x, y, g, corners: corners_ };

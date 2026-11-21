@@ -10,6 +10,8 @@ import {
 } from 'react-native-reanimated';
 import {
   BLINK_MIN_GAP,
+  FALL_ASLEEP_MS,
+  WAKE_UP_MS,
   BLINK_RAND_GAP,
   CONFUSED_TILT_DEG,
   EYE_GAP,
@@ -54,6 +56,8 @@ interface FaceProps {
   /** bump to trigger a manual blink / yawn (dev controls) */
   blinkNonce?: number;
   yawnNonce?: number;
+  /** Night and quiet for a while (useSleep): drift into the asleep pose. */
+  asleep?: boolean;
 }
 
 function makeCenteredRRect(w: number, h: number, c: CornerRadii, k: number): SkPath {
@@ -77,6 +81,7 @@ export function Face({
   k,
   blinkNonce = 0,
   yawnNonce = 0,
+  asleep = false,
 }: FaceProps) {
   const clock = useSharedValue(0);
   const modeSV = useSharedValue<FaceMode>(mode);
@@ -87,11 +92,23 @@ export function Face({
     isSleepyHour(new Date().getHours()) ? FIRST_YAWN_MIN + Math.random() * FIRST_YAWN_RAND : Infinity,
   );
 
-  // The clock plus the idle blink/yawn scheduler, all on the UI thread.
+  // 0 awake … 1 asleep, eased like the yawn: she drifts off over its droop and
+  // hold, and wakes over its reopen (constants.ts, ASC-33).
+  const sleepK = useSharedValue(asleep ? 1 : 0);
+  useEffect(() => {
+    sleepK.value = withTiming(asleep ? 1 : 0, {
+      duration: asleep ? FALL_ASLEEP_MS : WAKE_UP_MS,
+      easing: Easing.inOut(Easing.ease),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asleep]);
+
+  // The clock plus the idle blink/yawn scheduler, all on the UI thread. Asleep,
+  // she neither blinks nor yawns.
   useFrameCallback((frame) => {
     const t = frame.timeSinceFirstFrame;
     clock.value = t;
-    if (modeSV.value === 'idle') {
+    if (modeSV.value === 'idle' && sleepK.value === 0) {
       if (t > nextBlink.value) {
         blinkT.value = t;
         nextBlink.value = t + BLINK_MIN_GAP + Math.random() * BLINK_RAND_GAP;
@@ -141,8 +158,8 @@ export function Face({
   return (
     <Canvas style={{ width, height }}>
       <Group origin={{ x: cx, y: cy }} transform={tiltTransform}>
-        <Eye side={-1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} />
-        <Eye side={1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} />
+        <Eye side={-1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} sleepK={sleepK} />
+        <Eye side={1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} sleepK={sleepK} />
         {output === 'mouth' && (
           <Mouth mode={mode} eyeColor={eyeColor} frozen={frozen} voicing={voicing} k={k} cx={cx} height={height} />
         )}
@@ -166,16 +183,17 @@ interface EyeProps {
   clock: SV<number>;
   blinkT: SV<number>;
   yawnT: SV<number>;
+  sleepK: SV<number>;
 }
 
-function Eye({ side, mode, eyeColor, k, cx, cy, clock, blinkT, yawnT }: EyeProps) {
+function Eye({ side, mode, eyeColor, k, cx, cy, clock, blinkT, yawnT, sleepK }: EyeProps) {
   const path = useMemo(() => {
     const corners = eyeGeo(side, 0, mode, NEVER, NEVER).corners;
     return makeCenteredRRect(EYE_W, EYE_H, corners, k);
   }, [side, mode, k]);
 
   const transform = useDerivedValue(() => {
-    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value);
+    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value);
     return [
       { translateX: cx + ((side * EYE_GAP) / 2 + p.x) * k },
       { translateY: cy + p.y * k },
@@ -185,11 +203,11 @@ function Eye({ side, mode, eyeColor, k, cx, cy, clock, blinkT, yawnT }: EyeProps
   }, [side, mode, k, cx, cy]);
 
   const innerBlur = useDerivedValue(() => {
-    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value);
+    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value);
     return Math.max(0.1, (GLOW_INNER.blur * p.g * k) / 2);
   }, [side, mode, k]);
   const outerBlur = useDerivedValue(() => {
-    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value);
+    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value);
     return Math.max(0.1, (GLOW_OUTER.blur * p.g * k) / 2);
   }, [side, mode, k]);
 
