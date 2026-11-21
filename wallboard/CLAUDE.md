@@ -122,6 +122,7 @@ Reference: `design/ChoreIcons.dc.html` (each icon large, plus to-do and done sta
 | `windows` | Wash the windows | window + shine marks + sparkle |
 | `living-room` | Tidy the living room | sofa + sparkle |
 | `toilet` | Clean the toilet | toilet (side view) + sparkle |
+| `hanamaru` | Hanamaru homework (daily, each girl) | はなまる: eight-petal scalloped flower around a spiral, the teacher's stamp |
 | `bed`, `bag`, `table`, `shoes`, `laundry`, `plants` | existing | unchanged |
 
 - Cleaning chores (`tub-clean`, `windows`, `living-room`, `toilet`) carry the same small sparkle (top-right) so they read as "clean this".

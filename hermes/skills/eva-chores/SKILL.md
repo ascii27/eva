@@ -85,7 +85,7 @@ Create a page **"Chores & allowance"** with three databases in it.
 | `Name` | title | What the board shows, e.g. "Unload the dishwasher" |
 | `Board id` | text | Made once by `new-chore-id`, never changed |
 | `Who` | select | Mariko, Sarina |
-| `Icon` | select | dishes, clear-table, tub-clean, vacuum, dust, garbage, windows, living-room, toilet, bed, bag, table, shoes, laundry, plants |
+| `Icon` | select | dishes, clear-table, tub-clean, vacuum, dust, garbage, windows, living-room, toilet, hanamaru, bed, bag, table, shoes, laundry, plants |
 | `Amount ¥` | number | Whole yen, 0 or more |
 | `Every` | number | Whole number, 1 or more |
 | `Unit` | select | day, week |

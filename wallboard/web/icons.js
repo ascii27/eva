@@ -44,6 +44,8 @@ const CHORES = {
   windows: '<rect x="3" y="4" width="14" height="16" rx="1.2"/><path d="M10 4v16M3 12h14M5.5 9.5l2-2M12.5 16.5l2-2"/><path d="M19 2.5v3.5M17.25 4.25h3.5"/>',
   'living-room': '<path d="M4.5 11V8.5a2 2 0 0 1 2-2h11a2 2 0 0 1 2 2V11M2.5 13a2 2 0 0 1 4 0v2h11v-2a2 2 0 0 1 4 0v5h-19zM5 18v2.5M19 18v2.5"/><path d="M12 1.5v3M10.5 3h3"/>',
   toilet: '<rect x="4" y="3" width="6.5" height="7" rx="1"/><path d="M3 10h17c0 3.5-3 6-7 6h-3l1 5H6l-.5-4.5C4 15.5 3 13.5 3 10z"/><path d="M19 2.5v3.5M17.25 4.25h3.5"/>',
+  // はなまる: the teacher's flower stamp, for daily Hanamaru homework.
+  hanamaru: '<path d="M14.76 5.35A2.8 2.8 0 1 1 18.65 9.24A2.8 2.8 0 1 1 18.65 14.76A2.8 2.8 0 1 1 14.76 18.65A2.8 2.8 0 1 1 9.24 18.65A2.8 2.8 0 1 1 5.35 14.76A2.8 2.8 0 1 1 5.35 9.24A2.8 2.8 0 1 1 9.24 5.35A2.8 2.8 0 1 1 14.76 5.35z"/><path d="M10.55 12A1.45 1.45 0 0 1 13.45 12A2.9 2.9 0 0 1 7.65 12A4.35 4.35 0 0 1 16.35 12"/>',
 };
 
 // Schedule and bring icons, keyed by the `icon` field on a schedule entry or a
