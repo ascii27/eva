@@ -15,6 +15,7 @@ import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
 import { IKEJIRI, startWeather } from './weather.ts';
 import { parsePeople, startCalendar } from './calendar.ts';
+import { startTokyoEvents } from './tokyoevents.ts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -105,6 +106,13 @@ if (process.env.WEATHER !== 'off') {
 // `tomorrow`, `leave-by` and `bedtime`. Without a URL, the routine alone. DAY=off: dummy.
 if (process.env.DAY !== 'off') {
   startCalendar(process.env.CALENDAR_URL || undefined, 15 * 60_000, (name, data) => dispatch({ type: 'panel.set', name, data, at: Date.now() }), parsePeople(process.env.CALENDAR_PEOPLE));
+}
+
+// What's on in Tokyo (Tokyo Cheapo's events feed + each event's page), published
+// as `tokyo-events` for hermes to pick from (ASC-35). The feed is read every 6 h;
+// pages are cached in data/. TOKYO_EVENTS=off stops polling (the last panel stays).
+if (process.env.TOKYO_EVENTS !== 'off') {
+  startTokyoEvents(join(dirname(DATA), 'tokyo-events.json'), 6 * 60 * 60_000, IKEJIRI, (data) => dispatch({ type: 'panel.set', name: 'tokyo-events', data, at: Date.now() }));
 }
 
 // ---- http helpers ----------------------------------------------------------

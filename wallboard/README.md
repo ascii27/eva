@@ -137,6 +137,23 @@ title). Today's list carries bedtime as `id: "bedtime"`; tomorrow's carries the
 school run as `School` at 7:55 and never bedtime. The board also still reads
 the older `at` field and the old `tomorrow: {at, title}`.
 
+`tokyo-events` is the server's too (ASC-35, `server/tokyoevents.ts`): what's on in
+Tokyo, from Tokyo Cheapo. The **events** feed (`tokyocheapo.com/events/feed/`, one
+item per event) finds them; the main feed is articles, not events. The feed has no
+event dates, so each event's own page is read once for its schema.org `Event`
+JSON-LD (dates, venue, prices) and its map pin, and cached in
+`data/tokyo-events.json` (re-read when the post is edited, or weekly while the event
+is ahead). Feed every 6 h; `TOKYO_EVENTS=off` stops it. The panel is every event
+still on, soonest first: `[{id, title, url, start, end, time?, until?, venue?,
+locality?, region?, km?, price?: {from, to}, summary?, image?, weekend}]` — dates
+`YYYY-MM-DD`, `time`/`until` `H:MM` only when the page gives a real time (for a
+multi-day event they're daily hours), `km` straight-line from home, `weekend` true
+when it's on this coming Saturday or Sunday (the current ones, at the weekend). No
+`price` means not listed, **not** free: the site writes ¥0 for both. Nothing is
+published until the first feed read succeeds, so absent means "not known yet". The
+board doesn't render it yet; hermes reads it from `GET /api/eva/state` to pick
+something for the weekend and say so in the `eva` bubble.
+
 ## Board API (enrolled cookie)
 
 - `GET /api/events` — SSE: `hello {build}` then `state` on connect and on every change.
