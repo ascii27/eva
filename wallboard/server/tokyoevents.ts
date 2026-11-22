@@ -25,8 +25,8 @@
 //
 // Pure parsing + panel, then a thin poller with its cache, the split weather.ts uses.
 
-import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { readFile, writeFile, rename, mkdir, rm, stat } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 
 export interface FeedItem {
   /** Stable id from the post id in the guid ("tc-402638"). */
@@ -37,7 +37,12 @@ export interface FeedItem {
   published: number;
   /** Categories minus the empty ones, e.g. ["Tokyo", "Shibuya"]. */
   areas: string[];
+  /** The post's photo (media:content, ~1024 wide). Some posts have none; the page's own is the fallback. */
   image?: string;
+  /** The opening paragraph of the post, for the detail view (≤ ~420 characters). */
+  about?: string;
+  /** media:rating; "adult" posts are never shown. */
+  rating?: string;
 }
 
 export interface EventDetails {
@@ -56,15 +61,21 @@ export interface EventDetails {
   /** Yen. Only when the page lists a non-zero price; see the header for why 0/0 isn't "free". */
   price?: { from: number; to: number };
   summary?: string;
+  /** The page's own photo, used when the feed item has none. */
+  image?: string;
   cancelled?: true;
 }
 
 /** One entry in the panel. */
-export interface TokyoEvent extends Omit<EventDetails, 'lat' | 'lon' | 'cancelled'> {
+export interface TokyoEvent extends Omit<EventDetails, 'lat' | 'lon' | 'cancelled' | 'image'> {
   id: string;
   title: string;
   url: string;
+  /** The board's own pre-sized copy (`/event-photos/<id>.jpg`), only once it is on disk. */
   image?: string;
+  about?: string;
+  /** No price listed and the text says it's free. Absent is "don't know", not "paid". */
+  free?: true;
   /** Straight-line km from home, when the page has a map pin. */
   km?: number;
   /** On at some point this coming weekend (or this one, on a Saturday or Sunday). */
@@ -110,6 +121,8 @@ export function parseFeed(xml: string): FeedItem[] {
       .map(([, c]) => decodeEntities(cdata(c)).trim())
       .filter((c, i, all) => c && all.indexOf(c) === i);
     const image = item.match(/<media:content\s[^>]*url="([^"]+)"/)?.[1];
+    const rating = tag(item, 'media:rating');
+    const about = aboutOf(tag(item, 'description') ?? '');
     out.push({
       id: `tc-${post}`,
       title,
@@ -117,9 +130,33 @@ export function parseFeed(xml: string): FeedItem[] {
       published: Date.parse(tag(item, 'pubDate') ?? '') || 0,
       areas,
       ...(image ? { image: decodeEntities(image) } : {}),
+      ...(about ? { about } : {}),
+      ...(rating ? { rating } : {}),
     });
   }
   return out;
+}
+
+/**
+ * The post's opening paragraph(s) from the feed description: plain text lines up
+ * to the first subheading ("What to expect") or the "The post … appeared first
+ * on" footer, cut at a sentence end within ~420 characters.
+ */
+export function aboutOf(description: string): string | undefined {
+  const text = description.split(/<p>The post /)[0].replace(/<[^>]+>/g, '');
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const paras: string[] = [];
+  for (const l of lines) {
+    if (l.length < 40 && !/[.!?]$/.test(l)) break; // a subheading
+    paras.push(l);
+  }
+  let out = paras.join(' ');
+  if (out.length > 420) {
+    const cut = out.slice(0, 420);
+    const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
+    out = end > 120 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(' '))}…`;
+  }
+  return out || undefined;
 }
 
 // ---- an event's page ------------------------------------------------------
@@ -173,9 +210,48 @@ export function parseEventPage(html: string): EventDetails | null {
   if (prices.length) out.price = { from: Math.min(...prices), to: Math.max(...prices) };
   const summary = str(ev.description);
   if (summary) out.summary = summary;
+  const img = first(ev.image);
+  const image = str(img?.contentUrl) ?? str(img?.url) ?? html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/)?.[1];
+  if (image && /^https:\/\//.test(image)) out.image = decodeEntities(image);
   if (typeof ev.eventStatus === 'string' && /Cancelled/i.test(ev.eventStatus)) out.cancelled = true;
   return out;
 }
+
+// ---- which events the family sees -------------------------------------------
+
+/**
+ * Not for a kitchen wall read by an 8- and an 11-year-old (ASC-35: "don't show
+ * adult topics"). Sexual and adults-only topics are matched anywhere in the
+ * title, summary or opening paragraph; drinking only in the title, because a
+ * Christmas market's write-up mentioning mulled wine is still a family outing,
+ * while a craft-beer festival is not.
+ */
+const ADULT = /\b(sex|sexual|sexy|erotic|porn\w*|nude|nudity|naked|fetish|kink\w*|bdsm|burlesque|strip (?:club|show)|stripper|hostess|host club|cabaret|adults?[- ]only|over[- ]20s?|18 ?\+|r-?18|r18\+?|casino|gambling|cannabis|cbd)\b/i;
+const DRINK = /\b(beer|sake|wine|whisk(?:e)?y|gin|cocktails?|booze|bar|bars|pub|pubs|izakaya|drinking|nightclub|club night|rave)\b/i;
+
+export function forFamily(item: Pick<FeedItem, 'title' | 'about' | 'rating'>, d: Pick<EventDetails, 'summary'>): boolean {
+  if (item.rating && item.rating !== 'nonadult') return false;
+  if (DRINK.test(item.title)) return false;
+  return !ADULT.test([item.title, d.summary ?? '', item.about ?? ''].join(' '));
+}
+
+const TOKYO = /^(Tokyo|Central Tokyo|Suburban (?:West|East) Tokyo)$/;
+const ELSEWHERE = /Yokohama|Kanagawa|Saitama|Chiba|Hakone|Kamakura|Nikko|Ibaraki|Gunma|Tochigi|Yamanashi|Shizuoka/i;
+
+/**
+ * Close enough for a family day out (ASC-35: "limit"): in Tokyo by the site's own
+ * areas — Yokohama, Saitama and the rest are out however close — and within
+ * `maxKm` of home when the page has a map pin.
+ */
+export function nearby(item: Pick<FeedItem, 'areas'>, d: Pick<EventDetails, 'locality' | 'region'>, km: number | undefined, maxKm: number): boolean {
+  const places = [d.region, d.locality, ...item.areas].filter((x): x is string => !!x);
+  if (places.some((p) => ELSEWHERE.test(p))) return false;
+  if (!places.some((p) => TOKYO.test(p))) return false;
+  return km == null || km <= maxKm;
+}
+
+/** Default for `maxKm`: Ikejiri to Sanrio Puroland (Tama) is 23 km; Tokyo's far west stays out. */
+export const MAX_KM = 25;
 
 // ---- the panel ------------------------------------------------------------
 
@@ -198,20 +274,28 @@ export function kmBetween(a: { lat: number; lon: number }, b: { lat: number; lon
   return Math.round(12742 * Math.asin(Math.sqrt(h)) * 10) / 10;
 }
 
+const FREE = /\bfree\b|costs? nothing|no charge|無料/i;
+
+export interface PanelInput { item: FeedItem; details: EventDetails | null; photo?: string }
+
 /**
- * Everything still on (ending today or later), soonest start first; among
- * events already running, the one ending soonest first. Cancelled ones and
- * ones with no details are left out.
+ * Everything still on (ending today or later) that is for the family and
+ * nearby, soonest start first; among events already running, the one ending
+ * soonest first. Cancelled ones and ones with no details are left out.
  */
-export function eventsPanel(items: { item: FeedItem; details: EventDetails | null }[], today: string, home: { lat: number; lon: number }): TokyoEvent[] {
+export function eventsPanel(items: PanelInput[], today: string, home: { lat: number; lon: number }, maxKm = MAX_KM): TokyoEvent[] {
   const { sat, sun } = weekendOf(today);
   const out: TokyoEvent[] = [];
-  for (const { item, details: d } of items) {
+  for (const { item, details: d, photo } of items) {
     if (!d || d.cancelled || d.end < today) continue;
-    const { lat, lon, cancelled: _c, ...rest } = d;
+    const km = d.lat != null && d.lon != null ? kmBetween(home, { lat: d.lat, lon: d.lon }) : undefined;
+    if (!forFamily(item, d) || !nearby(item, d, km, maxKm)) continue;
+    const { lat: _la, lon: _lo, cancelled: _c, image: _i, ...rest } = d;
     const e: TokyoEvent = { id: item.id, title: item.title, url: item.url, ...rest, weekend: d.start <= sun && d.end >= sat };
-    if (item.image) e.image = item.image;
-    if (lat != null && lon != null) e.km = kmBetween(home, { lat, lon });
+    if (item.about) e.about = item.about;
+    if (!d.price && FREE.test(`${d.summary ?? ''} ${item.about ?? ''}`)) e.free = true;
+    if (photo) e.image = photo;
+    if (km != null) e.km = km;
     out.push(e);
   }
   const key = (e: TokyoEvent) => (e.start > today ? e.start : today);
@@ -222,7 +306,7 @@ export function eventsPanel(items: { item: FeedItem; details: EventDetails | nul
 
 export const FEED_URL = 'https://tokyocheapo.com/events/feed/';
 
-interface Cached { item: FeedItem; details: EventDetails | null; fetchedAt: number }
+interface Cached { item: FeedItem; details: EventDetails | null; fetchedAt: number; photo?: string }
 interface CacheFile { v: 1; events: Record<string, Cached> }
 
 /** Re-read a page this often while its event is still ahead (dates get announced, venues change). */
@@ -243,14 +327,27 @@ export function needsPage(c: Cached | undefined, item: FeedItem, now: number, to
   return now - c.fetchedAt > REFRESH_MS;
 }
 
+export interface TokyoEventsOptions {
+  /** JSON cache of feed items and page details. */
+  cacheFile: string;
+  /** Where pre-sized photos go; served by index.ts at /event-photos/<id>.jpg. */
+  photoDir: string;
+  everyMs: number;
+  home: { lat: number; lon: number };
+  maxKm?: number;
+  /** Resize a downloaded photo for Silk (photos.ts' presize). Injected so this file stays free of sharp. */
+  presize: (input: Buffer) => Promise<Buffer>;
+  publish: (p: TokyoEvent[]) => void;
+}
+
 /**
- * Poll the feed every `everyMs`, read the page of each event that needs it, and
- * publish the panel whenever it changes (also re-checked hourly, so the
- * weekend flag and finished events roll over without a fetch). Events that fell
- * out of the 30-item feed stay, from the cache, until they end. A failed fetch
- * keeps the last panel up.
+ * Poll the feed every `everyMs`, read the page of each event that needs it, keep
+ * a pre-sized copy of each photo, and publish the panel whenever it changes
+ * (also re-checked hourly, so the weekend flag and finished events roll over
+ * without a fetch). Events that fell out of the 30-item feed stay, from the
+ * cache, until they end. A failed fetch keeps the last panel up.
  */
-export function startTokyoEvents(cacheFile: string, everyMs: number, home: { lat: number; lon: number }, publish: (p: TokyoEvent[]) => void): void {
+export function startTokyoEvents(o: TokyoEventsOptions): void {
   let cache: Record<string, Cached> = {};
   let last = '';
   // Absent vs empty: until a feed read has succeeded (now, or before the cache
@@ -259,16 +356,16 @@ export function startTokyoEvents(cacheFile: string, everyMs: number, home: { lat
 
   const recompute = () => {
     if (!known) return;
-    const panel = eventsPanel(Object.values(cache), tokyoToday(Date.now()), home);
+    const panel = eventsPanel(Object.values(cache), tokyoToday(Date.now()), o.home, o.maxKm);
     const key = JSON.stringify(panel);
-    if (key !== last) { last = key; publish(panel); }
+    if (key !== last) { last = key; o.publish(panel); }
   };
   const save = async () => {
     try {
-      await mkdir(dirname(cacheFile), { recursive: true });
+      await mkdir(dirname(o.cacheFile), { recursive: true });
       const body: CacheFile = { v: 1, events: cache };
-      await writeFile(`${cacheFile}.tmp`, JSON.stringify(body));
-      await rename(`${cacheFile}.tmp`, cacheFile);
+      await writeFile(`${o.cacheFile}.tmp`, JSON.stringify(body));
+      await rename(`${o.cacheFile}.tmp`, o.cacheFile);
     } catch (e) {
       console.error(`[tokyo-events] cache save failed: ${why(e)}`);
     }
@@ -276,7 +373,28 @@ export function startTokyoEvents(cacheFile: string, everyMs: number, home: { lat
   const get = async (url: string) => {
     const r = await fetch(url, { signal: AbortSignal.timeout(30_000), headers: { 'user-agent': 'Mozilla/5.0 (compatible; family-wallboard)' } });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.text();
+    return r;
+  };
+  /** The board's copy of an event's photo, fetched once; undefined when there is none or it failed. */
+  const photoFor = async (c: Cached): Promise<string | undefined> => {
+    const src = c.item.image ?? c.details?.image;
+    if (!src || !/^https:\/\//.test(src)) return undefined;
+    const file = join(o.photoDir, `${c.item.id}.jpg`);
+    try {
+      await stat(file);
+    } catch {
+      try {
+        const buf = await o.presize(Buffer.from(await (await get(src)).arrayBuffer()));
+        await mkdir(o.photoDir, { recursive: true });
+        await writeFile(`${file}.tmp`, buf);
+        await rename(`${file}.tmp`, file);
+      } catch (e) {
+        console.error(`[tokyo-events] photo for ${c.item.id} failed: ${why(e)}`);
+        return undefined;
+      }
+    }
+    // The post id in the query: a re-shot photo under the same id still reloads after a re-read.
+    return `/event-photos/${c.item.id}.jpg?v=${c.item.published}`;
   };
 
   let running = false;
@@ -284,7 +402,7 @@ export function startTokyoEvents(cacheFile: string, everyMs: number, home: { lat
     if (running) return;
     running = true;
     try {
-      const items = parseFeed(await get(FEED_URL));
+      const items = parseFeed(await (await get(FEED_URL)).text());
       const now = Date.now(), today = tokyoToday(now);
       let read = 0, failed = 0;
       for (const item of items) {
@@ -292,7 +410,9 @@ export function startTokyoEvents(cacheFile: string, everyMs: number, home: { lat
         if (!needsPage(c, item, now, today)) { cache[item.id] = { ...c!, item }; continue; }
         if (read + failed) await new Promise((res) => setTimeout(res, PAGE_GAP_MS));
         try {
-          cache[item.id] = { item, details: parseEventPage(await get(item.url)), fetchedAt: Date.now() };
+          const edited = c && item.published > c.item.published;
+          if (edited) await rm(join(o.photoDir, `${item.id}.jpg`), { force: true });
+          cache[item.id] = { item, details: parseEventPage(await (await get(item.url)).text()), fetchedAt: Date.now() };
           read++;
         } catch (e) {
           failed++;
@@ -303,10 +423,16 @@ export function startTokyoEvents(cacheFile: string, everyMs: number, home: { lat
       // out of the feed too (while it's in, dropping it would only re-read its page).
       const inFeed = new Set(items.map((i) => i.id));
       for (const [id, c] of Object.entries(cache)) {
-        if (!inFeed.has(id) && (c.details ? c.details.end < today : now - c.fetchedAt > REFRESH_MS)) delete cache[id];
+        if (!inFeed.has(id) && (c.details ? c.details.end < today : now - c.fetchedAt > REFRESH_MS)) {
+          delete cache[id];
+          await rm(join(o.photoDir, `${id}.jpg`), { force: true });
+        }
       }
-      console.log(`[tokyo-events] feed ${items.length} items, read ${read} pages${failed ? `, ${failed} failed` : ''}, ${Object.keys(cache).length} cached`);
+      // Photos only for what the family will see.
+      const shown = new Set(eventsPanel(Object.values(cache), today, o.home, o.maxKm).map((e) => e.id));
+      for (const c of Object.values(cache)) c.photo = shown.has(c.item.id) ? await photoFor(c) : undefined;
       known = true;
+      console.log(`[tokyo-events] feed ${items.length} items, read ${read} pages${failed ? `, ${failed} failed` : ''}, ${Object.keys(cache).length} cached, ${shown.size} shown`);
       await save();
       recompute();
     } catch (e) {
@@ -318,12 +444,15 @@ export function startTokyoEvents(cacheFile: string, everyMs: number, home: { lat
 
   void (async () => {
     try {
-      const f = JSON.parse(await readFile(cacheFile, 'utf8')) as CacheFile;
+      const f = JSON.parse(await readFile(o.cacheFile, 'utf8')) as CacheFile;
       if (f?.v === 1 && f.events) { cache = f.events; known = true; }
     } catch { /* first run */ }
     recompute();
     await tick();
-    setInterval(tick, everyMs).unref();
+    setInterval(tick, o.everyMs).unref();
     setInterval(recompute, 60 * 60_000).unref();
   })();
 }
+
+/** A photo file name the server will serve: exactly an event id. */
+export const PHOTO_ID = /^tc-\d{1,12}$/;

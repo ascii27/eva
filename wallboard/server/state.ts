@@ -18,6 +18,7 @@
 // never told us"; a panel present with empty data means "there is nothing".
 
 import { firstOnOrAfter, nextAfter, parseSchedule, tokyoDay, type Schedule } from './schedule.ts';
+import { planList, prune, requestAdd, requestRemove, resolve, revivePlans, type EventSnapshot, type Plan, type Plans, type Report } from './plans.ts';
 
 export interface ChoreDef {
   id: string;
@@ -71,6 +72,8 @@ export interface BoardState {
   chores: Chore[];
   log: LogEvent[];
   panels: Record<string, Panel>;
+  /** Tokyo events the family asked Eva to add to or take off the calendar (plans.ts). */
+  plans: Plans;
 }
 
 export type Action =
@@ -80,13 +83,17 @@ export type Action =
   /** Payments only: a completion is undone with chore.set. */
   | { type: 'cancel'; eventId: string; cancels: string; at: number }
   | { type: 'panel.set'; name: string; data: unknown; at: number }
-  | { type: 'panel.clear'; name: string };
+  | { type: 'panel.clear'; name: string }
+  | { type: 'plan.add'; event: EventSnapshot; day: string; at: number }
+  | { type: 'plan.remove'; id: string; at: number }
+  | { type: 'plan.resolve'; id: string; report: Report; at: number }
+  | { type: 'plans.prune'; at: number };
 
 /** Log `who` for a chore that belongs to nobody in particular. */
 const ANYONE = 'anyone';
 
 export function emptyState(logId: string): BoardState {
-  return { version: 0, logId, seq: 0, chores: [], log: [], panels: {} };
+  return { version: 0, logId, seq: 0, chores: [], log: [], panels: {}, plans: {} };
 }
 
 type NewEvent = LogEvent extends infer E ? (E extends LogEvent ? Omit<E, 'seq'> : never) : never;
@@ -231,7 +238,30 @@ export function apply(s: BoardState, a: Action): BoardState | null {
       delete panels[a.name];
       return { ...s, version: s.version + 1, panels };
     }
+    // Plans: the caller checks the result kinds (string, 'missing', 'stale') with planCheck first.
+    case 'plan.add': {
+      const plans = requestAdd(s.plans, a.event, a.day, tokyoDay(a.at), a.at);
+      return plans && typeof plans === 'object' ? { ...s, version: s.version + 1, plans } : null;
+    }
+    case 'plan.remove': {
+      const plans = requestRemove(s.plans, a.id, a.at);
+      return plans ? { ...s, version: s.version + 1, plans } : null;
+    }
+    case 'plan.resolve': {
+      const plans = resolve(s.plans, a.id, a.report, a.at);
+      return plans && typeof plans === 'object' ? { ...s, version: s.version + 1, plans } : null;
+    }
+    case 'plans.prune': {
+      const plans = prune(s.plans, tokyoDay(a.at));
+      return plans ? { ...s, version: s.version + 1, plans } : null;
+    }
   }
+}
+
+/** Why a plan action would be refused (an error string, 'missing' or 'stale'), or null if it can go. */
+export function planCheck(s: BoardState, a: Extract<Action, { type: 'plan.add' | 'plan.resolve' }>): string | null {
+  const r = a.type === 'plan.add' ? requestAdd(s.plans, a.event, a.day, tokyoDay(a.at), a.at) : resolve(s.plans, a.id, a.report, a.at);
+  return typeof r === 'string' ? r : null;
 }
 
 export interface Balance {
@@ -275,14 +305,16 @@ export interface ViewChore {
 export function view(
   s: BoardState,
   at: number,
-): { version: number; chores: ViewChore[]; balances: Record<string, Balance>; panels: Record<string, Panel> } {
+): { version: number; chores: ViewChore[]; balances: Record<string, Balance>; panels: Record<string, Panel>; plans: Plan[] } {
   const today = tokyoDay(at);
   const chores = s.chores.flatMap((c): ViewChore[] => {
     const done = c.doneOn === today;
     if (!done && c.nextDue > today) return [];
     return [{ id: c.id, title: c.title, who: c.who, icon: c.icon, amount: c.amount, done }];
   });
-  return { version: s.version, chores, balances: balances(s), panels: s.panels };
+  // Days that have passed are pruned at midnight; this hides them in the minute before that runs.
+  const plans = planList(s.plans).filter((p) => p.day >= today);
+  return { version: s.version, chores, balances: balances(s), panels: s.panels, plans };
 }
 
 /** Events with seq > after, oldest first, plus what hermes needs to spot a reset board. */
@@ -370,5 +402,6 @@ export function reviveState(raw: unknown, newLogId: string): BoardState {
     chores: s.chores.map(reviveChore).filter((c): c is Chore => c !== null),
     log,
     panels: s.panels as Record<string, Panel>,
+    plans: revivePlans(s.plans),
   };
 }

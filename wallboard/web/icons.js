@@ -109,7 +109,19 @@ const WEATHER = {
   'wx-night-cloud': '<path d="M13.5 3.5a4.8 4.8 0 0 0 6.6 6.4A5 5 0 0 1 13.5 3.5z"/><path d="M6.5 20h10a3.8 3.8 0 0 0 .4-7.6 5.2 5.2 0 0 0-10 1.4A3.1 3.1 0 0 0 6.5 20z"/>',
 };
 
-const ALL = { ...HAVEN, ...GLYPHS, ...CHORES, ...SCHEDULE, ...EVENTS, ...WEATHER };
+// What's on in Tokyo (ASC-35): the event detail sheet's rows and the sheets' buttons.
+// Same line style as the board's own glyphs (24 grid, round caps).
+const TOKYO = {
+  pin: '<path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/>',
+  yen: '<path d="M6.5 3.5L12 11l5.5-7.5M12 11v9.5M7.5 12.5h9M7.5 16h9"/>',
+  next: '<path d="M9 5l7 7-7 7"/>',
+  prev: '<path d="M15 5l-7 7 7 7"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+};
+
+const ALL = { ...HAVEN, ...GLYPHS, ...CHORES, ...SCHEDULE, ...EVENTS, ...WEATHER, ...TOKYO };
 
 /** An icon's inner SVG, for callers that draw their own <svg> (the countdown tile). */
 export const glyph = (name) => ALL[name] ?? GLYPHS.chores;

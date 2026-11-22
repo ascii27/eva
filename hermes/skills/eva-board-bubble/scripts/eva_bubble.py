@@ -10,7 +10,9 @@ Standard library only. Configuration comes from the environment:
 Commands:
 
   read                       what the board shows right now (bubble, today,
-                             tomorrow, weather, countdowns, chores) as JSON
+                             tomorrow, weather, countdowns, chores, this
+                             weekend's Tokyo events and the ones the family
+                             planned) as JSON
   recent [N]                 the last N bubbles this script pushed (default 10)
   push TEXT [--sub SUB] [--mood happy|excited]
                              put a new message up; it plays the arrival
@@ -90,6 +92,28 @@ def events(lst):
     return out
 
 
+def tokyo(lst, plans, weekend_only: bool):
+    """The board's Tokyo events (already filtered for the family), one line each."""
+    planned = {p["id"]: p for p in plans or [] if p.get("want") == "add"}
+    out = []
+    for e in lst or []:
+        if weekend_only and not e.get("weekend"):
+            continue
+        when = e["start"] if e.get("start") == e.get("end") else f"{e.get('start')} to {e.get('end')}"
+        bits = [when]
+        if e.get("time"):
+            bits.append(f"{e['time']}–{e['until']}" if e.get("until") else f"from {e['time']}")
+        if e.get("km") is not None:
+            bits.append(f"{round(e['km'])} km")
+        p = e.get("price")
+        bits.append("free" if e.get("free") else f"¥{p['from']:,}–{p['to']:,}" if p else "price not listed")
+        line = f"{e.get('title', '')} ({', '.join(bits)})"
+        if e.get("id") in planned:
+            line += f" — the family planned it for {planned[e['id']]['day']}"
+        out.append(line)
+    return out
+
+
 def cmd_read(_args) -> None:
     s = call("GET", "/api/eva/state")
     weather = panel(s, "weather") or {}
@@ -113,6 +137,10 @@ def cmd_read(_args) -> None:
             "done": [f"{c['title']} ({c.get('who') or 'anyone'})" for c in chores if c.get("done")],
             "to_do": [f"{c['title']} ({c.get('who') or 'anyone'})" for c in chores if not c.get("done")],
         },
+        # What the board's "This weekend" card lists (null: not read yet), and
+        # what the family asked to put on the calendar from it.
+        "tokyo_this_weekend": None if panel(s, "tokyo-events") is None else tokyo(panel(s, "tokyo-events"), s.get("plans"), True),
+        "tokyo_planned": [f"{p['title']} on {p['day']} ({p['want']}, {p['status']})" for p in s.get("plans") or []],
     }, ensure_ascii=False, indent=2))
 
 

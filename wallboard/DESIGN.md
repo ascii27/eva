@@ -50,6 +50,9 @@ At rest the tile reads number / "days" / label, each line single with an ellipsi
 - **holiday**: snowflake, snow drifting down the screen, blue. The server's holiday default always uses this one, Halloween and July 4th included.
 - Particles are copied from the design file into `web/celebrate.js` and removed when the effect ends. Reduced motion hides them; the text swap stays.
 
+## What's on in Tokyo (ASC-35, drafted 2026-11-23)
+Family-friendly events near home from Tokyo Cheapo. In the **active view only** (the calm view stays as it is): a "This weekend" card at the bottom of the right column with photo rows, which gives way to the other cards when space is tight. Tapping a row opens a detail sheet (photo, dates, hours, place and distance, price, a paragraph) where the family picks a day and taps **Ask Eva to add it**. Eva (hermes) puts it on the family calendar a few minutes later, and the card then marks it "On the calendar". **Take it off** reverses it. "See all" opens a paged browse sheet. Eva's bubble suggests one now and then. Values and states: `CLAUDE.md` "What's on in Tokyo".
+
 ## Routine (decided 2026-11-15, `server/routine.ts`)
 - Leave for school: Mariko & Sarina, **7:55 every weekday** (Mon–Fri), even on school holidays in the calendar. The card shows in the 45 min before.
 - Bedtime: **20:30 Sun–Thu, 21:00 Fri–Sat**, as a "Bedtime" row in today's schedule, plus the same teal countdown card as the school run (moon icon, "in bed by 20:30") in the **30 min** before. They never overlap. It does **not** move night mode, which runs 22:00–06:00 (changed from 21:30–06:30 on 2026-11-18).

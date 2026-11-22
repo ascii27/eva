@@ -45,6 +45,7 @@ it with a different `baseUrl` and two headers.
 - `skills/eva-bundle/` — gathering the context bundle for the device.
 - `skills/eva-board-bubble/` — Eva's speech bubble on the kitchen board.
 - `skills/eva-chores/` — the chores ledger: copies board activity into Notion, pushes chore definitions, records payments, answers allowance questions.
+- `skills/eva-events/` — Tokyo events the family picked on the kitchen board: puts them on the family calendar, or takes them off, and reports back to the board.
 
 ## Where the contract actually lives
 

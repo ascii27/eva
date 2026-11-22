@@ -19,6 +19,7 @@ import { EvaSpot, evaMessage, evaSig } from './eva.js';
 import { comingUp, shownAt } from './comingup.js';
 import { rollBath } from './bath.js';
 import { ANNOUNCE, ALARM, render as renderCue, wav, cueFor } from './chime.js';
+import { cardEvents, cardMeta, chipLabel, dateLine, dayChoices, defaultDay, hoursLine, page as eventPage, placeLine, planState, priceLine } from './events.js';
 
 const $ = (id) => document.getElementById(id);
 const q = new URLSearchParams(location.search);
@@ -183,7 +184,7 @@ function show(next, { dim = false } = {}) {
   dimmed = dim;
   for (const v of ['ambient', 'active', 'night']) $(v).classList.toggle('on', v === next);
   $('active').classList.toggle('dimmed', next === 'active' && dim);
-  if (next !== 'active') hideToast();
+  if (next !== 'active') { hideToast(); sheet = null; }
   renderAll();
   armIdle();
 }
@@ -861,10 +862,169 @@ function renderActive() {
   }
   const cds = countdowns();
   if (cds.length) {
-    side.push(`<div class="card side-count"><span class="eyebrow">Countdowns</span>${cds.map((c) =>
+    side.push(`<div class="card side-count" id="act-count"><span class="eyebrow">Countdowns</span>${cds.map((c) =>
       `<div class="count-row"><span class="l">${esc(c.label)}</span><span class="r"><span class="num">${esc(c.days)}</span> days</span></div>`).join('')}</div>`);
   }
+  const wk = weekendCard();
+  if (wk) side.push(wk);
   $('act-side').innerHTML = side.join('');
+  fitWeekend();
+}
+
+// ---- What's on in Tokyo (ASC-35) ------------------------------------------------
+//
+// The server's `tokyo-events` panel (server/tokyoevents.ts) — no dummy fallback:
+// absent means the server hasn't read the feed yet, so the card isn't shown.
+// Tapping an event opens its detail sheet, where the family asks Eva to put it
+// on the calendar (POST /api/plans/<id>); hermes does it and reports back, and
+// the plan's state arrives in `server.plans`. Words and choices: web/events.js.
+
+const tokyoEvents = () => {
+  const d = server?.panels?.['tokyo-events']?.data;
+  return Array.isArray(d) ? d : null;
+};
+const plans = () => server?.plans ?? [];
+const planOf = (id) => plans().find((p) => p.id === id);
+const todayKey = () => dayKey(now());
+
+/** The photo, or the calendar glyph where there is none. */
+const evPhoto = (e, size = 32) => (e.image ? `<img src="${esc(e.image)}" alt="" decoding="async">` : icon('calendar', size, 1.6));
+
+function evMeta(e) {
+  const ps = planState(planOf(e.id));
+  if (ps?.state === 'added') return `<span class="wk-meta added">On the calendar · ${esc(ps.day.split(' ').slice(0, 2).join(' '))}</span>`;
+  if (ps) return `<span class="wk-meta">${esc(ps.label)}</span>`;
+  return `<span class="wk-meta">${esc(cardMeta(e, todayKey()))}</span>`;
+}
+const evBadge = (e) => (planState(planOf(e.id))?.state === 'added' ? `<span class="wk-badge">${icon('check', 18, 3)}</span>` : '');
+
+function weekendCard() {
+  const list = tokyoEvents();
+  const card = cardEvents(list, plans(), todayKey());
+  if (!card) return null;
+  return `<div class="card side-wk" id="act-wk"><button type="button" class="wk-head" data-action="events"><span class="eyebrow">${esc(card.title)}</span><span class="wk-all">See all ${list.length}${icon('next', 22, 2.2)}</span></button>
+    <div class="wk-rows" id="wk-rows">${card.items.map((e) => `<button type="button" class="wk-row" data-action="event" data-id="${esc(e.id)}">
+      <span class="wk-photo">${evPhoto(e)}${evBadge(e)}</span>
+      <span class="wk-text"><span class="wk-title">${esc(e.title)}</span>${evMeta(e)}</span></button>`).join('')}</div></div>`;
+}
+
+/**
+ * The active view's right column never scrolls, so the card takes the height
+ * that's left and hides the rows that don't fit. If not even one fits, the
+ * Countdowns card gives way (the calm view's tile rotates through the same
+ * countdowns); if one still doesn't fit, the card goes rather than show a stub.
+ */
+function fitWeekend() {
+  const box = $('wk-rows');
+  if (!box) return;
+  const fit = () => {
+    const limit = box.getBoundingClientRect().bottom;
+    for (const row of box.children) row.hidden = false;
+    let shown = 0;
+    for (const row of box.children) {
+      row.hidden = row.getBoundingClientRect().bottom > limit + 0.5;
+      if (!row.hidden) shown++;
+    }
+    return shown;
+  };
+  if (fit()) return;
+  if ($('act-count')) { $('act-count').remove(); if (fit()) return; }
+  $('act-wk').remove();
+}
+
+// The sheet over the active view: null, { kind: 'detail', id, day, from }, or { kind: 'browse', page }.
+let sheet = null;
+const asking = new Set();   // event ids with a request in flight
+
+function openEvent(id, from = sheet?.kind === 'browse' ? sheet : null) {
+  const e = tokyoEvents()?.find((x) => x.id === id);
+  if (!e) return;
+  sheet = { kind: 'detail', id, day: planOf(id)?.day ?? defaultDay(dayChoices(e, todayKey()), todayKey()), from };
+  renderSheet();
+}
+
+function renderSheet() {
+  const el = $('sheet');
+  if (!sheet || view !== 'active') { el.hidden = true; el.innerHTML = ''; return; }
+  const close = `<button type="button" class="round-btn sheet-x" data-action="sheet-close" aria-label="Close">${icon('close', 32, 2)}</button>`;
+  el.innerHTML = `<div class="sheet-back" data-action="sheet-close"></div><div class="sheet-card" role="dialog" aria-modal="true">${
+    sheet.kind === 'detail' ? detailSheet() : browseSheet()}${close}</div>`;
+  el.hidden = false;
+}
+
+function detailSheet() {
+  const e = tokyoEvents()?.find((x) => x.id === sheet.id);
+  if (!e) { sheet = sheet.from; return sheet ? browseSheet() : '<div class="evb"><span class="evb-sub">This event has gone from the list.</span></div>'; }
+  const today = todayKey();
+  const fact = (ic, text, cls = '') => `<div class="evd-fact ${cls}"><span class="ico">${icon(ic, 30, 1.9)}</span><span>${esc(text)}</span></div>`;
+  const hours = hoursLine(e), place = placeLine(e);
+  // The post's opening paragraph or the page's summary, whichever says more (some posts open with one line).
+  const about = (e.about?.length ?? 0) >= (e.summary?.length ?? 0) ? e.about : e.summary;
+  const back = sheet.from ? `<button type="button" class="pill-btn pill-neutral evd-back" data-action="sheet-back">${icon('prev', 26, 2)}All events</button>` : '';
+  const where = [e.locality, 'Tokyo Cheapo'].filter(Boolean).join(' · ');
+  return `<div class="evd-photo">${evPhoto(e, 96)}</div><div class="evd-body">
+    <div class="evd-top">${back}<span class="eyebrow">${esc(where)}</span></div>
+    <h2 class="evd-title">${esc(e.title)}</h2>
+    <div class="evd-facts">${fact('calendar', dateLine(e, today))}${hours ? fact('clock', hours) : ''}${place ? fact('pin', place) : ''}${fact('yen', priceLine(e), e.price || e.free ? '' : 'unknown')}</div>
+    ${about ? `<p class="evd-about">${esc(about)}</p>` : ''}
+    <div class="evd-plan">${planBlock(e, today)}</div></div>`;
+}
+
+function planBlock(e, today) {
+  const ps = planState(planOf(e.id));
+  const busy = asking.has(e.id);
+  if (ps?.state === 'added' || ps?.state === 'remove-failed') {
+    return `<span class="evd-status added">${icon('check', 28, 2.6)}On the family calendar · ${esc(ps.day)}</span>
+      ${ps.state === 'remove-failed' ? `<span class="evd-note">${esc(ps.label)}</span>` : ''}
+      <div class="evd-actions"><button type="button" class="pill-btn pill-neutral" data-action="plan-remove" ${busy ? 'disabled' : ''}>${icon('close', 26, 2)}Take it off</button></div>`;
+  }
+  if (ps?.state === 'adding' || ps?.state === 'removing') {
+    return `<span class="evd-status">${esc(ps.label)} · ${esc(ps.day)}</span>
+      <span class="evd-note">Eva updates the family calendar in a few minutes.</span>
+      ${ps.state === 'adding' ? `<div class="evd-actions"><button type="button" class="pill-btn pill-neutral" data-action="plan-remove" ${busy ? 'disabled' : ''}>Never mind</button></div>` : ''}`;
+  }
+  const days = dayChoices(e, today);
+  if (!days.length) return '<span class="evd-status">This has finished.</span>';
+  const day = days.includes(sheet.day) ? sheet.day : defaultDay(days, today);
+  const chips = days.length > 1 ? `<span class="evd-k">Which day?</span><div class="evd-days">${days.map((d) =>
+    `<button type="button" class="evd-day ${d === day ? 'on' : ''}" data-action="event-day" data-day="${d}">${esc(chipLabel(d))}</button>`).join('')}</div>` : '';
+  const failed = ps?.state === 'add-failed' ? `<span class="evd-note">${esc(ps.label)}</span>` : '';
+  return `${chips}${failed}<div class="evd-actions"><button type="button" class="pill-btn evd-go" data-action="plan-add" data-day="${day}" ${busy ? 'disabled' : ''}>${icon('plus', 28, 2.2)}${ps?.state === 'add-failed' ? 'Try again' : 'Ask Eva to add it'}</button>
+    <span class="evd-note">to the family calendar${days.length > 1 ? '' : ` · ${esc(chipLabel(day))}`}</span></div>`;
+}
+
+function browseSheet() {
+  const list = tokyoEvents() ?? [];
+  const pg = eventPage(list, sheet.page ?? 0);
+  sheet.page = pg.page;
+  const today = todayKey();
+  return `<div class="evb"><div class="evb-head"><h2 class="evb-title">What’s on in Tokyo</h2><span class="evb-sub">${list.length} events · from Tokyo Cheapo</span></div>
+    <div class="evb-grid">${pg.items.map((e) => `<button type="button" class="evb-tile" data-action="event" data-id="${esc(e.id)}">
+      <span class="wk-photo">${evPhoto(e, 48)}${evBadge(e)}</span><span class="wk-title">${esc(e.title)}</span>${
+      planOf(e.id) ? evMeta(e) : `<span class="wk-meta">${esc([dateLine(e, today), e.km != null ? `${Math.round(e.km)} km` : null].filter(Boolean).join(' · '))}</span>`}</button>`).join('')}</div>
+    ${pg.pages > 1 ? `<div class="evb-foot"><button type="button" class="pill-btn pill-neutral" data-action="browse-page" data-dir="-1" ${pg.page === 0 ? 'disabled' : ''}>${icon('prev', 26, 2)}Back</button>
+      <span class="evb-page">Page ${pg.page + 1} of ${pg.pages}</span>
+      <button type="button" class="pill-btn pill-neutral" data-action="browse-page" data-dir="1" ${pg.page === pg.pages - 1 ? 'disabled' : ''}>More${icon('next', 26, 2)}</button></div>` : ''}</div>`;
+}
+
+async function askPlan(id, body) {
+  const e = tokyoEvents()?.find((x) => x.id === id);
+  if (asking.has(id)) return;
+  asking.add(id);
+  renderSheet();
+  try {
+    const r = await fetch(`/api/plans/${encodeURIComponent(id)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    const title = e?.title ?? planOf(id)?.title ?? 'it';
+    showToast({ ok: true, title: body.want === 'add' ? `Asked Eva to add ${title}` : `Asked Eva to take off ${title}`, sub: 'She updates the family calendar in a few minutes', undo: null });
+  } catch {
+    showToast({ ok: false, title: 'Couldn’t ask Eva', sub: 'Check the connection and tap again', undo: null });
+  } finally {
+    asking.delete(id);
+    renderSheet();
+  }
 }
 
 // Chores are updated in place rather than re-rendered, so a broadcast landing
@@ -955,9 +1115,11 @@ function moveNight() {
 
 function renderAll() {
   if (view === 'ambient') renderAmbient();
-  else if (view === 'active') renderActive();
+  else if (view === 'active') { renderActive(); renderSheet(); }
   else if (view === 'night') renderNight();
   syncEva();
+  // Eva's bubble takes its height in the right column only now, so measure again.
+  if (view === 'active') fitWeekend();
   chimeCheck();
 }
 
@@ -1243,6 +1405,14 @@ $('stage').addEventListener('click', (e) => {
     case 'pay': return pay(el.dataset.who);
     case 'swap': return swapBath();
     case 'undo': { const u = undoFn; hideToast(); if (u) u(); return; }
+    case 'event': return openEvent(el.dataset.id);
+    case 'events': sheet = { kind: 'browse', page: 0 }; return renderSheet();
+    case 'browse-page': sheet.page += Number(el.dataset.dir); return renderSheet();
+    case 'sheet-back': sheet = sheet?.from ?? null; return renderSheet();
+    case 'sheet-close': sheet = null; return renderSheet();
+    case 'event-day': sheet.day = el.dataset.day; return renderSheet();
+    case 'plan-add': return askPlan(sheet.id, { want: 'add', day: el.dataset.day });
+    case 'plan-remove': return askPlan(sheet.id, { want: 'remove' });
   }
 });
 document.addEventListener('contextmenu', (e) => e.preventDefault());
