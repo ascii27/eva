@@ -24,7 +24,7 @@ export const FIRST_BLINK_RAND = 2500;
 
 export const YAWN_MS = 2400;
 export const SLEEPY_START_HOUR = 22;
-export const SLEEPY_END_HOUR = 7;
+export const SLEEPY_END_HOUR = 6; // ASC-33: also the night window she dims and sleeps in
 export const FIRST_YAWN_MIN = 6000;
 export const FIRST_YAWN_RAND = 6000;
 export const YAWN_MIN_GAP = 40000;
@@ -45,3 +45,15 @@ export const VISEME_FRAME_MS = 112;
 
 export const CONFUSED_TILT_DEG = 5;
 export const SIDE_COLUMN_W = 250;
+
+// Asleep (ASC-33). Not in the design file yet: built only from the yawn above,
+// so it can be folded into Eva Face.dc.html as-is. Asleep is the yawn's
+// nearly-shut hold (k = 0.15) held indefinitely: scaleY k, scaleX 0.94 + 0.1k,
+// glow 0.8 + 0.4k, breathing with idle's glow pulse. She drifts off over the
+// yawn's droop + hold (600 + 900 ms) and wakes over its 400 ms reopen.
+export const ASLEEP_K = 0.15;
+export const ASLEEP_SH = ASLEEP_K;
+export const ASLEEP_SW = 0.94 + 0.1 * ASLEEP_K;
+export const ASLEEP_G = 0.8 + 0.4 * ASLEEP_K;
+export const FALL_ASLEEP_MS = 600 + 900;
+export const WAKE_UP_MS = 400;

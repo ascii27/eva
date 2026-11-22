@@ -43,6 +43,8 @@ import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
 import type { FaceMode, MouthOutput } from './types';
 import type { VisemeKey } from './visemes';
+import { useSleep, SleepOverride } from './useSleep';
+import { canDim } from './brightness';
 import { hhmm } from '../util/time';
 
 const TRIPLE_TAP_WINDOW_MS = 800;
@@ -548,6 +550,19 @@ export function FaceScreen() {
     onIssue: log,
   });
 
+  // Night (ASC-33): dimmed from 22:00 to 06:00, and asleep after ten quiet
+  // minutes. Anything under way keeps her awake — a round, the overlay — and a
+  // touch anywhere brightens her for a minute. The face stays 'idle' while she
+  // sleeps, so the wake word still reaches her.
+  const [sleepOverride, setSleepOverride] = useState<SleepOverride>('auto');
+  const sleep = useSleep({ busy: mode !== 'idle' || echoBusy || devVisible, override: sleepOverride });
+  const cycleSleep = useCallback(() => {
+    setSleepOverride((o) => (o === 'auto' ? 'dim' : o === 'dim' ? 'asleep' : 'auto'));
+  }, []);
+  const sleepLabel =
+    `${sleepOverride === 'auto' ? 'auto' : `pinned ${sleepOverride}`} · ${sleep.phase}` +
+    (canDim() ? '' : ' · no dimming in this build');
+
   // Manual mode picks abandon any in-flight speech round, like the design's pick().
   const pickMode = useCallback(
     (m: FaceMode) => {
@@ -607,7 +622,7 @@ export function FaceScreen() {
   const faceW = width - colW;
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} onTouchStart={sleep.poke}>
       <Face
         mode={mode}
         eyeColor={eyeColor}
@@ -619,6 +634,7 @@ export function FaceScreen() {
         k={k}
         blinkNonce={blinkNonce}
         yawnNonce={yawnNonce}
+        asleep={sleep.phase === 'asleep'}
       />
       {colOn && fontsLoaded && (
         <SideColumn
@@ -731,6 +747,8 @@ export function FaceScreen() {
           bundleLabel={describeBundle(bundle.configured, bundle.state)}
           onBundleRefresh={bundle.refresh}
           errandsInFlight={errands.configured ? errands.inFlight : null}
+          sleepLabel={sleepLabel}
+          onCycleSleep={cycleSleep}
           updateLabel={updates.label}
           onCheckUpdate={() => void updates.checkNow()}
           slackStatus={slack.status}

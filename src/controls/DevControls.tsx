@@ -91,13 +91,52 @@ interface DevControlsProps {
   /** Errands out to hermes, or null when none is configured. */
   errandsInFlight: number | null;
   /** The running OTA update, and whether a newer one is waiting. */
+  /** Night sleep (ASC-33): auto, or pinned to dim / asleep to see it now. */
+  sleepLabel: string;
+  onCycleSleep: () => void;
   updateLabel: string;
   /** Fetch and reload into a new update now; says so when there is none. */
   onCheckUpdate: () => void;
 }
 
+/**
+ * Lives at module scope on purpose. Defined inside DevControls it was a new
+ * component type every render, so any re-render remounted every button — and a
+ * touch-down re-renders the whole screen (FaceScreen's onTouchStart wakes her
+ * from night sleep), so the Pressable under your finger was gone before the
+ * finger lifted and onPress never fired.
+ */
+function Btn({
+  label,
+  sub,
+  active,
+  eyeColor,
+  onPress,
+}: {
+  label: string;
+  sub?: string;
+  active?: boolean;
+  eyeColor: string;
+  onPress: () => void;
+}) {
+  const activeStyle = {
+    borderColor: hexToRgba(eyeColor, 0.5),
+    backgroundColor: hexToRgba(eyeColor, 0.12),
+  };
+  return (
+    <Pressable style={[styles.btn, active && activeStyle]} onPress={onPress}>
+      <Text style={[styles.btnLabel, active && { color: eyeColor }]}>{label}</Text>
+      {sub ? <Text style={styles.btnSub}>{sub}</Text> : null}
+    </Pressable>
+  );
+}
+
 export function DevControls(props: DevControlsProps) {
   const { eyeColor } = props;
+  const activeStyle = {
+    borderColor: hexToRgba(eyeColor, 0.5),
+    backgroundColor: hexToRgba(eyeColor, 0.12),
+  };
   const [askText, setAskText] = useState('');
   // Forget-all is irreversible and sits next to buttons you press casually, so
   // it arms on the first tap and only fires on the second.
@@ -108,28 +147,6 @@ export function DevControls(props: DevControlsProps) {
     setAskText('');
     props.onAsk(text);
   };
-  const activeStyle = {
-    borderColor: hexToRgba(eyeColor, 0.5),
-    backgroundColor: hexToRgba(eyeColor, 0.12),
-  };
-
-  const Btn = ({
-    label,
-    sub,
-    active,
-    onPress,
-  }: {
-    label: string;
-    sub?: string;
-    active?: boolean;
-    onPress: () => void;
-  }) => (
-    <Pressable style={[styles.btn, active && activeStyle]} onPress={onPress}>
-      <Text style={[styles.btnLabel, active && { color: eyeColor }]}>{label}</Text>
-      {sub ? <Text style={styles.btnSub}>{sub}</Text> : null}
-    </Pressable>
-  );
-
   return (
     <View style={styles.root} pointerEvents="box-none">
       <View style={styles.panel}>
@@ -142,6 +159,7 @@ export function DevControls(props: DevControlsProps) {
           </View>
           {MODES.map((m) => (
             <Btn
+              eyeColor={eyeColor}
               key={m.id}
               label={m.label}
               sub={m.trigger}
@@ -152,20 +170,20 @@ export function DevControls(props: DevControlsProps) {
 
           <Text style={styles.sectionLabel}>BEHAVIORS</Text>
           <View style={styles.row}>
-            <Btn label="Blink" onPress={props.onBlink} />
-            <Btn label="Yawn" onPress={props.onYawn} />
+            <Btn eyeColor={eyeColor} label="Blink" onPress={props.onBlink} />
+            <Btn eyeColor={eyeColor} label="Yawn" onPress={props.onYawn} />
           </View>
 
           <Text style={styles.sectionLabel}>MOUTH OUTPUT</Text>
           <View style={styles.row}>
-            <Btn label="Lip sync" active={props.output === 'mouth'} onPress={() => props.onOutput('mouth')} />
-            <Btn label="Waveform" active={props.output === 'wave'} onPress={() => props.onOutput('wave')} />
-            <Btn label="Off" active={props.output === 'off'} onPress={() => props.onOutput('off')} />
+            <Btn eyeColor={eyeColor} label="Lip sync" active={props.output === 'mouth'} onPress={() => props.onOutput('mouth')} />
+            <Btn eyeColor={eyeColor} label="Waveform" active={props.output === 'wave'} onPress={() => props.onOutput('wave')} />
+            <Btn eyeColor={eyeColor} label="Off" active={props.output === 'off'} onPress={() => props.onOutput('off')} />
           </View>
 
           <Text style={styles.sectionLabel}>LAYOUT</Text>
           <View style={styles.row}>
-            <Btn label="Side column" active={props.colOn} onPress={props.onToggleCol} />
+            <Btn eyeColor={eyeColor} label="Side column" active={props.colOn} onPress={props.onToggleCol} />
           </View>
 
           <Text style={styles.sectionLabel}>EYE COLOR</Text>
@@ -200,17 +218,18 @@ export function DevControls(props: DevControlsProps) {
 
           <Text style={styles.sectionLabel}>SPEECH · {props.ttsEngine}</Text>
           <View style={styles.row}>
-            <Btn label="Speak test" onPress={props.onSpeakTest} />
-            <Btn label="Listen" onPress={props.onListen} />
-            <Btn label="Conversation" sub="follow-ups" active={props.convEnabled} onPress={props.onToggleConv} />
-            <Btn label="Asides" sub="thinking" active={props.asidesEnabled} onPress={props.onToggleAsides} />
+            <Btn eyeColor={eyeColor} label="Speak test" onPress={props.onSpeakTest} />
+            <Btn eyeColor={eyeColor} label="Listen" onPress={props.onListen} />
+            <Btn eyeColor={eyeColor} label="Conversation" sub="follow-ups" active={props.convEnabled} onPress={props.onToggleConv} />
+            <Btn eyeColor={eyeColor} label="Asides" sub="thinking" active={props.asidesEnabled} onPress={props.onToggleAsides} />
             <Btn
+              eyeColor={eyeColor}
               label="Proactive"
               sub="eva speaks first"
               active={props.proactiveEnabled}
               onPress={props.onToggleProactive}
             />
-            <Btn label="Proactive test" onPress={props.onProactiveTest} />
+            <Btn eyeColor={eyeColor} label="Proactive test" onPress={props.onProactiveTest} />
           </View>
 
           <Text style={styles.sectionLabel}>
@@ -218,12 +237,13 @@ export function DevControls(props: DevControlsProps) {
           </Text>
           <View style={styles.row}>
             <Btn
+              eyeColor={eyeColor}
               label={BRAIN_LABELS[props.brain]}
               sub="tap to switch"
               active={props.brain !== 'slack'}
               onPress={props.onToggleBrain}
             />
-            <Btn label="End session" sub="→ memory" onPress={props.onEndSession} />
+            <Btn eyeColor={eyeColor} label="End session" sub="→ memory" onPress={props.onEndSession} />
           </View>
           {/* Whether the socket is up, and so whether the next question pays a
               handshake. A round that fails with nothing to show for it looks
@@ -241,16 +261,20 @@ export function DevControls(props: DevControlsProps) {
               the panel is a fixed 300px, so a third button beside the pair
               above is squeezed to nothing. */}
           <View style={styles.row}>
-            <Btn label="Model" sub={props.agentModel} onPress={props.onCycleModel} />
+            <Btn eyeColor={eyeColor} label="Model" sub={props.agentModel} onPress={props.onCycleModel} />
           </View>
           <View style={styles.row}>
             {/* What hermes last sent down, and how old it is. Worth a button:
                 "she doesn't know about the two o'clock" looks identical whether
                 the bundle is stale, unparseable, or was never fetched at all. */}
-            <Btn label="Bundle" sub={props.bundleLabel} onPress={props.onBundleRefresh} />
+            <Btn eyeColor={eyeColor} label="Bundle" sub={props.bundleLabel} onPress={props.onBundleRefresh} />
           </View>
           <View style={styles.row}>
-            <Btn label="Check for update" sub={props.updateLabel} onPress={props.onCheckUpdate} />
+            <Btn eyeColor={eyeColor} label="Check for update" sub={props.updateLabel} onPress={props.onCheckUpdate} />
+          </View>
+          <View style={styles.row}>
+            {/* Pinned phases still give way to a round, like the real night. */}
+            <Btn eyeColor={eyeColor} label="Sleep" sub={props.sleepLabel} onPress={props.onCycleSleep} />
           </View>
           {props.errandsInFlight !== null && (
             <Text style={styles.note}>
@@ -261,6 +285,7 @@ export function DevControls(props: DevControlsProps) {
           )}
           <View style={styles.row}>
             <Btn
+              eyeColor={eyeColor}
               label={forgetArmed ? 'Wipe everything?' : 'Forget all'}
               sub={forgetArmed ? 'tap again' : 'session + memory'}
               active={forgetArmed}
@@ -285,7 +310,7 @@ export function DevControls(props: DevControlsProps) {
               onSubmitEditing={submitAsk}
               returnKeyType="send"
             />
-            <Btn label="Ask" onPress={submitAsk} />
+            <Btn eyeColor={eyeColor} label="Ask" onPress={submitAsk} />
           </View>
 
           <Text style={styles.sectionLabel}>VISION · {props.visionAvailable ? 'camera' : 'none'}</Text>
@@ -293,17 +318,18 @@ export function DevControls(props: DevControlsProps) {
               without going near the model, which is the only way to exercise
               it when the model declines to reach for the camera. */}
           <View style={styles.row}>
-            <Btn label="Look" sub="asks first" onPress={props.onLookTest} />
+            <Btn eyeColor={eyeColor} label="Look" sub="asks first" onPress={props.onLookTest} />
           </View>
 
           <Text style={styles.sectionLabel}>SLACK</Text>
           <View style={styles.row}>
-            <Btn label="Pair" sub={props.slackStatus} onPress={props.onSlackPair} />
-            <Btn label="Reconnect" onPress={props.onSlackReconnect} />
+            <Btn eyeColor={eyeColor} label="Pair" sub={props.slackStatus} onPress={props.onSlackPair} />
+            <Btn eyeColor={eyeColor} label="Reconnect" onPress={props.onSlackReconnect} />
           </View>
 
           <Text style={styles.sectionLabel}>WAKE WORD</Text>
           <Btn
+            eyeColor={eyeColor}
             label="Wake watching"
             sub={props.wakeStatus}
             active={props.wakeEnabled}
