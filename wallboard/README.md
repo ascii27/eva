@@ -73,6 +73,8 @@ Both are generated into `/etc/wallboard.env` on the first deploy:
 | `GET` | `/api/eva/activity?after=<seq>` | — | `{logId, seq, events}`: log events with `seq` greater than `after`, in order, plus the log's id and its highest `seq` so hermes can spot a reset board. |
 | `GET` | `/api/eva/balances` | — | `{balances: {who: {earned, paid, owed, lastPaidAt}}}`, computed from the log. |
 | `POST` | `/api/eva/payments` | `{"who", "amount", "note"?, "id"?}` | Record a payment (a negative amount is a credit). `amount` is a non-zero integer within ±1,000,000 yen. A repeated `id` is not recorded twice. |
+| `GET` | `/api/eva/plans` | — | `{plans: [Plan]}`: the family's calendar requests, pending first (oldest request first). A `Plan` is `{id, title, url, day, time?, until?, venue?, place?, want: "add"\|"remove", status: "pending"\|"done"\|"failed", note?, ref?, requestedAt, updatedAt}` (`server/plans.ts`). |
+| `PUT` | `/api/eva/plans/<id>` | `{"want", "result": "done"\|"failed", "note"?, "ref"?}` | Report what you did for the `want` you read. `ref` is your calendar entry's id (kept for a later remove). A failure needs a `note` (≤200 chars, shown on the board). A done remove deletes the plan. `409` when the family changed the plan since you read it: read again. A repeated report is `{duplicate: true}`. |
 
 **Absent vs empty**, as on the desk: a panel that was never pushed means "Eva
 never told us" and the board shouldn't pretend it knows. A panel pushed as `[]`
@@ -137,6 +139,43 @@ title). Today's list carries bedtime as `id: "bedtime"`; tomorrow's carries the
 school run as `School` at 7:55 and never bedtime. The board also still reads
 the older `at` field and the old `tomorrow: {at, title}`.
 
+`tokyo-events` is the server's too (ASC-35, `server/tokyoevents.ts`): what's on in
+Tokyo, from Tokyo Cheapo. The **events** feed (`tokyocheapo.com/events/feed/`, one
+item per event) finds them; the main feed is articles, not events. The feed has no
+event dates, so each event's own page is read once for its schema.org `Event`
+JSON-LD (dates, venue, prices, photo) and its map pin, and cached in
+`data/tokyo-events.json` (re-read when the post is edited, or weekly while the event
+is ahead). Each shown event's photo is downloaded once, resized to ≤1024 px and served
+by the board itself from `data/event-photos/` (`/event-photos/<id>.jpg`, enrolled
+cookie), so the Echo never loads a third-party image. Feed every 6 h;
+`TOKYO_EVENTS=off` stops it.
+
+Only events **for the family** and **nearby** are published:
+- **Not adult.** Sexual and adults-only topics anywhere in the title, summary or
+  opening paragraph, and drinking events by title (a craft-beer festival is out; a
+  Christmas market that mentions mulled wine is in). `forFamily` has the lists.
+- **In Tokyo, and within `EVENTS_MAX_KM` of home** (default 25, which keeps Sanrio
+  Puroland at 23 km). Yokohama, Saitama and the rest are out however close.
+
+The panel is every such event still on, soonest first: `[{id, title, url, start, end,
+time?, until?, venue?, locality?, region?, km?, price?: {from, to}, free?, summary?,
+about?, image?, weekend}]`. Dates are `YYYY-MM-DD`. `time`/`until` are `H:MM`, given only
+when the page has a real time; for a multi-day event they're daily hours. `km` is
+straight-line from home. `weekend` is true when it's on this coming Saturday or Sunday
+(the current ones, at the weekend). `about` is the post's opening paragraph and
+`image` is the board's copy. No `price` and no `free` means not listed: the site writes
+¥0 both for free events and for unknown prices, so `free` is only set when the text
+says so. Nothing is published until the first feed read succeeds, so absent means
+"not known yet".
+
+**On the board:** a "This weekend" card in the active view's right column, a detail
+sheet per event, and a browse sheet (CLAUDE.md "What's on in Tokyo"). From the
+detail sheet the family asks Eva to put an event on the family calendar, or take it
+off. Those requests are **plans** (`server/plans.ts`), kept in the board's state.
+hermes' `eva-events` skill reads them every 10 min, edits the calendar with its own
+tools and reports back (`hermes/skills/eva-events/`). hermes' bubble skill reads
+the weekend list to suggest one now and then.
+
 ## Board API (enrolled cookie)
 
 - `GET /api/events` — SSE: `hello {build}` then `state` on connect and on every change.
@@ -149,6 +188,11 @@ the older `at` field and the old `tomorrow: {at, title}`.
   request, a balance that changed underneath) is `409 {error, owed}` and records nothing.
 - `POST /api/cancel/<eventId>` — cancels a recorded payment (the undo of Mark paid).
   Completions are undone with `PUT /api/chores/<id>` instead; anything else is 404.
+- `POST /api/plans/<eventId>` `{"want": "add", "day": "YYYY-MM-DD"}` or `{"want": "remove"}`:
+  ask Eva to put a `tokyo-events` event on the family calendar on that day (one the
+  event is on, not past), or take it off. Last tap wins; a different day for an
+  added event is a move. `400` with the reason for a bad day, `404` for an unknown event.
+- `GET /event-photos/<id>.jpg`: an event's photo (the panel's `image`).
 
 ## Chores
 

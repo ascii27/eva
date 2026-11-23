@@ -9,12 +9,15 @@ import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
-import { activityAfter, apply, balances, boardPayConflict, emptyState, isYen, parseChores, reviveState, view, MAX_YEN, PANEL_NAME, type Action, type BoardState } from './state.ts';
+import { activityAfter, apply, balances, boardPayConflict, emptyState, isYen, parseChores, planCheck, reviveState, view, MAX_YEN, PANEL_NAME, type Action, type BoardState } from './state.ts';
+import { parseReport, planList, type EventSnapshot } from './plans.ts';
 import { tokyoDay } from './schedule.ts';
 import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
 import { IKEJIRI, startWeather } from './weather.ts';
 import { parsePeople, startCalendar } from './calendar.ts';
+import { MAX_KM, PHOTO_ID, startTokyoEvents } from './tokyoevents.ts';
+import sharp from 'sharp';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -84,7 +87,11 @@ function broadcast(): void {
 
 // Midnight in Tokyo turns the board's day with no state change: chores come
 // due and yesterday's done ones go. Rebroadcast the view; nothing to save.
-setInterval(() => { if (tokyoDay(Date.now()) !== broadcastDay) broadcast(); }, 60_000).unref();
+// Plans for days that have passed go at the same moment.
+setInterval(() => {
+  if (tokyoDay(Date.now()) === broadcastDay) return;
+  if (!dispatch({ type: 'plans.prune', at: Date.now() })) broadcast();
+}, 60_000).unref();
 
 // Keeps idle connections alive through proxies, which drop a silent stream.
 setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 25_000).unref();
@@ -105,6 +112,24 @@ if (process.env.WEATHER !== 'off') {
 // `tomorrow`, `leave-by` and `bedtime`. Without a URL, the routine alone. DAY=off: dummy.
 if (process.env.DAY !== 'off') {
   startCalendar(process.env.CALENDAR_URL || undefined, 15 * 60_000, (name, data) => dispatch({ type: 'panel.set', name, data, at: Date.now() }), parsePeople(process.env.CALENDAR_PEOPLE));
+}
+
+// What's on in Tokyo (Tokyo Cheapo's events feed + each event's page), published
+// as `tokyo-events` (ASC-35): family-friendly, in Tokyo, within EVENTS_MAX_KM of
+// home. The feed is read every 6 h; pages and photos are cached in data/.
+// TOKYO_EVENTS=off stops polling (the last panel stays).
+const EVENT_PHOTOS = join(dirname(DATA), 'event-photos');
+if (process.env.TOKYO_EVENTS !== 'off') {
+  startTokyoEvents({
+    cacheFile: join(dirname(DATA), 'tokyo-events.json'),
+    photoDir: EVENT_PHOTOS,
+    everyMs: 6 * 60 * 60_000,
+    home: IKEJIRI,
+    maxKm: Number(process.env.EVENTS_MAX_KM ?? MAX_KM),
+    // The detail sheet shows it at most ~760 px wide; upright, JPEG 80, as photos.ts does.
+    presize: (b) => sharp(b).rotate().resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 80, mozjpeg: true }).toBuffer(),
+    publish: (data) => dispatch({ type: 'panel.set', name: 'tokyo-events', data, at: Date.now() }),
+  });
 }
 
 // ---- http helpers ----------------------------------------------------------
@@ -213,6 +238,22 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
       return json(res, 200, { ok: true, id, duplicate: !fresh });
     }
 
+    // Plans (ASC-35): the family's add/remove requests for the calendar. The
+    // eva-events skill reads them and reports what it did (server/plans.ts).
+    if (pathname === '/api/eva/plans' && method === 'GET') return json(res, 200, { plans: planList(state.plans) });
+    const plan = pathname.match(/^\/api\/eva\/plans\/([^/]+)$/);
+    if (plan && method === 'PUT') {
+      const id = decodeURIComponent(plan[1]);
+      const report = parseReport(await body(req));
+      if (typeof report === 'string') return json(res, 400, { error: report });
+      const action = { type: 'plan.resolve' as const, id, report, at };
+      const refused = planCheck(state, action);
+      if (refused === 'missing') return json(res, 404, { error: 'no such plan' });
+      if (refused === 'stale') return json(res, 409, { error: 'the family changed this plan since you read it; read the plans again', plan: state.plans[id] ?? null });
+      const changed = dispatch(action);
+      return json(res, 200, { ok: true, duplicate: !changed });
+    }
+
     const panel = pathname.match(/^\/api\/eva\/panels\/([^/]+)$/);
     if (panel) {
       const name = panel[1];
@@ -268,6 +309,41 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     } catch {
       return json(res, 404, { error: 'no such photo' });
     }
+  }
+
+  const eventPhoto = pathname.match(/^\/event-photos\/([^/]+)\.jpg$/);
+  if (eventPhoto && method === 'GET') {
+    if (!PHOTO_ID.test(eventPhoto[1])) return json(res, 404, { error: 'no such photo' });
+    try {
+      const buf = await readFile(join(EVENT_PHOTOS, `${eventPhoto[1]}.jpg`));
+      // The URL carries ?v=<published>, so a re-shot photo gets a new URL.
+      res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'private, max-age=86400' });
+      return void res.end(buf);
+    } catch {
+      return json(res, 404, { error: 'no such photo' });
+    }
+  }
+
+  // Ask Eva to put a Tokyo event on the calendar, or take it off: {"want": "add", "day"} | {"want": "remove"}.
+  const planReq = pathname.match(/^\/api\/plans\/([^/]+)$/);
+  if (planReq && method === 'POST') {
+    const id = decodeURIComponent(planReq[1]);
+    const b = (await body(req)) as { want?: unknown; day?: unknown } | null;
+    const at = Date.now();
+    if (b?.want === 'remove') {
+      if (!state.plans[id]) return json(res, 404, { error: 'no such plan' });
+      dispatch({ type: 'plan.remove', id, at });
+      return json(res, 200, { ok: true, plan: state.plans[id] ?? null });
+    }
+    if (b?.want !== 'add' || typeof b.day !== 'string') return json(res, 400, { error: 'expected {"want": "add", "day": "YYYY-MM-DD"} or {"want": "remove"}' });
+    const events = state.panels['tokyo-events']?.data;
+    const event = Array.isArray(events) ? (events as EventSnapshot[]).find((e) => e?.id === id) : undefined;
+    if (!event) return json(res, 404, { error: 'no such event' });
+    const action = { type: 'plan.add' as const, event, day: b.day, at };
+    const refused = planCheck(state, action);
+    if (refused) return json(res, 400, { error: refused });
+    dispatch(action);
+    return json(res, 200, { ok: true, plan: state.plans[id] });
   }
 
   const chore = pathname.match(/^\/api\/chores\/([^/]+)$/);

@@ -227,6 +227,25 @@ References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dar
 **Data (from Eva)**
 - Panel `eva`: `{ "text": "...", "sub": "...", "mood": "happy" | "excited", "at": ISO time }`. Eva pushes a few times a day. Absent panel = nothing to say (no bubble). The old `note` panel maps to this for now.
 
+## What's on in Tokyo (ASC-35, 2026-11-23) — drafted, awaiting approval
+**Status:** drafted straight into `web/` from the existing tokens (no `design/*.dc.html` yet); reviewed only as screenshots. Once approved, capture it as a design file, or ask before changing its values. Data and plans: README "tokyo-events"; words and day choices: `web/events.js` (pure, tested).
+
+**"This weekend" card** (active view, last in the right column)
+- A normal card (`.card`), padding 22 × 26. Heading row is a button: eyebrow "THIS WEEKEND" (or "COMING UP IN TOKYO" when nothing is on this weekend) on the left, "See all N ›" 18 px 600 muted on the right → browse sheet.
+- Rows: 96 × 72 photo (radius 14), title 20/25 600 (2 lines), meta 17/22 muted: weekend days · km · price ("Sat & Sun · 8 km · ¥800–1,500"). Planned events come first, with a 26 px teal check badge on the photo and the meta in teal 600 ("On the calendar · Sat 28").
+- **Space:** the card takes the height left under the other cards (`flex: 1 1 0`, overflow hidden) and hides rows that don't fit. If not even one fits, the **Countdowns card gives way** (the calm tile rotates through the same countdowns); if one still doesn't fit, the card goes. It never shows a heading with no rows. Re-measured after Eva's bubble renders (it takes its height last).
+- No card when the panel is absent (no dummy content).
+
+**Detail sheet** (tap a row or a tile)
+- Full-stage backdrop `rgba(29,23,18,.45)`; centred card 1600 × 920, radius 28, the card edge and shadow. Close: 72 px round button top-right; tapping the backdrop also closes. From browse, a "‹ All events" pill goes back.
+- Left: the photo, 640 px wide, cover. Right (padding 40 × 48): eyebrow "<locality> · TOKYO CHEAPO"; title 44/52 display 600 (2 lines); facts at 26/34 with 30 px muted icons — calendar (date range, "Until Sun 13 Dec" once running), clock (hours; "… each day" for multi-day), pin (venue · area · "N km from home"), yen (price, "Free", or **"Price not listed"** in muted: never claim free); then the post's opening paragraph or the page summary, whichever is longer, 22/32 muted, 4 lines.
+- Bottom, above a rule: **"WHICH DAY?"** chips (64 px, `--surface-200` + 2 px `--line`; chosen = solid teal) when the event runs more than one day: every day if ≤ 6, else the weekend days in the next five weeks. Default chip: this Saturday, else Sunday, else the first. Then the primary button **"+ Ask Eva to add it"** (80 px, teal, white) and "to the family calendar".
+- States (from `server.plans`): asking → "Asking Eva to add it · Sat 28 Nov" + "Eva updates the family calendar in a few minutes." + "Never mind"; added → teal check "On the family calendar · Sat 28 Nov" + neutral "× Take it off"; removing → "Asking Eva to take it off"; failed → Eva's note in faint text and "Try again". A tap answers with a toast ("Asked Eva to add …").
+
+**Browse sheet** ("See all")
+- Same card. "What's on in Tokyo" 44 px display + "N events · from Tokyo Cheapo". 4 × 2 tiles a page: photo 200 px tall (radius 18), title 22/28 600 (2 lines), meta 18/24 (dates · km, or the plan's state). Paged with "‹ Back" / "Page 1 of 3" / "More ›" pill buttons — **single taps, no swiping or scrolling**.
+- Sheets close when the board returns to its resting view.
+
 ## Household and behaviour (don't regress)
 - Only Mariko (11) and Sarina (8) have chores. Michael and Nozomi appear in the schedule only.
 - Every chore tap answers instantly, with an 8 s Undo toast. Single taps only: no long-press, swipe or text entry.
