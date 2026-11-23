@@ -172,8 +172,19 @@ says so. Nothing is published until the first feed read succeeds, so absent mean
 sheet per event, and a browse sheet (CLAUDE.md "What's on in Tokyo"). From the
 detail sheet the family asks Eva to put an event on the family calendar, or take it
 off. Those requests are **plans** (`server/plans.ts`), kept in the board's state.
-hermes' `eva-events` skill reads them every 10 min, edits the calendar with its own
-tools and reports back (`hermes/skills/eva-events/`). hermes' bubble skill reads
+hermes' `eva-events` skill reads them, edits the calendar with its own tools and
+reports back (`hermes/skills/eva-events/`).
+
+**The board wakes hermes; hermes doesn't poll** (`server/nudge.ts`). A hermes run
+is a full agent run (~325k prompt tokens measured), so a schedule would spend that
+every time it fired. Instead, about a minute after the last tap the board sends
+hermes one chat message listing every pending plan and naming the skill. A plan
+still pending 30 min later is sent again, at most 3 times in all; nothing is sent
+while a request is in flight. Configured in `/etc/wallboard.env`:
+`HERMES_AGENT_URL` (hermes' OpenAI-compatible base, e.g.
+`https://orbit-python.exe.xyz/v1`), `HERMES_AGENT_KEY` (its `API_SERVER_KEY`: a
+secret, never logged), optional `HERMES_AGENT_MODEL` (default `hermes-agent`).
+Unset means nothing is sent, and the skill has to be scheduled instead. hermes' bubble skill reads
 the weekend list to suggest one now and then.
 
 ## Board API (enrolled cookie)

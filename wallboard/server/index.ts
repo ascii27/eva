@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { activityAfter, apply, balances, boardPayConflict, emptyState, isYen, parseChores, planCheck, reviveState, view, MAX_YEN, PANEL_NAME, type Action, type BoardState } from './state.ts';
 import { parseReport, planList, type EventSnapshot } from './plans.ts';
+import { agentFromEnv, startNudger } from './nudge.ts';
 import { tokyoDay } from './schedule.ts';
 import { enrollCookie, isBoard, isHermes, keyMatches } from './auth.ts';
 import { PhotoLibrary } from './photos.ts';
@@ -131,6 +132,13 @@ if (process.env.TOKYO_EVENTS !== 'off') {
     publish: (data) => dispatch({ type: 'panel.set', name: 'tokyo-events', data, at: Date.now() }),
   });
 }
+
+// Wake hermes when the family asks for a calendar change from the board, rather
+// than hermes polling for it (server/nudge.ts). HERMES_AGENT_URL is hermes'
+// OpenAI-compatible base (…/v1) and HERMES_AGENT_KEY its API_SERVER_KEY — a
+// secret, only in /etc/wallboard.env, never logged. Unset: nothing is sent.
+const hermesAgent = agentFromEnv(process.env);
+const nudger = hermesAgent ? startNudger(hermesAgent, () => planList(state.plans)) : null;
 
 // ---- http helpers ----------------------------------------------------------
 
@@ -332,7 +340,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const at = Date.now();
     if (b?.want === 'remove') {
       if (!state.plans[id]) return json(res, 404, { error: 'no such plan' });
-      dispatch({ type: 'plan.remove', id, at });
+      if (dispatch({ type: 'plan.remove', id, at })) nudger?.poke();
       return json(res, 200, { ok: true, plan: state.plans[id] ?? null });
     }
     if (b?.want !== 'add' || typeof b.day !== 'string') return json(res, 400, { error: 'expected {"want": "add", "day": "YYYY-MM-DD"} or {"want": "remove"}' });
@@ -342,7 +350,7 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     const action = { type: 'plan.add' as const, event, day: b.day, at };
     const refused = planCheck(state, action);
     if (refused) return json(res, 400, { error: refused });
-    dispatch(action);
+    if (dispatch(action)) nudger?.poke();
     return json(res, 200, { ok: true, plan: state.plans[id] });
   }
 
@@ -397,6 +405,7 @@ server.listen(PORT, () => {
   console.log(`[wallboard] listening on :${PORT} (build ${BUILD})`);
   if (!BOARD_TOKEN) console.warn('[wallboard] BOARD_TOKEN unset — board is open (dev only)');
   if (!HERMES_TOKEN) console.warn('[wallboard] HERMES_TOKEN unset — push API is open (dev only)');
+  console.log(hermesAgent ? `[nudge] will wake hermes at ${new URL(hermesAgent.url).host} when the family asks` : '[nudge] HERMES_AGENT_URL/KEY unset — hermes is not woken; its eva-events sync must be scheduled');
 });
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
