@@ -76,6 +76,7 @@ export function message(plans: Plan[]): string {
   return [
     `From the kitchen board: the family asked you to ${asks.join('; ')}.`,
     'Run the board events sync now, using the eva-events skill, and report each result back to the board with its script.',
+    'Load WALLBOARD_* from ~/.hermes/.env before running the script.',
     'Reply with one short line saying what you did.',
   ].join(' ');
 }

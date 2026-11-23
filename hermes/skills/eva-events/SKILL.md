@@ -18,7 +18,9 @@ says "Asking Eva to add it".
 `scripts/eva_events.py` in this skill's folder (installed:
 `~/.hermes/skills/eva-events/scripts/eva_events.py`). Python standard library
 only. It needs `WALLBOARD_TOKEN` in the environment (and optionally
-`WALLBOARD_URL`), the same as the other board skills.
+`WALLBOARD_URL`), the same as the other board skills. Your terminal doesn't
+get them by itself: run `set -a; . ~/.hermes/.env; set +a` first, in the same
+command as the script.
 
 ```bash
 python3 eva_events.py pending                                   # what's waiting, with the calendar entry to make

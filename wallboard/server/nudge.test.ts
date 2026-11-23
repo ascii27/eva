@@ -55,6 +55,7 @@ test('the message names each request and the skill', () => {
   const m = message([plan('a', T), plan('b', T, { want: 'remove', title: 'D.League', day: '2026-12-10' })]);
   assert.match(m, /add “Event a” on Sat 28 Nov; take “D\.League” off \(Thu 10 Dec\)/);
   assert.match(m, /eva-events skill/);
+  assert.match(m, /Load WALLBOARD_\* from ~\/\.hermes\/\.env/);
 });
 
 test('configured only with both a URL and a key', () => {
