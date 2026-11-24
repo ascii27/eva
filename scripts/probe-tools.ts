@@ -44,6 +44,11 @@ const DEFAULT_CASES: [string, string][] = [
   ['what is the weather in san francisco right now', 'web_search'],
   ['what is the latest iphone', 'web_search'],
   ['what did we talk about last week', 'memory_search'],
+  ['okay goodnight eva, go to sleep', 'go_to_sleep'],
+  ['thanks, that is all for tonight, you can rest now', 'go_to_sleep'],
+  ['wake up, stay up with me for a bit', 'wake_up'],
+  ['keep the screen on tonight please', 'wake_up'],
+  ['be quiet for a second', 'none'],
 ];
 
 const argv = process.argv.slice(2);
@@ -80,7 +85,7 @@ async function ask(question: string, memories: string[] = []): Promise<Choice['m
     body: JSON.stringify({
       model,
       messages: buildRequest(PERSONA, memories, session),
-      tools: toolSpecs('probe-key').map((t) => ({ type: 'function', function: t })),
+      tools: toolSpecs('probe-key', false, false, true).map((t) => ({ type: 'function', function: t })),
       // max_completion_tokens works on every family; max_tokens is rejected
       // outright by the gpt-5 and o-series models.
       max_completion_tokens: budget,
@@ -95,7 +100,7 @@ async function ask(question: string, memories: string[] = []): Promise<Choice['m
 }
 
 console.log(`\nmodel: ${model}`);
-console.log(`tools offered: ${toolSpecs('probe-key').map((t) => t.name).join(', ')}\n`);
+console.log(`tools offered: ${toolSpecs('probe-key', false, false, true).map((t) => t.name).join(', ')}\n`);
 
 let called = 0;
 for (const [question, expected] of cases) {

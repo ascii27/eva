@@ -63,6 +63,13 @@ It gets read aloud, so write for the ear:
   confirmation restating it — the second one is redundant out loud, and the device will
   swallow it rather than say the same thing twice.
 
+### Putting the face to sleep, or waking it
+
+Put `[[sleep]]` anywhere in a message and the face finishes speaking, then falls asleep
+with the screen dark until something wakes it. `[[wake]]` wakes it and keeps it bright for
+half an hour. The token is never spoken, and a message can be only the token. The
+`eva-desk-sleep` skill has the details.
+
 ### It's a room, not a DM
 
 This plays out loud on a desk where anyone nearby can hear it. No credentials, no sensitive

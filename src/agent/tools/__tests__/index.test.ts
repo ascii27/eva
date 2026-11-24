@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import type { Photo } from '../../../vision/photos';
-import { buildToolKit, type ErrandHandles, type ToolConfig, type VisionHandles } from '../index';
+import { buildToolKit, type DeskHandles, type ErrandHandles, type ToolConfig, type VisionHandles } from '../index';
 
 /** Both handles, so a test can override only the one it is about. */
 const stubErrands = (over: Partial<ErrandHandles> = {}): ErrandHandles => ({
@@ -364,3 +364,37 @@ function stubVision(): VisionHandles {
     takePhoto: async () => ({ error: 'no camera' }),
   };
 }
+
+describe('go_to_sleep / wake_up', () => {
+  const stubDesk = () => {
+    const calls: string[] = [];
+    const desk: DeskHandles = { sleep: () => calls.push('sleep'), wake: () => calls.push('wake') };
+    return { desk, calls };
+  };
+
+  it('are offered only when there is a face to put to sleep', () => {
+    expect(names(WITHOUT_SEARCH)).not.toContain('go_to_sleep');
+    const { desk } = stubDesk();
+    expect(names({ ...WITHOUT_SEARCH, desk })).toEqual(expect.arrayContaining(['go_to_sleep', 'wake_up']));
+  });
+
+  it('go_to_sleep asks for sleep and tells her to say a few words', async () => {
+    // A tool lap that ends in silence reads as a preamble whose answer never
+    // came, and useEcho apologises — so the result must ask for words.
+    const { desk, calls } = stubDesk();
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, desk }).run({ id: 'c', name: 'go_to_sleep', arguments: '' });
+    expect(calls).toEqual(['sleep']);
+    expect(message.content).toMatch(/goodnight/i);
+  });
+
+  it('wake_up wakes', async () => {
+    const { desk, calls } = stubDesk();
+    await buildToolKit({ ...WITHOUT_SEARCH, desk }).run({ id: 'c', name: 'wake_up', arguments: '{}' });
+    expect(calls).toEqual(['wake']);
+  });
+
+  it('errors rather than throwing with no face', async () => {
+    const { message } = await buildToolKit(WITHOUT_SEARCH).run({ id: 'c', name: 'go_to_sleep', arguments: '{}' });
+    expect(message.content).toMatch(/^Error/);
+  });
+});

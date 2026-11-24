@@ -41,6 +41,14 @@ export interface ErrandHandles {
   send(action: string): string | null;
 }
 
+/** What the sleep tools need from `useSleep`, and nothing more. */
+export interface DeskHandles {
+  /** Fall asleep once the current round has finished speaking. */
+  sleep(): void;
+  /** Wake now, and hold off night sleep for a while. */
+  wake(): void;
+}
+
 export interface ToolConfig {
   /** Tavily key, or null when web search is not configured. */
   tavilyKey: string | null;
@@ -48,6 +56,8 @@ export interface ToolConfig {
   vision: VisionHandles | null;
   /** Errand handles, or null when no hermes gateway is configured. */
   errands: ErrandHandles | null;
+  /** Sleep/wake handles, or null where there is no face to put to sleep. */
+  desk?: DeskHandles | null;
 }
 
 /** Per-call context: the round's abort signal and its spoken-consent gate. */
@@ -189,8 +199,8 @@ async function runTellOtherHalf(
   return answer(call, id ? SENT : BUSY);
 }
 
-export function buildToolKit({ tavilyKey, vision, errands }: ToolConfig): ToolKit {
-  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null, errands !== null);
+export function buildToolKit({ tavilyKey, vision, errands, desk = null }: ToolConfig): ToolKit {
+  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null, errands !== null, desk !== null);
 
   return {
     specs,
@@ -231,6 +241,19 @@ export function buildToolKit({ tavilyKey, vision, errands }: ToolConfig): ToolKi
           const id = errands.start(question, args.needs_lookup !== false);
           return answer(call, id ? STARTED : BUSY);
         }
+
+        // Both act after the reply rather than during it, and both results ask
+        // for a few words: a tool lap that ends in silence reads to useEcho as
+        // a preamble whose answer never came, and it apologises.
+        case 'go_to_sleep':
+          if (!desk) return error(call, 'there is no face here to put to sleep.');
+          desk.sleep();
+          return answer(call, 'You will fall asleep as soon as you finish speaking. Close in a few words — a short goodnight, or if you already said goodnight, just "sleep well" rather than saying it again.');
+
+        case 'wake_up':
+          if (!desk) return error(call, 'there is no face here to wake.');
+          desk.wake();
+          return answer(call, 'You will stay awake and bright for the next half hour. Say so in a few words.');
 
         default:
           return error(call, `no tool named ${call.name}.`);

@@ -12,6 +12,7 @@
 import type { MessageEvent } from '../slack/protocol';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { isToolEcho } from '../slack/sanitize';
+import { readDirective, type DeskDirective } from '../round/directives';
 
 /** Backlog cap. Beyond this the oldest is dropped — it stays in the transcript. */
 export const PROACTIVE_QUEUE_MAX = 5;
@@ -35,6 +36,12 @@ export interface ProactiveItem {
   /** Already flattened for speech. */
   text: string;
   at: number;
+  /**
+   * A desk directive to carry out once this has been spoken — `sleep` from a
+   * "goodnight" hermes sent, so she says it before she drifts off rather than
+   * falling asleep with it still queued (which the speaking would undo).
+   */
+  after?: DeskDirective;
 }
 
 /** Adopted thread root → last-activity epoch ms. */
@@ -103,6 +110,11 @@ function cap(adoptions: Adoptions): Adoptions {
  *
  * `exchange` names the thread currently being talked through, if any; messages
  * arriving in it are part of that conversation rather than new announcements.
+ *
+ * `directive` is any desk command the message carries (directives.ts). It is
+ * reported for every message addressed to us — including one suppressed as
+ * part of a live exchange — because what it asks the face to do does not
+ * depend on whether the words get spoken.
  */
 export function receive(
   ev: MessageEvent,
@@ -110,17 +122,18 @@ export function receive(
   botUserId: string,
   adoptions: Adoptions,
   exchange: LiveExchange | null = null,
-): { adoptions: Adoptions; item: ProactiveItem | null } {
+): { adoptions: Adoptions; item: ProactiveItem | null; directive: DeskDirective | null } {
   const raw = ev.text ?? '';
   const root = threadRoot(ev);
   const kept = prune(adoptions, now);
-  if (!mentionsBot(raw, botUserId) && kept[root] === undefined) return { adoptions: kept, item: null };
+  if (!mentionsBot(raw, botUserId) && kept[root] === undefined) return { adoptions: kept, item: null, directive: null };
+  const directive = readDirective(raw);
   const next = cap({ ...kept, [root]: now });
   // Adoption is refreshed above either way — a suppressed message is still
   // activity, and letting the thread lapse mid-conversation would be worse.
-  if (isLive(exchange, root, now)) return { adoptions: next, item: null };
+  if (isLive(exchange, root, now)) return { adoptions: next, item: null, directive };
   const text = announceable(raw);
-  return { adoptions: next, item: text === null ? null : { ts: ev.ts, threadTs: root, text, at: now } };
+  return { adoptions: next, item: text === null ? null : { ts: ev.ts, threadTs: root, text, at: now }, directive };
 }
 
 /** Append, dropping the oldest at the cap and reporting it so callers can log the loss. */

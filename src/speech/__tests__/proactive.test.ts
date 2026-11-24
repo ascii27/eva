@@ -259,3 +259,32 @@ describe('dropTs', () => {
     expect(dropTs([item({ ts: 'a' })], 'zz')).toHaveLength(1);
   });
 });
+
+describe('receive directives', () => {
+  it('reports a directive on a message that mentions us, and still speaks the words', () => {
+    const r = receive(msg({ ts: '5.0', text: `<@${BOT}> Goodnight! [[sleep]]` }), NOW, BOT, {});
+    expect(r.directive).toBe('sleep');
+    expect(r.item?.text).toBe('Goodnight!');
+  });
+
+  it('reports a directive-only message with nothing to speak', () => {
+    const r = receive(msg({ ts: '5.0', text: `<@${BOT}> [[wake]]` }), NOW, BOT, {});
+    expect(r.directive).toBe('wake');
+    expect(r.item).toBeNull();
+  });
+
+  it('ignores a directive in a message not addressed to us', () => {
+    const r = receive(msg({ ts: '5.0', text: 'lights out [[sleep]]' }), NOW, BOT, {});
+    expect(r.directive).toBeNull();
+  });
+
+  it('reports it inside a live exchange even though the words are suppressed', () => {
+    const adoptions: Adoptions = { '1.0': NOW - 1000 };
+    const r = receive(msg({ ts: '6.0', thread_ts: '1.0', text: 'night [[sleep]]' }), NOW, BOT, adoptions, {
+      threadTs: '1.0',
+      until: null,
+    });
+    expect(r.item).toBeNull();
+    expect(r.directive).toBe('sleep');
+  });
+});
