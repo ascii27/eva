@@ -192,7 +192,7 @@ References: `design/WeatherIcons.dc.html` (icons, day + dark, example cards), `d
   - Check: busiest morning (weather + leave-for-school + 4 people) and busiest evening (weather + bedtime with bath + tomorrow with pack row) both fit. If not, the existing trim rules apply.
 - The active view keeps its hourly strip in the header (unchanged).
 
-**Tap to rotate (ASC-27, 2026-11-24) — drafted, awaiting approval.** Drafted straight into `web/` from the card's existing tokens (no `design/*.dc.html` yet); capture it as a design file once approved, or ask before changing its values.
+**Tap to rotate (ASC-27) — approved 2026-11-24.** Seen on the Echo and approved as built. There is no `design/*.dc.html` for these faces, so the values below are the spec: change this section first, then port, as for any design file.
 - Tapping the weather card rotates its face **now → hourly → daily → now**. It does not open the active view (its own `data-action`, like the countdown tile). A rotated card goes back to now after **3 minutes** (`WX_BACK_MS`); each tap restarts that clock. Policy is pure in `web/wxface.js` (tested); `rotateWeather()` in app.js owns the timer.
 - Every face is the same 128 px card, so the space budget doesn't change. Hourly and daily are five equal slots: label 22 px 600 muted, condition icon 44 px in its tint colour (no disc), then numbers at 32 px display 500.
   - **Hourly:** the panel's `hourly` (every 3 h from the next whole hour, the same list as the active view's header). Time, icon, temperature.
