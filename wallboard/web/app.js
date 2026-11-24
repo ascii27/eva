@@ -18,6 +18,7 @@ import { dummy } from './dummy.js';
 import { EvaSpot, evaMessage, evaSig } from './eva.js';
 import { comingUp, shownAt } from './comingup.js';
 import { rollBath } from './bath.js';
+import { WX_BACK_MS, nextWxFace, wxFace } from './wxface.js';
 import { ANNOUNCE, ALARM, render as renderCue, wav, cueFor } from './chime.js';
 import { cardEvents, cardMeta, chipLabel, dateLine, dayChoices, defaultDay, hoursLine, page as eventPage, placeLine, planState, priceLine } from './events.js';
 
@@ -364,23 +365,70 @@ const rcHead = (ic, label, extra = '') =>
  * Weather, the right column's first card (CLAUDE.md "Weather: top-right card"):
  * condition in a tinted circle, the temperature now, today's high ↑ and low ↓,
  * and one line of what's coming. Never trimmed by the space budget.
+ *
+ * Tapping it (ASC-27) rotates the card's face — now → hourly → daily → now —
+ * instead of opening the active view, and a rotated card goes back to now after
+ * WX_BACK_MS. Every face is the same 128 px card, so the space budget is unchanged.
  */
+let wxShown = 'now';
+let wxTimer = null;
+let wxFresh = false;
+
+const wxArrow = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
+const WX_UP = 'M12 19V5M6 11l6-6 6 6';
+const WX_DOWN = 'M12 5v14M6 13l6 6 6-6';
+
 function weatherCard() {
   const w = content('weather');
   if (!w?.now) return '';
+  const face = wxFace(wxShown, w);
+  const cls = `rc-wx rc-wx-${face}${wxFresh ? ' is-in' : ''}`;
+  const open = (said) => `<div class="${cls}" data-action="weather" role="button" aria-label="${esc(`${said}. Tap for ${{ now: 'the next hours', hourly: 'the next days', daily: 'now' }[face]}.`)}">`;
+  // One cell per slot: label, condition icon in its tint, then the numbers.
+  const cell = (label, cond, nums) => {
+    const [ic, fg] = weatherIcon(cond);
+    return `<div class="rc-wx-slot"><span class="rc-wx-when">${esc(label)}</span><span class="rc-wx-ic" style="color:${fg}">${icon(ic, 44, 1.9)}</span>${nums}</div>`;
+  };
+
+  if (face === 'hourly') {
+    const said = w.hourly.map((h) => `${h.time} ${h.temp}°`).join(', ');
+    return `${open(`Next hours: ${said}`)}${w.hourly.map((h) =>
+      cell(h.time, h.cond, `<span class="rc-wx-deg">${esc(h.temp)}°</span>`)).join('')}</div>`;
+  }
+  if (face === 'daily') {
+    const said = w.daily.map((d) => `${d.day} high ${d.high}° low ${d.low}°`).join(', ');
+    return `${open(`Next days: ${said}`)}${w.daily.map((d) =>
+      cell(d.day, d.cond, `<span class="rc-wx-hilo"><b>${esc(d.high)}°</b><span>${esc(d.low)}°</span></span>`)).join('')}</div>`;
+  }
+
   const [ic, fg, bg] = weatherIcon(w.now.cond);
-  const arrow = (d) => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
   const hl = [
-    w.high != null ? `<span class="rc-wx-up">${arrow('M12 19V5M6 11l6-6 6 6')}<b>${esc(w.high)}°</b></span>` : '',
-    w.low != null ? `<span class="rc-wx-down">${arrow('M12 5v14M6 13l6 6 6-6')}<b>${esc(w.low)}°</b></span>` : '',
+    w.high != null ? `<span class="rc-wx-up">${wxArrow(WX_UP)}<b>${esc(w.high)}°</b></span>` : '',
+    w.low != null ? `<span class="rc-wx-down">${wxArrow(WX_DOWN)}<b>${esc(w.low)}°</b></span>` : '',
   ].join('');
   // `summary` is the panel's older one-liner ("High 19° · rain from 18:00").
   const ahead = w.ahead ?? w.summary ?? '';
   const said = [w.now.label, `${w.now.temp}°`, w.high != null && `high ${w.high}°`, w.low != null && `low ${w.low}°`].filter(Boolean).join(', ');
-  return `<div class="rc-wx" role="group" aria-label="${esc(`${said}. ${ahead}`)}">
+  return `${open(`${said}. ${ahead}`)}
     <span class="rc-wx-disc" style="background:${bg};color:${fg}">${icon(ic, 64, 1.9)}</span>
     <span class="rc-wx-temp">${esc(w.now.temp)}°</span>
     <div class="rc-wx-text">${hl ? `<div class="rc-wx-hl">${hl}</div>` : ''}<span class="rc-wx-ahead">${esc(ahead)}</span></div></div>`;
+}
+
+/** A tap on the weather card: the next face, and back to now after a while. */
+function rotateWeather() {
+  clearTimeout(wxTimer);
+  showWeather(nextWxFace(wxShown, content('weather')));
+  if (wxShown !== 'now') wxTimer = setTimeout(() => showWeather('now'), WX_BACK_MS);
+}
+
+/** Switch the card's face, fading the new one in (only this render, not every repaint). */
+function showWeather(face) {
+  wxShown = face;
+  if (view !== 'ambient') return;
+  wxFresh = true;
+  fitRightColumn();
+  wxFresh = false;
 }
 
 const bringPills = (list) => list.map((b) => `<span class="rc-bp">${icon(b.icon ?? 'bag', 26, 1.9)}${esc(b.label)}</span>`).join('');
@@ -1400,6 +1448,7 @@ $('stage').addEventListener('click', (e) => {
   switch (el.dataset.action) {
     case 'wake': return show('active', { dim: view === 'night' });
     case 'celebrate': return celebrate();
+    case 'weather': return rotateWeather();
     case 'home': return show(resting());
     case 'chore': return tapChore(el.dataset.id);
     case 'pay': return pay(el.dataset.who);

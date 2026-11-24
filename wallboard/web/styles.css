@@ -139,6 +139,17 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .rc-wx-up { color: var(--warm); }
 .rc-wx-down { color: var(--cool); }
 .rc-wx-ahead { font-size: 24px; line-height: 30px; font-weight: 600; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Tap to rotate (ASC-27): hourly and daily faces, same 128 px card, one slot per time. */
+.rc-wx { cursor: pointer; }
+.rc-wx.is-in > * { animation: sd-fade-in .4s ease; }
+.rc-wx-hourly, .rc-wx-daily { padding: 0 16px; gap: 0; }
+.rc-wx-slot { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.rc-wx-when { font-size: 22px; line-height: 26px; font-weight: 600; color: var(--ink-muted); font-variant-numeric: tabular-nums; }
+.rc-wx-ic { display: flex; }
+.rc-wx-deg, .rc-wx-hilo { font-family: var(--font-display); font-size: 32px; line-height: 36px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink); }
+.rc-wx-hilo { display: flex; gap: 10px; }
+.rc-wx-hilo b { font-weight: inherit; }
+.rc-wx-hilo span { color: var(--ink-muted); }
 
 /* Calm right column (design/DayFlow.dc.html, compacted for the weather card): every piece on a solid card, no halo. */
 .rc-card { flex: none; border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--card-shadow); padding: 20px 28px 22px; display: flex; flex-direction: column; gap: 10px; }
