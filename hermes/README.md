@@ -37,12 +37,12 @@ it with a different `baseUrl` and two headers.
 - `config/api-server.example.env` — the settings, and the one that bites (the
   default bind is loopback, which a phone cannot reach).
 - `skills/eva-bundle/SKILL.md` — the skill hermes uses to *gather* the bundle
-  well. Optional for correctness, load-bearing for quality.
+  well. **Unused today; don't install it** (see Skills, below).
 - `schemas/bundle.schema.json` — the contract.
 
 ## Skills
 
-- `skills/eva-bundle/` — gathering the context bundle for the device.
+- `skills/eva-bundle/` — **unused; not installed on hermes.** Gathers the context bundle for the device. The polled bundle was dropped after it measured at 325k hermes-side tokens per fetch; the device's receiving half (`bundle.ts`, `useBundle`) is kept for the day hermes broadcasts one, and this skill is kept with it. Install it only alongside that.
 - `skills/eva-board-bubble/` — Eva's speech bubble on the kitchen board.
 - `skills/eva-chores/` — the chores ledger: copies board activity into Notion, pushes chore definitions, records payments, answers allowance questions.
 - `skills/eva-events/` — Tokyo events the family picked on the kitchen board: puts them on the family calendar, or takes them off, and reports back to the board.
