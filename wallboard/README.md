@@ -98,6 +98,9 @@ nothing was pushed). Design and motion: `CLAUDE.md` "Eva bubble".
 for Ikejiri, Setagaya every 15 min (`server/weather.ts`), so a push to it is
 overwritten on the next poll. `WEATHER_LAT`/`WEATHER_LON` move it, `WEATHER=off`
 stops polling.
+Its shape is `WeatherPanel` in that file: now, today's high/low, a one-line
+outlook, `hourly` (every 3 h) and `daily` (the five days after today, for the
+calm card's tap-to-rotate faces).
 
 `occasions` is the server's too: the nearest birthday in the calendar, the
 nearest major JP/US holiday and the nearest school event in the calendar, if

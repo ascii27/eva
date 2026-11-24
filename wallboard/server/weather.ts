@@ -22,6 +22,8 @@ export interface WeatherPanel {
   /** One line of what's coming ("Sunny now · rain from 15:00", "Rain until 22:00"). */
   ahead: string;
   hourly: { time: string; cond: string; temp: number }[];
+  /** The days after today, for the card's daily face: weekday ("Wed"), condition, high, low. */
+  daily: { day: string; cond: string; high: number; low: number }[];
   night: { cond: string; text: string };
 }
 
@@ -69,6 +71,10 @@ export function labelOf(code: number, isDay: boolean): string {
   return 'Cloudy';
 }
 
+/** How many days after today the card's daily face shows. */
+export const DAILY_DAYS = 5;
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 const hourOf = (iso: string) => Number(iso.slice(11, 13));
 const hm = (iso: string) => `${hourOf(iso)}:00`;
 const deg = (n: number) => Math.round(n);
@@ -109,6 +115,17 @@ export function weatherPanel(f: Forecast): WeatherPanel {
     hourly.push({ time: hm(h.time[i]), cond: condOf(h.weather_code[i], h.is_day[i] === 1, gustAt(i)), temp: deg(h.temperature_2m[i]) });
   }
 
+  // Daily face: the days after today (today's high/low are already on the card).
+  const daily = [];
+  for (let i = 1; i <= DAILY_DAYS && i < f.daily.time.length; i++) {
+    daily.push({
+      day: WEEKDAYS[new Date(`${f.daily.time[i]}T00:00Z`).getUTCDay()],
+      cond: condOf(f.daily.weather_code[i], true),
+      high: deg(f.daily.temperature_2m_max[i]),
+      low: deg(f.daily.temperature_2m_min[i]),
+    });
+  }
+
   // Night view (22:00–06:00): now, and the day the family wakes into.
   const d = hourOf(c.time) < 12 ? 0 : 1;
   const when = d === 0 ? 'today' : 'tomorrow';
@@ -127,6 +144,7 @@ export function weatherPanel(f: Forecast): WeatherPanel {
     low: deg(f.daily.temperature_2m_min[0]),
     ahead,
     hourly,
+    daily,
     night,
   };
 }
@@ -144,7 +162,7 @@ export function forecastUrl(lat: number, lon: number, host = HOSTS[0]): string {
     hourly: 'temperature_2m,weather_code,precipitation_probability,is_day,wind_gusts_10m',
     daily: 'temperature_2m_max,temperature_2m_min,weather_code',
     timezone: 'Asia/Tokyo',
-    forecast_days: '2',
+    forecast_days: String(DAILY_DAYS + 1),
   });
   return `https://${host}/v1/forecast?${q}`;
 }

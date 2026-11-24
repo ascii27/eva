@@ -25,6 +25,13 @@ export function dummy() {
         { time: '19:00', cond: 'rain', temp: 13 },
         { time: '22:00', cond: 'rain', temp: 11 },
       ],
+      daily: [
+        { day: 'Wed', cond: 'rain', high: 15, low: 9 },
+        { day: 'Thu', cond: 'cloudy', high: 16, low: 8 },
+        { day: 'Fri', cond: 'sun', high: 18, low: 9 },
+        { day: 'Sat', cond: 'partly', high: 17, low: 10 },
+        { day: 'Sun', cond: 'sun', high: 19, low: 11 },
+      ],
       night: { cond: 'night', text: '9° clear · rain clears by morning' },
     },
 

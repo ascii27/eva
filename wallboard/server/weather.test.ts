@@ -16,7 +16,12 @@ function forecast(nowIso: string, nowCode: number, wx: (i: number) => [number, n
   return {
     current: { time: nowIso, temperature_2m: 14.4, weather_code: nowCode, is_day: h >= 6 && h < 17 ? 1 : 0, wind_gusts_10m: gust(h) },
     hourly: { time, temperature_2m: temp, weather_code: code, precipitation_probability: prob, is_day: isDay, wind_gusts_10m: gusts },
-    daily: { time: ['2026-11-16', '2026-11-17'], temperature_2m_max: [19.2, 16.6], temperature_2m_min: [9.4, 8.1], weather_code: [61, 3] },
+    daily: {
+      time: ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21', '2026-11-22'],
+      temperature_2m_max: [19.2, 16.6, 15.5, 17.4, 12, 13.1, 14],
+      temperature_2m_min: [9.4, 8.1, 7.6, 9, 6.2, 5.9, 7],
+      weather_code: [61, 3, 0, 63, 71, 2, 95],
+    },
   };
 }
 
@@ -80,4 +85,21 @@ test('codes map onto the board\'s weather icons, with night variants', () => {
   assert.equal(condOf(73, true, 60), 'snow');
   assert.equal(condOf(45, true, 40), 'wind');
   assert.equal(labelOf(73, true), 'Snow');
+});
+
+test('daily face: the five days after today, as day-sky icons', () => {
+  const p = weatherPanel(forecast('2026-11-16T21:30', 1, () => [1, 0, 10]));
+  assert.deepEqual(p.daily, [
+    { day: 'Tue', cond: 'cloudy', high: 17, low: 8 },
+    { day: 'Wed', cond: 'sun', high: 16, low: 8 },
+    { day: 'Thu', cond: 'rain', high: 17, low: 9 },
+    { day: 'Fri', cond: 'snow', high: 12, low: 6 },
+    { day: 'Sat', cond: 'partly', high: 13, low: 6 },
+  ]);
+});
+
+test('daily face: a short forecast gives fewer days, never a gap', () => {
+  const f = forecast('2026-11-16T09:00', 1, () => [1, 0, 10]);
+  for (const k of ['time', 'temperature_2m_max', 'temperature_2m_min', 'weather_code'] as const) f.daily[k].splice(3);
+  assert.deepEqual(weatherPanel(f).daily.map((d) => d.day), ['Tue', 'Wed']);
 });
