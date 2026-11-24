@@ -9,6 +9,8 @@
 // remote hermes-agent (`<@U…>`, `<url|label>`, `*bold*`, `:emoji:`) and ordinary
 // markdown from the local agent loop (`[label](url)`, bare URLs).
 
+import { DIRECTIVE_RE } from './directives';
+
 const CODE_BLOCK_RE = /```[\s\S]*?```/g;
 const INLINE_RE = /([*_~`])([^*_~`\n]+)\1/g;
 const ANGLE_TOKEN_RE = /<([^<>\n]+)>/g;
@@ -36,7 +38,8 @@ function replaceAngleToken(body: string): string {
 }
 
 export function speakableFromMrkdwn(raw: string): string {
-  let text = raw.replace(CODE_BLOCK_RE, '');
+  // Desk directives are commands to the face, never words (see directives.ts).
+  let text = raw.replace(DIRECTIVE_RE, '').replace(CODE_BLOCK_RE, '');
   text = text.replace(MD_LINK_RE, '$1');
   // Unwrap repeatedly: each pass can expose a nested span (`**bold _italic._**`
   // needs three), and a fixed pass count silently leaks delimiters into speech

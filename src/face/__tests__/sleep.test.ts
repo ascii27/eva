@@ -10,6 +10,8 @@ import {
   nightStart,
   SLEEP_AFTER_MS,
   sleepPhase,
+  requestedPhase,
+  WAKE_HOLD_MS,
 } from '../sleep';
 import type { FaceMode } from '../types';
 
@@ -117,5 +119,30 @@ describe('nightBrightness', () => {
   it('never brightens a screen that was already darker in the day', () => {
     expect(nightBrightness('awake', 0.3)).toBe(0.3);
     expect(nightBrightness('dim', 0.05)).toBe(0.05);
+  });
+});
+
+describe('requestedPhase', () => {
+  it('with no request is exactly sleepPhase', () => {
+    for (const hm of ['14:00', '22:05', '23:30', '03:00']) {
+      expect(requestedPhase(at(hm), false, at('22:00').getTime(), null)).toBe(
+        sleepPhase(at(hm), false, at('22:00').getTime()),
+      );
+    }
+  });
+
+  it('told to sleep is asleep at any hour, until something happens', () => {
+    expect(requestedPhase(at('14:00'), false, at('14:00').getTime(), { kind: 'asleep' })).toBe('asleep');
+    expect(requestedPhase(at('14:00'), true, at('14:00').getTime(), { kind: 'asleep' })).toBe('awake');
+  });
+
+  it('told to stay up holds night sleep off, then the night resumes from the hold', () => {
+    const t = at('23:00').getTime();
+    const request = { kind: 'awake' as const, until: t + WAKE_HOLD_MS };
+    expect(requestedPhase(at('23:29'), false, t, request)).toBe('awake');
+    // The hold ended at 23:30: a minute's grace, then dim, then asleep ten minutes on.
+    expect(requestedPhase(at('23:30'), false, t, request)).toBe('awake');
+    expect(requestedPhase(at('23:32'), false, t, request)).toBe('dim');
+    expect(requestedPhase(at('23:41'), false, t, request)).toBe('asleep');
   });
 });

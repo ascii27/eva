@@ -124,9 +124,15 @@ function Btn({
     backgroundColor: hexToRgba(eyeColor, 0.12),
   };
   return (
-    <Pressable style={[styles.btn, active && activeStyle]} onPress={onPress}>
-      <Text style={[styles.btnLabel, active && { color: eyeColor }]}>{label}</Text>
-      {sub ? <Text style={styles.btnSub}>{sub}</Text> : null}
+    // Lit while the finger is down, so a one-shot button visibly answers the
+    // touch; a switch that is on just stays lit.
+    <Pressable style={({ pressed }) => [styles.btn, (active || pressed) && activeStyle]} onPress={onPress}>
+      {({ pressed }) => (
+        <>
+          <Text style={[styles.btnLabel, (active || pressed) && { color: eyeColor }]}>{label}</Text>
+          {sub ? <Text style={styles.btnSub}>{sub}</Text> : null}
+        </>
+      )}
     </Pressable>
   );
 }
@@ -154,7 +160,7 @@ export function DevControls(props: DevControlsProps) {
           <View style={styles.headerRow}>
             <Text style={styles.sectionLabel}>STATE VOCABULARY</Text>
             <Pressable onPress={props.onClose} hitSlop={12}>
-              <Text style={styles.close}>CLOSE</Text>
+              {({ pressed }) => <Text style={[styles.close, pressed && { color: eyeColor }]}>CLOSE</Text>}
             </Pressable>
           </View>
           {MODES.map((m) => (
@@ -192,10 +198,10 @@ export function DevControls(props: DevControlsProps) {
               <Pressable
                 key={c}
                 onPress={() => props.onColor(c)}
-                style={[
+                style={({ pressed }) => [
                   styles.swatch,
                   { backgroundColor: c },
-                  props.eyeColor === c && styles.swatchActive,
+                  (props.eyeColor === c || pressed) && styles.swatchActive,
                 ]}
               />
             ))}
@@ -206,7 +212,7 @@ export function DevControls(props: DevControlsProps) {
             {VISEME_KEYS.map((k) => (
               <Pressable
                 key={k}
-                style={[styles.viseme, props.frozen === k && activeStyle]}
+                style={({ pressed }) => [styles.viseme, (props.frozen === k || pressed) && activeStyle]}
                 onPress={() => props.onFreeze(props.frozen === k ? null : k)}
               >
                 <Text style={[styles.visemeLabel, props.frozen === k && { color: eyeColor }]}>
@@ -338,7 +344,7 @@ export function DevControls(props: DevControlsProps) {
           <View style={styles.headerRow}>
             <Text style={styles.sectionLabel}>WAKE LOG · {props.wakeEvents.length}</Text>
             <Pressable onPress={props.onClearWakeLog} hitSlop={12}>
-              <Text style={styles.close}>CLEAR</Text>
+              {({ pressed }) => <Text style={[styles.close, pressed && { color: eyeColor }]}>CLEAR</Text>}
             </Pressable>
           </View>
           {props.wakeEvents.slice(-WAKE_LOG_SHOWN).map((e, i) => (

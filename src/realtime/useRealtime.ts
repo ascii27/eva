@@ -49,7 +49,7 @@ import { chat, type ChatUsage, formatUsage, type ToolCall } from '../agent/opena
 import { addSpend, emptySpend, formatSpend, type Spend } from '../agent/spend';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from '../agent/persona';
 import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from '../agent/store';
-import { buildToolKit, type ErrandHandles, type ToolKit, type VisionHandles } from '../agent/tools';
+import { buildToolKit, type DeskHandles, type ErrandHandles, type ToolKit, type VisionHandles } from '../agent/tools';
 import {
   assistantText,
   deleteItem,
@@ -122,6 +122,8 @@ export interface UseRealtimeOptions {
   onUsage?: (line: string) => void;
   vision?: VisionHandles | null;
   errands?: ErrandHandles | null;
+  /** Sleep/wake handles for go_to_sleep and wake_up. Read once, at bring-up. */
+  desk?: DeskHandles | null;
   resolvePhoto?: PhotoResolver;
   bundleText?: (now: number) => BundleText | null;
 }
@@ -131,6 +133,7 @@ export function useRealtime({
   onUsage,
   vision = null,
   errands = null,
+  desk = null,
   resolvePhoto,
   bundleText,
 }: UseRealtimeOptions = {}) {
@@ -142,7 +145,7 @@ export function useRealtime({
   // Built once, like the chat brain's. The reason differs — a realtime session
   // declares its tools once at session.update, so a list that moved between
   // turns would mean rewriting session config mid-conversation.
-  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands }));
+  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands, desk }));
   if (__DEV__ && !toolsLogged) {
     toolsLogged = true;
     console.log(`[realtime] tools offered: ${tools.current.specs.map((s) => s.name).join(', ') || 'none'}`);

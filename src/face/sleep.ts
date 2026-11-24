@@ -49,3 +49,24 @@ export function nightBrightness(phase: SleepPhase, day: number): number {
   const level = phase === 'asleep' ? ASLEEP_BRIGHTNESS : phase === 'dim' ? DIM_BRIGHTNESS : NIGHT_TALK_BRIGHTNESS;
   return Math.min(day, level);
 }
+
+/** "Stay awake" from a wake_up holds her bright this long before night resumes. */
+export const WAKE_HOLD_MS = 30 * 60_000;
+
+/**
+ * What she was told, as opposed to what the clock says. `asleep` lasts until
+ * anything happens — a round, a touch, the overlay; `awake` lasts until `until`
+ * and then the night picks up as if that were the last activity.
+ */
+export type SleepRequest = { kind: 'asleep' } | { kind: 'awake'; until: number } | null;
+
+/** The phase once a spoken or hermes-sent request is taken into account. */
+export function requestedPhase(now: Date, busy: boolean, lastActive: number, request: SleepRequest): SleepPhase {
+  if (busy) return 'awake';
+  if (request?.kind === 'asleep') return 'asleep';
+  if (request?.kind === 'awake') {
+    if (now.getTime() < request.until) return 'awake';
+    return sleepPhase(now, false, Math.max(lastActive, request.until));
+  }
+  return sleepPhase(now, false, lastActive);
+}

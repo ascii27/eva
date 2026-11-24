@@ -20,6 +20,8 @@ import { useErrands } from '../hermes/useErrands';
 import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../round/speakable';
+import type { AskOptions, AskResult } from '../round/ask';
+import { readDirective, type DeskDirective } from '../round/directives';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { initKokoro, type TtsEngineState } from '../speech/kokoro';
 import { FOLLOWUP_WINDOW_MS } from '../speech/conversation';
@@ -43,6 +45,7 @@ import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
 import type { FaceMode, MouthOutput } from './types';
 import type { VisemeKey } from './visemes';
+import type { DeskHandles } from '../agent/tools';
 import { useSleep, SleepOverride } from './useSleep';
 import { canDim } from './brightness';
 import { hhmm } from '../util/time';
@@ -141,6 +144,24 @@ export function FaceScreen() {
     setEntries((prev) => [...prev.slice(-19), { time: hhmm(), text }]);
   }, []);
 
+  // useSleep mounts last — it needs the round's state — but the tools, the
+  // Slack listener and the ask wrapper all need to reach it, and the tool kit
+  // captures its handles once at bring-up. So everything goes through a ref,
+  // and the handles below never change identity.
+  const sleepRef = useRef<DeskHandles>({ sleep: () => {}, wake: () => {} });
+  const desk = useRef<DeskHandles>({
+    sleep: () => sleepRef.current.sleep(),
+    wake: () => sleepRef.current.wake(),
+  }).current;
+  const applyDirective = useCallback(
+    (d: DeskDirective, from: string) => {
+      log(`desk · ${d === 'sleep' ? 'going to sleep' : 'waking up'} (${from})`);
+      if (d === 'sleep') desk.sleep();
+      else desk.wake();
+    },
+    [desk, log],
+  );
+
   // useSlack mounts before useEcho; the ref bridges tool activity to it.
   const noteToolRef = useRef<(label: string) => void>(() => {});
 
@@ -190,7 +211,12 @@ export function FaceScreen() {
         holdExchange(threadRoot(ev));
         return;
       }
-      if (r.item) pushProactive(r.item);
+      // A settled ask's directive is acted on by withDirectives, below. Here: a
+      // goodnight that will be spoken sleeps after it is spoken; anything else
+      // acts now. Waking never waits — the message itself would wake her.
+      const carried = r.directive === 'sleep' && r.item !== null && proactiveRef.current;
+      if (r.directive && !carried) applyDirective(r.directive, 'hermes');
+      if (r.item) pushProactive(carried ? { ...r.item, after: 'sleep' } : r.item);
     },
     onIssue: log,
     onToolActivity: (label) => noteToolRef.current(label),
@@ -234,6 +260,8 @@ export function FaceScreen() {
   // Proactive push: speak Eva's unprompted messages. Off leaves them in the
   // transcript, as before. Persisted, default on.
   const [proactiveEnabled, setProactiveEnabled] = useState(true);
+  const proactiveRef = useRef(true);
+  proactiveRef.current = proactiveEnabled;
 
   useEffect(() => {
     AsyncStorage.getItem(PROACTIVE_ENABLED_KEY).then((v) => {
@@ -325,6 +353,7 @@ export function FaceScreen() {
     resolvePhoto: vision.resolvePhoto,
     bundleText: bundle.text,
     errands: errands.configured ? { start: errands.start, send: errands.send } : null,
+    desk,
   };
 
   const agent = useAgent(brainOptions);
@@ -347,6 +376,21 @@ export function FaceScreen() {
    */
   const selected = brain === 'realtime' ? realtime : brain === 'hermes' ? hermesBrain : agent;
 
+  /**
+   * The hermes and Slack brains have no device tools, so a "go to sleep" they
+   * answer comes back as a `[[sleep]]` in the reply text (directives.ts). It is
+   * already stripped from what is spoken; this is where it is acted on. Applied
+   * to every brain — a local reply carrying one is just as unambiguous.
+   */
+  const withDirectives =
+    (ask: (text: string, opts?: AskOptions) => Promise<AskResult>) =>
+    async (text: string, opts?: AskOptions): Promise<AskResult> => {
+      const result = await ask(text, opts);
+      const d = result.kind === 'reply' ? readDirective(result.raw) : null;
+      if (d) applyDirective(d, brainRef.current);
+      return result;
+    };
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -364,18 +408,18 @@ export function FaceScreen() {
       brain === 'local'
         ? agent.status === 'unconfigured'
           ? undefined
-          : agent.ask
+          : withDirectives(agent.ask)
         : brain === 'realtime'
           ? realtime.status === 'unconfigured'
             ? undefined
-            : realtime.ask
+            : withDirectives(realtime.ask)
           : brain === 'hermes'
             ? hermesBrain.status === 'unconfigured'
               ? undefined
-              : hermesBrain.ask
+              : withDirectives(hermesBrain.ask)
             : slack.status === 'unpaired'
               ? undefined
-              : (text: string) => slack.ask(text, activeThread.current ?? undefined),
+              : withDirectives((text: string) => slack.ask(text, activeThread.current ?? undefined)),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -499,8 +543,10 @@ export function FaceScreen() {
     activeThread.current = d.item.threadTs;
     if (d.item.threadTs) holdExchange(d.item.threadTs);
     const { text } = d.item;
+    // Pending until the round below has finished: she says it, then sleeps.
+    if (d.item.after) applyDirective(d.item.after, 'hermes');
     startRound(() => echoRef.current.announce(text));
-  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound]);
+  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound, applyDirective]);
 
   const onWake = useCallback(
     (snippet: string) => {
@@ -556,11 +602,13 @@ export function FaceScreen() {
   // sleeps, so the wake word still reaches her.
   const [sleepOverride, setSleepOverride] = useState<SleepOverride>('auto');
   const sleep = useSleep({ busy: mode !== 'idle' || echoBusy || devVisible, override: sleepOverride });
+  sleepRef.current = sleep;
   const cycleSleep = useCallback(() => {
     setSleepOverride((o) => (o === 'auto' ? 'dim' : o === 'dim' ? 'asleep' : 'auto'));
   }, []);
   const sleepLabel =
     `${sleepOverride === 'auto' ? 'auto' : `pinned ${sleepOverride}`} · ${sleep.phase}` +
+    (sleep.told && sleepOverride === 'auto' ? ` · ${sleep.told}` : '') +
     (canDim() ? '' : ' · no dimming in this build');
 
   // Manual mode picks abandon any in-flight speech round, like the design's pick().

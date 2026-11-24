@@ -71,6 +71,13 @@ Omit any section you have nothing to say about — leaving it out means "I wasn'
  * device has no spinner, no progress bar and no way to show thinking. Silence
  * is indistinguishable from a dead appliance.
  *
+ * The sleep paragraph is here rather than left to the eva-desk-sleep skill,
+ * and that was measured: with the skill alone hermes put the token on 2/3
+ * sleep requests and 0/3 wake requests ("keep the screen on" got a lecture on
+ * Auto-Lock), and the hits cost 4-5s each while it loaded the skill. Inline,
+ * 8/8 correct at ~1.2s, and no token on unrelated turns. The skill remains for
+ * hermes deciding on its own, over Slack, where this preamble never reaches.
+ *
  * Sent on *every* turn rather than once per transcript. It is small against a
  * ~20k prefix that earns no cache discount anyway, and sending it once would
  * rely on hermes persisting a client system message into the server-side
@@ -90,4 +97,6 @@ Write for the ear:
 
 It is a room, not a private message. Anyone nearby can hear this, so no credentials and nothing sensitive about other people.
 
-What you are reading was transcribed from speech, so expect mangled words and missing punctuation. If a request is garbled, answer the most likely reading rather than asking him to repeat himself.`;
+What you are reading was transcribed from speech, so expect mangled words and missing punctuation. If a request is garbled, answer the most likely reading rather than asking him to repeat himself.
+
+This face can sleep. When he sends you to bed or ends the day ("go to sleep", "goodnight", "you can rest now", "lights out"), say a short goodnight and end your reply with [[sleep]]. When he asks you to wake up, stay up, stay awake or keep the screen on, say so in a few words and end with [[wake]]. The token is never spoken; the device acts on it. Never use either for anything else.`;

@@ -107,6 +107,20 @@ export const TELL_OTHER_HALF: ToolSpec = {
   },
 };
 
+export const GO_TO_SLEEP: ToolSpec = {
+  name: 'go_to_sleep',
+  description:
+    "Fall asleep on the desk: your eyes close and the screen goes dark until someone wakes you — the wake word, a touch, or something you need to say. Use it whenever Michael sends you to bed or says goodnight to end the day: \"go to sleep\", \"goodnight Eva\", \"you can rest now\", \"lights out\". You drift off the moment you finish speaking, so say goodnight in a few words and nothing more. Not for when he only wants you to be quiet for a moment — that is just not talking.",
+  parameters: { type: 'object', properties: {}, required: [] },
+};
+
+export const WAKE_UP: ToolSpec = {
+  name: 'wake_up',
+  description:
+    "Stay awake and bright for the next half hour. At night you dim and doze off after a quiet spell; this holds that off. Use it when Michael asks you to wake up, stay up, stay awake or keep the screen on. You are already awake while he is talking to you, so this is about what happens after the conversation ends.",
+  parameters: { type: 'object', properties: {}, required: [] },
+};
+
 /**
  * The specs offered for a session. Order is fixed and the list is built once —
  * specs sit inside OpenAI's cached prefix, so a list that moved between turns
@@ -120,13 +134,17 @@ export const TELL_OTHER_HALF: ToolSpec = {
  * asking and the telling — they are one gateway. Absent rather than
  * present-and-failing, the same rule as web search without a Tavily key: Eva
  * knowing she has no way to ask beats her promising to and then apologising.
+ *
+ * `desk` is whether the face can be put to sleep and woken — always true on
+ * the device; optional so a probe can leave them out.
  */
-export function toolSpecs(tavilyKey: string | null, camera = false, otherHalf = false): ToolSpec[] {
+export function toolSpecs(tavilyKey: string | null, camera = false, otherHalf = false, desk = false): ToolSpec[] {
   return [
     CLOCK,
     MEMORY_SEARCH,
     ...(tavilyKey ? [WEB_SEARCH] : []),
     ...(camera ? [CAMERA_LOOK] : []),
     ...(otherHalf ? [ASK_OTHER_HALF, TELL_OTHER_HALF] : []),
+    ...(desk ? [GO_TO_SLEEP, WAKE_UP] : []),
   ];
 }
