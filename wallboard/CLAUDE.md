@@ -142,7 +142,7 @@ Reference: `design/EventIcons.dc.html` (icon artwork, same line style: 24 grid, 
 | `sports` | Sports day | medal | amber | Confetti rain |
 | `ceremony` | Graduation · entrance | cap | violet | Confetti rain |
 | `school` | First / last day of school | bag | teal | Confetti rain |
-| `new-year` | New Year (お正月) | sunrise | amber | Confetti rain |
+| `new-year` | New Year (お正月) | sunrise | amber | Red + gold confetti; the year's zodiac seal rises (see "Holidays") |
 | `setsubun` | Setsubun (節分) | oni | amber | Beans fall |
 | `hinamatsuri` | Hinamatsuri (ひな祭り) | dolls | pink | Petals fall |
 | `hanami` | Hanami (花見) | sakura | pink | Petals fall |
@@ -150,13 +150,13 @@ Reference: `design/EventIcons.dc.html` (icon artwork, same line style: 24 grid, 
 | `tanabata` | Tanabata (七夕) | tanabata | violet | Stars fall |
 | `obon` | Obon (お盆) | lantern | amber | Lanterns rise |
 | `tsukimi` | Tsukimi (月見) | moon | violet | Stars fall |
-| `valentine` | Valentine's Day | heart | pink | Hearts rise |
+| `valentine` | Valentine's Day | heart | pink | Hearts and arrows rise; Cupid's winged heart flies across |
 | `easter` | Easter | egg | violet | Confetti rain |
 | `parents-day` | Mother's / Father's Day | flower | pink | Hearts rise |
 | `july4` | Fourth of July | firework | blue | Confetti rain |
-| `halloween` | Halloween | pumpkin | amber | Confetti rain (orange + purple) |
-| `thanksgiving` | Thanksgiving | pie | amber | Leaves fall |
-| `christmas` | Christmas | tree | green | Snow falls |
+| `halloween` | Halloween | pumpkin | amber | Ghosts and pumpkins rise; a big ghost floats across |
+| `thanksgiving` | Thanksgiving | pie | amber | Leaves fall; a turkey struts across the bottom |
+| `christmas` | Christmas | tree | green | Ornaments and stars fall; Santa's sleigh flies across the top |
 | `summer` | Summer break | sun | amber | Confetti rain |
 | `autumn` | Autumn | leaf | amber | Leaves fall |
 | `winter` | Winter break | snow | blue | Snow falls |
@@ -262,6 +262,13 @@ References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dar
 - **Something special for a perfect week:** the row turns `--accent-soft` with a teal star on the avatar and the word in teal; a whole-screen confetti party (the countdown tile's, Eva excited) plays once per girl per week, remembered in this browser, including for a late Sunday finish. Tapping the card replays it. Both girls perfect: the card glows (`--glow-accent`) with "Everyone, every chore. Amazing week!".
 - **Counting:** Monday–Sunday in Tokyo, today included. Due = the schedule's occurrences in the week; done = uncancelled ticks in the week, capped at due; an overdue chore with nothing due this week that still got ticked counts as done. Hanamaru homework is a Notion chore found by title (hanamaru / はなまる / 花丸) or icon `hanamaru`.
 - **Eva comments:** hermes' `eva-board-bubble` skill reads `week` and says something about it on Sunday (praise what went well, invite what's open, never single anyone out).
+
+## Holidays (ASC-40, 2026-11-26) — drafted, awaiting approval
+**Status:** drafted straight into `web/` from the board's particle palette (celebrate.js) and tokens, like "What's on in Tokyo" (no `design/*.dc.html` yet). Once approved, capture it as a design file, or ask before changing its values. Dates, zodiac and all the artwork: `web/holiday.js` (pure, tested).
+- **The big five:** New Year (1 Jan), Valentine's Day (14 Feb, now also in `server/occasions.ts`), Halloween (31 Oct), Thanksgiving (4th Thursday of Nov), Christmas (25 Dec).
+- **Countdown party:** on top of the kind's particles, a **featured character** (`heroHtml`): one element on one transform animation, inside the 5.6 s party, removed with the sky. Turkey struts along the bottom; a ghost floats across; Santa's sleigh and Cupid's winged heart fly across the top; New Year's is a round seal with the coming year's 干支 kanji ("Year of the Sheep"), which rises to the centre, holds and fades. Particle counts are trimmed so tile + sky + character stays ≤ 40 elements.
+- **On the day itself** (`holidayOn`, checked every minute): a garland across the top 78 px of the calm view (one static SVG: a string in 12 swags with a motif hanging from each), painted over the photo and under everything else; and Eva's bubble gets a 3 px ring in the holiday's colour plus a 52 px badge at its top-right corner. Nothing on the day loops or moves. Night view is untouched.
+- **Preview:** `?holiday=<kind>` shows a day's decoration on any day; with `?debug=1`, `wb.party('<kind>')` plays a holiday's sky from the console.
 
 ## Household and behaviour (don't regress)
 - Only Mariko (11) and Sarina (8) have chores. Michael and Nozomi appear in the schedule only.

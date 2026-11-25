@@ -295,6 +295,46 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .wb-nostr>svg{display:block}
 @media (prefers-reduced-motion:reduce){.wb-sky{display:none}}
 
+/* Big holidays (ASC-40, CLAUDE.md "Holidays"). Drafted from the board's own
+   palette; no design file yet. The party's featured character: one element
+   riding one transform animation across (or up) the sky, its art bobbing on
+   the inner span. Durations stay inside the 5.6 s party. */
+.wb-hero{position:absolute;left:0;opacity:0;will-change:transform}
+.wb-hero-in{display:block}
+.wb-hero svg{display:block}
+.wb-hero.strut{bottom:40px;animation:wb-across 5.2s linear .2s forwards}
+.wb-hero.strut .wb-hero-in{animation:wb-strut .5s ease-in-out infinite alternate}
+.wb-hero.float{top:300px;animation:wb-across 5.2s ease-in-out .2s forwards}
+.wb-hero.float .wb-hero-in{animation:wb-sway 1.3s ease-in-out infinite alternate}
+.wb-hero.fly{top:110px;animation:wb-across 4.6s cubic-bezier(.4,.1,.6,.9) .3s forwards}
+.wb-hero.fly .wb-hero-in{animation:wb-sway 1.1s ease-in-out infinite alternate}
+@keyframes wb-across{0%{opacity:1;transform:translateX(-440px)}100%{opacity:1;transform:translateX(2000px)}}
+@keyframes wb-strut{from{transform:translateY(0) rotate(-4deg)}to{transform:translateY(-14px) rotate(4deg)}}
+@keyframes wb-sway{from{transform:translateY(-18px)}to{transform:translateY(18px)}}
+.wb-hero.rise{left:50%;top:50%;display:flex;flex-direction:column;align-items:center;gap:18px;animation:wb-hero-rise 5.2s cubic-bezier(.3,.7,.3,1) .1s forwards}
+@keyframes wb-hero-rise{0%{opacity:0;transform:translate(-50%,calc(-50% + 560px)) scale(.6)}25%{opacity:1;transform:translate(-50%,-50%) scale(1)}85%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,calc(-50% - 40px)) scale(1.04)}}
+.wb-hero.rise .wb-hero-in{display:flex;flex-direction:column;align-items:center;gap:18px}
+.wb-seal{width:260px;height:260px;border-radius:50%;box-sizing:border-box;background:#fffaf1;border:8px solid #8c2a4f;box-shadow:inset 0 0 0 6px #f2c27a,var(--strip-shadow);display:grid;place-items:center}
+.wb-seal-kanji{font-family:"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif;font-size:150px;line-height:1;font-weight:700;color:#8c2a4f}
+.wb-seal-name{padding:8px 24px;border-radius:999px;background:#8c2a4f;color:#fffaf1;font-size:32px;line-height:40px;font-weight:700}
+
+/* On the day itself: a garland across the top of the photo, and Eva's bubble
+   gets the holiday's ring and a badge. All static. */
+.holiday-deco{position:absolute;left:0;top:0;width:1920px;height:78px;pointer-events:none}
+.holiday-deco:empty{display:none}
+.holiday-deco svg{display:block}
+.stage[data-holiday] .eva-bubble{box-shadow:0 0 0 3px var(--holiday-ring),var(--eva-bubble-shadow)}
+.stage[data-holiday] .eva-bubble::after{content:"";position:absolute;top:-24px;right:-20px;width:52px;height:52px;box-sizing:border-box;border-radius:50%;
+  background:var(--holiday-badge) center/32px 32px no-repeat,var(--eva-bubble);border:3px solid var(--holiday-ring)}
+.stage[data-holiday="new-year"],.stage[data-holiday="valentine"]{--holiday-ring:#f5b3c8}
+.stage[data-holiday="halloween"]{--holiday-ring:#c9b6f5}
+.stage[data-holiday="thanksgiving"]{--holiday-ring:#f2c27a}
+.stage[data-holiday="christmas"]{--holiday-ring:#8fd3c8}
+.stage[data-theme="day"][data-holiday="new-year"],.stage[data-theme="day"][data-holiday="valentine"]{--holiday-ring:#8c2a4f}
+.stage[data-theme="day"][data-holiday="halloween"]{--holiday-ring:#4a3480}
+.stage[data-theme="day"][data-holiday="thanksgiving"]{--holiday-ring:#934606}
+.stage[data-theme="day"][data-holiday="christmas"]{--holiday-ring:#2f6b3c}
+
 /* ---------- 2 · Active ---------- */
 
 .active { padding: 40px 72px 48px; flex-direction: column; gap: 32px; }

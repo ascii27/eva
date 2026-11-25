@@ -63,8 +63,9 @@ test('a yearly birthday in the calendar joins the rotation', () => {
   const p = calendarPanels(ics, new Date('2027-03-10T09:00:00+09:00'));
   assert.deepEqual(p.occasions[0], { label: 'Sarina', icon: 'cake', kind: 'birthday', who: 'sarina', headline: "Sarina's birthday", days: 8, date: '2027-03-18' });
   assert.deepEqual(labels(p.occasions), ['Sarina', 'Easter']);
-  // A one-off birthday years ago doesn't recur; Hinamatsuri (3 Mar) is ahead here, and Sarina still rides along.
-  assert.deepEqual(labels(calendarPanels(ics, new Date('2027-02-10T09:00:00+09:00')).occasions), ['Hinamatsuri', 'Sarina']);
+  // A one-off birthday years ago doesn't recur; Valentine's Day (14 Feb) is ahead here, and Sarina still rides along.
+  assert.deepEqual(labels(calendarPanels(ics, new Date('2027-02-10T09:00:00+09:00')).occasions), ["Valentine's Day", 'Sarina']);
+  assert.deepEqual(labels(calendarPanels(ics, new Date('2027-02-20T09:00:00+09:00')).occasions), ['Hinamatsuri', 'Sarina']);
 });
 
 test('school events come from one-off calendar events only', () => {

@@ -49,6 +49,7 @@ function easter(y: number): string {
 export function holidays(y: number): { date: string; label: string; kind: string; icon: string }[] {
   return [
     { date: ymd(y, 1, 1), label: 'New Year', kind: 'new-year', icon: 'sunrise' },
+    { date: ymd(y, 2, 14), label: "Valentine's Day", kind: 'valentine', icon: 'heart' },
     { date: ymd(y, 3, 3), label: 'Hinamatsuri', kind: 'hinamatsuri', icon: 'dolls' },
     { date: easter(y), label: 'Easter', kind: 'easter', icon: 'egg' },
     { date: ymd(y, 5, 5), label: "Children's Day", kind: 'kodomo', icon: 'carp' },
