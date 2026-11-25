@@ -13,6 +13,7 @@
 //   ?week=1                      show the Sunday "This week" card on any day (ASC-36);
 //                                ?week=demo with sample numbers instead of the board's
 
+import { isStale, retryDelay, shouldReload } from './link.js';
 import { icon, glyph, star, weatherIcon } from './icons.js';
 import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from './celebrate.js';
 import { ORDER, person } from './household.js';
@@ -1596,21 +1597,73 @@ document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ---- live connection ---------------------------------------------------------
 
+// EventSource retries by itself only after a network drop; a 502 or 401 closes
+// it for good. So the board retries itself, with backoff, and a watchdog catches
+// a stream that has gone silent. Policy in web/link.js (ASC-38).
 let build = null;
+let es = null;
+let attempt = 0;           // retries since the last hello
+let retryTimer = null;
+let lastMessageAt = Date.now();
+let offlineSince = null;   // null while connected
+let reloading = false;
+
 function connect() {
-  const es = new EventSource('/api/events');
-  es.addEventListener('hello', (e) => {
+  clearTimeout(retryTimer);
+  retryTimer = null;
+  es?.close();
+  const src = es = new EventSource('/api/events');
+  lastMessageAt = Date.now();
+  const alive = () => { lastMessageAt = Date.now(); };
+  src.addEventListener('hello', (e) => {
+    alive();
     const b = JSON.parse(e.data).build;
     if (build && b !== build) location.reload();   // redeployed: pick up the new page
     build = b;
+    attempt = 0;
+    offlineSince = null;
     $('offline').hidden = true;
   });
-  es.addEventListener('state', (e) => {
+  src.addEventListener('state', (e) => {
+    alive();
     server = JSON.parse(e.data);
     for (const [id, done] of pending) if (server.chores.find((c) => c.id === id)?.done === done) pending.delete(id);
     renderAll();
   });
-  es.onerror = () => { $('offline').hidden = false; };
+  src.addEventListener('ping', alive);
+  src.onerror = () => {
+    if (src !== es) return;
+    goneOffline();
+    if (src.readyState === EventSource.CLOSED) retryLater();
+  };
+}
+
+function goneOffline() {
+  offlineSince ??= Date.now();
+  $('offline').hidden = false;
+}
+
+function retryLater() {
+  if (retryTimer) return;
+  es?.close();
+  retryTimer = setTimeout(connect, retryDelay(attempt++));
+}
+
+// Someone is using the board: the active view (unless pinned), a sheet or a toast.
+const busy = () => sheet != null || !$('toast').hidden || (view === 'active' && resting() !== 'active');
+
+function watchLink() {
+  const t = Date.now();
+  if (!retryTimer && isStale(t, lastMessageAt)) { goneOffline(); retryLater(); }
+  if (!reloading && shouldReload({ now: t, offlineSince, busy: busy() })) {
+    // Only reload onto a server that answers: a reload while it's down leaves
+    // Silk on an error page, with no script left to retry.
+    reloading = true;
+    fetch('/', { cache: 'no-store' })
+      .then((r) => { if (r.ok) location.reload(); })
+      .catch(() => {})
+      .finally(() => { reloading = false; });
+  }
 }
 
 // ---- fit the stage to the screen -------------------------------------------------
@@ -1728,3 +1781,4 @@ if (q.get('eva') === 'new') setTimeout(evaReplay, 1500);
 setInterval(loadPhotos, 30 * 60_000);   // the server swaps a few each hour
 setInterval(moveNight, NIGHT_MOVE_MS);
 connect();
+setInterval(watchLink, 5_000);

@@ -111,8 +111,10 @@ const reactor = HERMES_API_URL && HERMES_API_KEY && process.env.CHORE_REACT !== 
   })
   : null;
 
-// Keeps idle connections alive through proxies, which drop a silent stream.
-setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 25_000).unref();
+// Keeps idle connections alive through proxies, which drop a silent stream. A
+// named event rather than a comment, so the board can see it and tell a quiet
+// stream from a dead one (web/link.js STALE_MS).
+setInterval(() => { for (const c of clients) send(c, 'ping', {}); }, 25_000).unref();
 
 // Real weather (Open-Meteo), published as the `weather` panel. Home by default;
 // WEATHER_LAT/WEATHER_LON override, WEATHER=off stops polling (the last panel stays).
@@ -307,7 +309,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     send(res, 'hello', { build: BUILD });
     send(res, 'state', view(state, Date.now()));
     clients.add(res);
-    req.on('close', () => clients.delete(res));
+    // Logged both ways so a board that drops off can be traced (ASC-38).
+    const ua = req.headers['user-agent'] ?? '-';
+    const since = Date.now();
+    console.log(`[sse] +1 (${clients.size} open) ${ua}`);
+    req.on('close', () => {
+      clients.delete(res);
+      console.log(`[sse] -1 (${clients.size} open) after ${Math.round((Date.now() - since) / 1000)}s ${ua}`);
+    });
     return;
   }
 
