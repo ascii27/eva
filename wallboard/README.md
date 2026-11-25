@@ -182,6 +182,10 @@ the weekend list to suggest one now and then.
 ## Board API (enrolled cookie)
 
 - `GET /api/events` — SSE: `hello {build}` then `state` on connect and on every change.
+  A `ping` every 25 s. The board reconnects on its own with backoff (3 s doubling to 60 s)
+  when the stream closes or goes silent for 60 s, and reloads after 10 min offline if
+  the server answers and nobody is using it (`web/link.js`, ASC-38). The server logs
+  each connect and disconnect as `[sse] +1 (N open) <user-agent>`.
   A new `build` means a redeploy, and the page reloads.
 - `GET /api/state` — the same computed view hermes reads.
 - `PUT /api/chores/<id>` `{"done": true|false}` — a set, not a toggle, so undo
