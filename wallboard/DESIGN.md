@@ -13,7 +13,7 @@ Nozomi amber (Haven `warm`), Michael blue (Haven `cool`). Always shown with name
 | State | Trigger | Shows |
 |---|---|---|
 | Ambient | default; 60 s after last touch | Clock, weather now, one live countdown (leave-by), Eva's note, next 3 events, chore progress strip, one countdown, dimmed memory photo behind |
-| Active | any tap on ambient | Hourly weather, full day schedule, tappable chores per person, Eva, leave/pickup, dinner, countdowns |
+| Active | any tap on ambient | Hourly weather, full day schedule, tappable chores per person, Eva, leave/pickup, countdowns |
 | Night | 22:00–06:00 (or ambient light sensor if exposed) | Clock, tomorrow's first commitment, weather. Pure black, warm dim text, no photo. Tap → dimmed active view |
 
 ## Themes by time of day
@@ -103,7 +103,7 @@ Layout is chosen per photo by aspect ratio (width ÷ height), checked once when 
 - Leave-by card only exists inside its window (e.g. 45 min before departure), so the brightest element isn't static all day.
 
 ## Eva integration
-Eva pushes: `note` (1–2 sentences + optional secondary line), `leaveBy` {label, who, at}, `pickup`, `dinner`, `countdowns[]`, `schedule[]`, `chores` per person. Board writes back chore completions (who, chore, time) so Eva can mention them.
+Eva pushes: `note` (1–2 sentences + optional secondary line), `leaveBy` {label, who, at}, `pickup`, `countdowns[]`, `schedule[]`, `chores` per person. Board writes back chore completions (who, chore, time) so Eva can mention them.
 
 ## Build checks before production
 - Confirm Silk's CSS viewport on the device (`innerWidth`/`devicePixelRatio`); if it isn't 1920 wide, scale one root container rather than re-laying out.

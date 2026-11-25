@@ -891,7 +891,7 @@ function renderActive() {
       `<span style="opacity:${i === a.length - 1 ? 1 : 0.55};display:flex">${avatar(id, 32, 12)}</span>`).join('')}
       ${last ? `<span class="note">Last night: ${esc(person(last).name)}${b.tonight === auto ? '' : ' · swapped tonight'}</span>` : ''}</div>`;
 
-  // Right column: leave/pickup, dinner, countdowns. Eva's bubble sits above
+  // Right column: leave/pickup, countdowns. Eva's bubble sits above
   // these in its own mount (#act-bubble), so a re-render never restarts her.
   const side = [];
   const pickup = content('pickup');
@@ -902,11 +902,6 @@ function renderActive() {
       <div class="mins"><span class="big">${due.mins}</span><span class="unit">min</span><span class="by">by ${esc(due.item.at)}</span></div>
       ${pickup ? '<div class="rule"></div>' : ''}` : ''}
       ${pickup ? `<span class="eyebrow">Pickup</span><span class="v">${esc(pickup.text)}</span>` : ''}</div>`);
-  }
-  const dinner = content('dinner');
-  if (dinner) {
-    side.push(`<div class="card side-dinner"><span style="display:flex;color:var(--warm)">${icon('dinner', 36)}</span>
-      <div style="display:flex;flex-direction:column"><span class="k">Tonight ${esc(dinner.at ?? '')}</span><span class="v">${esc(dinner.text)}</span></div></div>`);
   }
   const cds = countdowns();
   if (cds.length) {
