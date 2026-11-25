@@ -39,8 +39,6 @@ export function dummy() {
 
     pickup: { text: 'Swim · 16:30 · Nozomi' },
 
-    dinner: { at: '18:30', text: 'Curry rice' },
-
     countdowns: [
       { label: 'Grandma', headline: 'Grandma comes', days: 12, icon: 'gift', kind: 'visit' },
       { label: 'Winter break', days: 38 },

@@ -81,7 +81,7 @@ never told us" and the board shouldn't pretend it knows. A panel pushed as `[]`
 means "there is nothing". Only `DELETE` makes a panel absent again.
 
 Panels the board knows (shapes in `web/dummy.js`): `eva` (Eva's bubble, below),
-`weather`, `leave-by`, `pickup`, `dinner`, `countdowns`, `schedule`,
+`weather`, `leave-by`, `pickup`, `countdowns`, `schedule`,
 `tomorrow`, `memories`.
 
 `eva` is Eva's speech bubble: `{text, sub?, mood?: "happy" | "excited", at?}`
