@@ -164,7 +164,7 @@ test('sendToHermes posts a chat completion with its own session headers', async 
     calls.push({ url, init });
     return new Response('{}', { status: 200 });
   }) as unknown as typeof fetch;
-  await sendToHermes({ url: 'https://hermes.example/', key: 'k', model: 'hermes-agent' }, 'hello', tokyo(8), fake);
+  await sendToHermes({ url: 'https://hermes.example/v1/', key: 'k', model: 'hermes-agent' }, 'hello', tokyo(8), fake);
   assert.equal(calls[0].url, 'https://hermes.example/v1/chat/completions');
   const headers = calls[0].init.headers as Record<string, string>;
   assert.equal(headers.Authorization, 'Bearer k');
@@ -173,5 +173,5 @@ test('sendToHermes posts a chat completion with its own session headers', async 
   assert.deepEqual(JSON.parse(calls[0].init.body as string), { model: 'hermes-agent', stream: false, messages: [{ role: 'user', content: 'hello' }] });
 
   const failing = (async () => new Response('no', { status: 401 })) as unknown as typeof fetch;
-  await assert.rejects(sendToHermes({ url: 'https://hermes.example', key: 'k', model: 'm' }, 'x', tokyo(8), failing), /HTTP 401/);
+  await assert.rejects(sendToHermes({ url: 'https://hermes.example/v1', key: 'k', model: 'm' }, 'x', tokyo(8), failing), /HTTP 401/);
 });

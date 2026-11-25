@@ -226,11 +226,12 @@ yen. The board, not hermes, decides what is due.
   tick) and sends one message for the lot, so a run of ticks is one reaction and
   a tick undone inside that window is none. Undos and payments are never told,
   nor anything while the bubble is hidden (21:30–06:30). It is a plain
-  `POST /v1/chat/completions` to hermes' API server, one at a time, fire and
+  `POST …/v1/chat/completions` to hermes' API server, one at a time, fire and
   forget: nothing on the board waits for it and a failure is logged, not
-  retried. It needs `HERMES_API_URL` (e.g. `https://orbit-python.exe.xyz`) and
-  `HERMES_API_KEY` (hermes' `API_SERVER_KEY`) in `/etc/wallboard.env`;
-  `HERMES_API_MODEL` defaults to `hermes-agent`, and `CHORE_REACT=off` stops it.
+  retried. It needs `HERMES_AGENT_URL` (hermes' OpenAI-compatible base, e.g.
+  `https://orbit-python.exe.xyz/v1`) and `HERMES_AGENT_KEY` (its `API_SERVER_KEY`)
+  in `/etc/wallboard.env`; `HERMES_AGENT_MODEL` defaults to `hermes-agent`, and
+  `CHORE_REACT=off` stops it.
   Without them the board runs as before. Each day's reactions share one hermes
   session (`eva-board-chores-<day>`), kept out of Michael's own transcript.
 

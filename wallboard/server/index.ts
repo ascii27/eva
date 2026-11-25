@@ -96,16 +96,17 @@ setInterval(() => {
 
 // Eva reacts to chores (ASC-29): a tick on the board is told to hermes, which
 // updates Eva's bubble with its eva-board-bubble skill. Needs hermes' API server
-// (HERMES_API_URL, HERMES_API_KEY; HERMES_API_MODEL optional). CHORE_REACT=off stops it.
-const HERMES_API_URL = process.env.HERMES_API_URL || undefined;
-const HERMES_API_KEY = process.env.HERMES_API_KEY || undefined;
+// (HERMES_AGENT_URL, its …/v1 base, and HERMES_AGENT_KEY; HERMES_AGENT_MODEL optional).
+// CHORE_REACT=off stops it.
+const HERMES_API_URL = process.env.HERMES_AGENT_URL?.trim() || undefined;
+const HERMES_API_KEY = process.env.HERMES_AGENT_KEY?.trim() || undefined;
 const reactor = HERMES_API_URL && HERMES_API_KEY && process.env.CHORE_REACT !== 'off'
   ? new ChoreReactor({
     now: Date.now,
     setTimer: (fn, ms) => setTimeout(fn, ms).unref(),
     clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
     today: () => view(state, Date.now()).chores,
-    send: (message) => sendToHermes({ url: HERMES_API_URL, key: HERMES_API_KEY, model: process.env.HERMES_API_MODEL || 'hermes-agent' }, message, Date.now()),
+    send: (message) => sendToHermes({ url: HERMES_API_URL, key: HERMES_API_KEY, model: process.env.HERMES_AGENT_MODEL?.trim() || 'hermes-agent' }, message, Date.now()),
     log: (line) => console.log(line),
   })
   : null;

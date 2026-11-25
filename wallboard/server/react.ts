@@ -162,6 +162,7 @@ export class ChoreReactor {
 }
 
 export interface HermesApi {
+  /** hermes' OpenAI-compatible base, ending in /v1 (HERMES_AGENT_URL). */
   url: string;
   key: string;
   model: string;
@@ -174,7 +175,7 @@ export interface HermesApi {
  */
 export async function sendToHermes(api: HermesApi, message: string, at: number, fetchFn: typeof fetch = fetch): Promise<void> {
   const day = new Date(at + 9 * 3_600_000).toISOString().slice(0, 10);
-  const res = await fetchFn(`${api.url.replace(/\/+$/, '')}/v1/chat/completions`, {
+  const res = await fetchFn(`${api.url.replace(/\/+$/, '')}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
