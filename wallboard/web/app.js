@@ -19,6 +19,7 @@ import { ORDER, person } from './household.js';
 import { dummy } from './dummy.js';
 import { EvaSpot, evaMessage, evaSig } from './eva.js';
 import { comingUp, shownAt } from './comingup.js';
+import { BIG, badgeUrl, garlandSvg, heroHtml, holidayOn, motifSvg } from './holiday.js';
 import { rollBath } from './bath.js';
 import { WX_BACK_MS, nextWxFace, wxFace } from './wxface.js';
 import { ANNOUNCE, ALARM, render as renderCue, wav, cueFor } from './chime.js';
@@ -87,6 +88,25 @@ function applyTheme(animate) {
     themeTimer = setTimeout(() => st.classList.remove('theming'), 1600);
   }
   st.dataset.theme = next;
+}
+
+// The big holidays' own day (ASC-40, CLAUDE.md "Holidays"): a garland across
+// the top of the photo and a badge + ring on Eva's bubble. ?holiday=<kind>
+// previews one on any day.
+function applyHoliday() {
+  const st = $('stage');
+  const d = now();
+  const pinned = q.get('holiday');
+  const kind = BIG.includes(pinned) ? pinned : holidayOn(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  if ((st.dataset.holiday ?? null) === kind) return;
+  if (kind) {
+    st.dataset.holiday = kind;
+    st.style.setProperty('--holiday-badge', badgeUrl(kind));
+  } else {
+    delete st.dataset.holiday;
+    st.style.removeProperty('--holiday-badge');
+  }
+  $('amb-deco').innerHTML = kind ? garlandSvg(kind) : '';
 }
 
 // ---- state -------------------------------------------------------------------
@@ -697,7 +717,7 @@ const KINDS = {
   sports: ['medal', 'warm', 'confetti'],
   ceremony: ['cap', 'violet', 'confetti'],
   school: ['bag', 'teal', 'confetti'],
-  'new-year': ['sunrise', 'warm', 'confetti'],
+  'new-year': ['sunrise', 'warm', 'zodiac'],
   setsubun: ['oni', 'warm', 'beans'],
   hinamatsuri: ['dolls', 'pink', 'petals'],
   hanami: ['sakura', 'pink', 'petals'],
@@ -705,13 +725,13 @@ const KINDS = {
   tanabata: ['tanabata', 'violet', 'stars'],
   obon: ['lantern', 'warm', 'lanterns'],
   tsukimi: ['tsukimi', 'violet', 'stars'],
-  valentine: ['heart', 'pink', 'hearts'],
+  valentine: ['heart', 'pink', 'cupid'],
   easter: ['egg', 'violet', 'confetti'],
   'parents-day': ['flower', 'pink', 'hearts'],
   july4: ['firework', 'cool', 'confetti'],
-  halloween: ['pumpkin', 'warm', 'halloween'],
-  thanksgiving: ['pie', 'warm', 'leaves'],
-  christmas: ['tree', 'green', 'snow'],
+  halloween: ['pumpkin', 'warm', 'ghosts'],
+  thanksgiving: ['pie', 'warm', 'turkey'],
+  christmas: ['tree', 'green', 'xmas'],
   summer: ['sun', 'warm', 'confetti'],
   autumn: ['leaf', 'warm', 'leaves'],
   winter: ['snow', 'cool', 'snow'],
@@ -743,11 +763,21 @@ const SHAPES = {
   petals: { colors: ['#f5b3c8', '#fbdde6'], scale: 0.8, aspect: 0.75, css: 'border-radius: 70% 0 70% 0' },
   stars: { colors: ['#c9b6f5', '#4a3480', '#f2c27a'], scale: 0.7, svg: FILLED(glyph('star')) },
   beans: { colors: ['#934606', '#5f5345'], scale: 0.45, css: 'border-radius: 50%' },
+  // The big holidays (ASC-40): each mixes its motifs (web/holiday.js), and the
+  // party also brings that holiday's featured character (heroHtml).
+  turkey: { looks: [['leaf', '#934606'], ['leaf', '#f2c27a'], ['leaf', '#8c2a4f']], scale: 0.9 },
+  ghosts: { looks: [['ghost'], ['pumpkin', '#934606']], scale: 0.85 },
+  xmas: { looks: [['ornament', '#8c2a4f'], ['ornament', '#2f6b3c'], ['star', '#f2c27a'], ['ornament', '#24559e'], ['ornament', '#f2c27a']], scale: 1.1 },
+  cupid: { looks: [['heart', '#8c2a4f'], ['arrow', '#934606'], ['heart', '#f5b3c8']], scale: 0.75 },
 };
-const RISE = new Set(['hearts', 'notes', 'lanterns']);
-const FALL = new Set(['leaves', 'petals', 'stars', 'beans']);
+const RISE = new Set(['hearts', 'notes', 'lanterns', 'ghosts', 'cupid']);
+const FALL = new Set(['leaves', 'petals', 'stars', 'beans', 'turkey', 'xmas']);
 const FALL_SKY = 26;                                  // + 14 at the tile = 40
+const HERO_FALL_SKY = 24;                             // + 14 at the tile + the character (2) = 40
+const HERO_RAIN_SKY = 20;                             // + 16 at the tile + the seal (4) = 40
 const HALLOWEEN = ['#934606', '#f2c27a', '#4a3480', '#c9b6f5'];   // orange + purple confetti
+const NEW_YEAR = ['#8c2a4f', '#f2c27a', '#f5b3c8', '#934606'];    // red + gold, as on a nengajō
+const HERO_FX = new Set(['turkey', 'ghosts', 'xmas', 'cupid', 'zodiac']);
 
 /** A particle's path and timing without its look, so another shape can ride it. */
 const motion = (st) => st.split(';').map((x) => x.trim())
@@ -756,9 +786,13 @@ const widthOf = (st) => Number(/(?:^|;)\s*width:\s*(\d+)px/.exec(st)?.[1] ?? 20)
 
 function particle(cls, st, fx, i) {
   const sh = SHAPES[fx];
-  const c = sh.colors[i % sh.colors.length];
   const w = Math.round(widthOf(st) * sh.scale);
   const h = Math.round(w * (sh.aspect ?? 1));
+  if (sh.looks) {
+    const [name, c] = sh.looks[i % sh.looks.length];
+    return `<span class="${cls} wb-nostr" style="${motion(st)}; width: ${w}px; height: ${h}px">${motifSvg(name, c)}</span>`;
+  }
+  const c = sh.colors[i % sh.colors.length];
   const look = sh.svg ? `color: ${c}` : `background: ${c}; ${sh.css}`;
   return `<span class="${cls} wb-nostr" style="${motion(st)}; width: ${w}px; height: ${h}px; ${look}">${sh.svg ?? ''}</span>`;
 }
@@ -768,6 +802,7 @@ const recolor = (st, i, pal) => st.replace(/background: #[0-9a-f]{6}/i, `backgro
 function burstAt(fx) {
   if (fx === 'confetti') return BITS.map((st) => `<span class="wb-bit" style="${st}"></span>`).join('');
   if (fx === 'halloween') return BITS.map((st, i) => `<span class="wb-bit" style="${recolor(st, i, HALLOWEEN)}"></span>`).join('');
+  if (fx === 'zodiac') return BITS.map((st, i) => `<span class="wb-bit" style="${recolor(st, i, NEW_YEAR)}"></span>`).join('');
   if (fx === 'balloons') return BALLOONS.map((st) => `<span class="wb-balloon" style="${st}"></span>`).join('');
   if (fx === 'snow') return FLAKES.map((st) => `<span class="wb-flake" style="${st}">${FLAKE_SVG}</span>`).join('');
   if (RISE.has(fx)) return BALLOONS.map((st, i) => particle('wb-balloon', st, fx, i)).join('');
@@ -779,8 +814,9 @@ function sky(fx) {
   if (fx === 'balloons') return UP.map((st) => `<span class="wb-up" style="${st}"></span>`).join('');
   if (fx === 'snow') return SNOW.map((st) => `<span class="wb-snow" style="${st}">${FLAKE_SVG}</span>`).join('');
   if (fx === 'halloween') return RAIN.map((st, i) => `<span class="wb-rain" style="${recolor(st, i, HALLOWEEN)}"></span>`).join('');
+  if (fx === 'zodiac') return RAIN.slice(0, HERO_RAIN_SKY).map((st, i) => `<span class="wb-rain" style="${recolor(st, i, NEW_YEAR)}"></span>`).join('');
   if (RISE.has(fx)) return UP.map((st, i) => particle('wb-up', st, fx, i)).join('');
-  if (FALL.has(fx)) return SNOW.slice(0, FALL_SKY).map((st, i) => particle('wb-snow', st, fx, i)).join('');
+  if (FALL.has(fx)) return SNOW.slice(0, HERO_FX.has(fx) ? HERO_FALL_SKY : FALL_SKY).map((st, i) => particle('wb-snow', st, fx, i)).join('');
   return RAIN.map((st) => `<span class="wb-rain" style="${st}"></span>`).join('');
 }
 
@@ -813,18 +849,23 @@ function countTile(cd, party, fresh = false) {
 }
 
 function celebrate() {
-  party('count', KINDS[kindOf(shownCountdown())][2]);
+  const cd = shownCountdown();
+  const kind = kindOf(cd);
+  // The year the countdown lands in: New Year's zodiac sign is the coming year's.
+  const d = now();
+  const year = new Date(d.getFullYear(), d.getMonth(), d.getDate() + Number(cd?.days ?? 0)).getFullYear();
+  party('count', KINDS[kind][2], heroHtml(kind, year));
 }
 
-/** A whole-screen party: the countdown tile's, or a perfect week's (ASC-36). */
-function party(kind, fx) {
+/** A whole-screen party: the countdown tile's, or a perfect week's (ASC-36). `hero` is a big holiday's featured character. */
+function party(kind, fx, hero = '') {
   const ms = partyMs(fx);
   clearTimeout(partyTimer);
   partyUntil = Date.now() + ms;
   partyKind = kind;
   // Fresh elements every time, so a second tap replays from the start.
   $('amb-strip').innerHTML = strip().join('');
-  $('amb-sky').innerHTML = sky(fx);
+  $('amb-sky').innerHTML = sky(fx) + hero;
   $('amb-sky').hidden = false;
   evaFace();                                             // she cheers along
   partyTimer = setTimeout(() => {
@@ -1397,6 +1438,7 @@ function tick() {
     lastMinute = m;
     rollBathToday();
     applyTheme(true);
+    applyHoliday();
     // Day/night handover happens on its own, but never yanks the active view from under a finger.
     if (view !== 'active' && view !== resting()) show(resting());
     else renderAll();
@@ -1668,9 +1710,11 @@ addEventListener('pointerup', () => {
 for (const el of document.querySelectorAll('[data-icon]')) el.innerHTML = icon(el.dataset.icon, 32);
 addEventListener('resize', fit);
 applyTheme(false);
+applyHoliday();
 if (q.get('debug')) {
   setInterval(fit, 5000);   // keep the keep-alive status in the debug line fresh
-  window.wb = { nextPhoto, applyTheme, evaNew: evaReplay, chime: playCue };   // step photos / themes / Eva from the console
+  window.wb = { nextPhoto, applyTheme, evaNew: evaReplay, chime: playCue,
+    party: (k) => party('count', KINDS[k][2], heroHtml(k, now().getFullYear() + 1)) };   // wb.party('christmas')   // step photos / themes / Eva from the console
 }
 fit();
 show(resting());
