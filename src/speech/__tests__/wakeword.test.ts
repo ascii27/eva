@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { findWake, normalizeWake, TAIL_WINDOW } from '../wakeword';
+import { findNearMiss, findNearMissIn, findWake, findWakeIn, normalizeWake, TAIL_WINDOW } from '../wakeword';
 
 describe('normalizeWake', () => {
   it('lowercases and strips punctuation', () => {
@@ -72,5 +72,57 @@ describe('findWake', () => {
     expect(m).not.toBeNull();
     expect(m!.snippet).toContain('hey eva');
     expect(m!.snippet).toContain('thinking');
+  });
+});
+
+describe('greetings other than hey (ASC-37)', () => {
+  it('wakes on hi, hello, hiya and hallo', () => {
+    expect(findWake('hi eva')).not.toBeNull();
+    expect(findWake('Hello, Eva!')).not.toBeNull();
+    expect(findWake('hiya ava')).not.toBeNull();
+    expect(findWake('hallo eva')).not.toBeNull();
+  });
+
+  it('still needs a greeting followed by Eva', () => {
+    expect(findWake('hi there')).toBeNull();
+    expect(findWake('hello evan')).toBeNull();
+    expect(findWake('hello everyone')).toBeNull();
+    expect(findWake('chi eva')).toBeNull();
+  });
+});
+
+describe('findWakeIn', () => {
+  it('wakes when only a later alternative heard the phrase', () => {
+    expect(findWakeIn(['heavy a', 'hey eva'])).not.toBeNull();
+  });
+
+  it('is null for no alternatives or no match', () => {
+    expect(findWakeIn([])).toBeNull();
+    expect(findWakeIn(['heavy a', 'hey everyone'])).toBeNull();
+  });
+});
+
+describe('findNearMiss', () => {
+  it('flags a greeting followed by a vowel-initial word', () => {
+    expect(findNearMiss('hey ever')).not.toBeNull();
+    expect(findNearMiss('hi even')).not.toBeNull();
+  });
+
+  it('flags an Eva-like word without a greeting', () => {
+    expect(findNearMiss('ask ava about it')).not.toBeNull();
+    expect(findNearMiss('eva')).not.toBeNull();
+  });
+
+  it('is null for a real wake or for unrelated speech', () => {
+    expect(findNearMiss('hey eva')).toBeNull();
+    expect(findNearMiss('hi there')).toBeNull();
+    expect(findNearMiss('evaluate this')).toBeNull();
+    expect(findNearMiss('')).toBeNull();
+  });
+
+  it('returns null across alternatives when any of them wakes', () => {
+    expect(findNearMissIn(['hey ever', 'hey eva'])).toBeNull();
+    expect(findNearMissIn(['hey ever', 'heavier'])).not.toBeNull();
+    expect(findNearMissIn([])).toBeNull();
   });
 });
