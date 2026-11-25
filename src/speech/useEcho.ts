@@ -74,6 +74,8 @@ export interface EchoHandlers {
   conversation?: boolean;
   /** Spoken asides (opener, fillers, tool narration) during the ask wait. */
   asides?: boolean;
+  /** Apple's noise suppression on command listens; see stt.ListenOptions. */
+  noiseFilter?: boolean;
 }
 
 /**
@@ -91,7 +93,11 @@ export function useEcho({
   onLatency,
   conversation,
   asides,
+  noiseFilter = false,
 }: EchoHandlers) {
+  // Read inside startMic, which must not be re-created when the toggle flips.
+  const noiseFilterRef = useRef(noiseFilter);
+  noiseFilterRef.current = noiseFilter;
   const active = useRef(false);
   const transcript = useRef('');
   const confidence = useRef(-1);
@@ -246,7 +252,7 @@ export function useEcho({
       active.current = true;
       clearTimer();
       setMode('listening');
-      startListening();
+      startListening('command', { noiseFilter: noiseFilterRef.current });
       return { ok: true };
     },
     [clearTimer, setMode],

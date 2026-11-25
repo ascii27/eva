@@ -5,7 +5,16 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 );
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { appendWakeEvent, clearWakeEvents, getWakeEvents, MAX_EVENTS, WAKE_LOG_KEY } from '../wakeLog';
+import {
+  appendNearMiss,
+  appendWakeEvent,
+  clearNearMisses,
+  clearWakeEvents,
+  getNearMisses,
+  getWakeEvents,
+  MAX_EVENTS,
+  WAKE_LOG_KEY,
+} from '../wakeLog';
 
 beforeEach(() => AsyncStorage.clear());
 
@@ -48,5 +57,22 @@ describe('wakeLog', () => {
     expect(await getWakeEvents()).toEqual([]);
     const events = await appendWakeEvent('recovered');
     expect(events.map((e) => e.snippet)).toEqual(['recovered']);
+  });
+});
+
+describe('near-miss log', () => {
+  it('keeps near-misses apart from wake events', async () => {
+    await appendWakeEvent('hey eva');
+    await appendNearMiss('hey ever');
+    expect((await getNearMisses()).map((e) => e.snippet)).toEqual(['hey ever']);
+    expect((await getWakeEvents()).map((e) => e.snippet)).toEqual(['hey eva']);
+  });
+
+  it('clears only near-misses', async () => {
+    await appendWakeEvent('hey eva');
+    await appendNearMiss('hi even');
+    await clearNearMisses();
+    expect(await getNearMisses()).toEqual([]);
+    expect(await getWakeEvents()).toHaveLength(1);
   });
 });

@@ -37,7 +37,13 @@ import {
 } from '../speech/proactive';
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
-import { clearWakeEvents, getWakeEvents, WakeEvent } from '../speech/wakeLog';
+import {
+  clearNearMisses,
+  clearWakeEvents,
+  getNearMisses,
+  getWakeEvents,
+  WakeEvent,
+} from '../speech/wakeLog';
 import { useOtaUpdates } from '../updates/useOtaUpdates';
 import { useVision } from '../vision/useVision';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
@@ -54,6 +60,7 @@ const TRIPLE_TAP_WINDOW_MS = 800;
 const SPEAK_TEST_LINE = 'The Q3 doc is filed under Platform Planning.';
 const PROACTIVE_TEST_LINE = 'The two o’clock moved to one thirty.';
 const WAKE_ENABLED_KEY = 'eva.wakeEnabled.v1';
+const NOISE_FILTER_KEY = 'eva.noiseFilter.v1';
 const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
 const ASIDES_ENABLED_KEY = 'eva.asidesEnabled.v1';
 const PROACTIVE_ENABLED_KEY = 'eva.proactiveEnabled.v1';
@@ -236,6 +243,24 @@ export function FaceScreen() {
   const toggleConv = useCallback(() => {
     setConvEnabled((v) => {
       void AsyncStorage.setItem(CONV_ENABLED_KEY, v ? '0' : '1');
+      return !v;
+    });
+  }, []);
+
+  // Apple's noise suppression on every listen, wake and command alike (ASC-37).
+  // Persisted, default off until it has been tried in a noisy room — it may
+  // lower speaker volume.
+  const [noiseFilter, setNoiseFilter] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(NOISE_FILTER_KEY).then((v) => {
+      if (v === '1') setNoiseFilter(true);
+    });
+  }, []);
+
+  const toggleNoiseFilter = useCallback(() => {
+    setNoiseFilter((v) => {
+      void AsyncStorage.setItem(NOISE_FILTER_KEY, v ? '0' : '1');
       return !v;
     });
   }, []);
@@ -426,6 +451,7 @@ export function FaceScreen() {
     },
     conversation: convEnabled,
     asides: asidesEnabled,
+    noiseFilter,
   });
 
   noteToolRef.current = echo.noteToolActivity;
@@ -471,6 +497,7 @@ export function FaceScreen() {
   const [wakeEnabled, setWakeEnabled] = useState(false);
   const [echoBusy, setEchoBusy] = useState(false);
   const [wakeEvents, setWakeEvents] = useState<WakeEvent[]>([]);
+  const [nearMisses, setNearMisses] = useState<WakeEvent[]>([]);
 
   useEffect(() => {
     AsyncStorage.getItem(WAKE_ENABLED_KEY).then((v) => {
@@ -569,6 +596,7 @@ export function FaceScreen() {
 
   const wake = useWakeWord({
     enabled: wakeEnabled,
+    noiseFilter,
     suspended: echoBusy || mode !== 'idle',
     onWake,
     onIssue: log,
@@ -653,7 +681,10 @@ export function FaceScreen() {
 
   useEffect(() => {
     devVisibleRef.current = devVisible;
-    if (devVisible) void getWakeEvents().then(setWakeEvents);
+    if (devVisible) {
+      void getWakeEvents().then(setWakeEvents);
+      void getNearMisses().then(setNearMisses);
+    }
   }, [devVisible]);
 
   const taps = useRef<number[]>([]);
@@ -755,6 +786,12 @@ export function FaceScreen() {
           onToggleWake={toggleWake}
           onClearWakeLog={() => {
             void clearWakeEvents().then(() => setWakeEvents([]));
+          }}
+          noiseFilter={noiseFilter}
+          onToggleNoiseFilter={toggleNoiseFilter}
+          nearMisses={nearMisses}
+          onClearNearMisses={() => {
+            void clearNearMisses().then(() => setNearMisses([]));
           }}
           brain={brain}
           onToggleBrain={toggleBrain}

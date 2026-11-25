@@ -15,9 +15,16 @@ export interface WakeEvent {
 export const WAKE_LOG_KEY = 'eva.wakeLog.v1';
 export const MAX_EVENTS = 300;
 
-export async function getWakeEvents(): Promise<WakeEvent[]> {
+/**
+ * What she heard when she *didn't* wake (ASC-37): one snippet per recognizer
+ * session that sounded like an attempt. Kept apart from wake events so the
+ * false-trigger count stays honest. On-device only, short snippets, capped.
+ */
+export const NEAR_MISS_KEY = 'eva.wakeNearMiss.v1';
+
+async function readLog(key: string): Promise<WakeEvent[]> {
   try {
-    const raw = await AsyncStorage.getItem(WAKE_LOG_KEY);
+    const raw = await AsyncStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : [];
@@ -26,23 +33,31 @@ export async function getWakeEvents(): Promise<WakeEvent[]> {
   }
 }
 
-/** Append a detection; returns the updated (FIFO-capped) list. */
-export async function appendWakeEvent(snippet: string): Promise<WakeEvent[]> {
-  const events = await getWakeEvents();
+async function appendLog(key: string, snippet: string): Promise<WakeEvent[]> {
+  const events = await readLog(key);
   events.push({ ts: Date.now(), snippet });
   const capped = events.slice(-MAX_EVENTS);
   try {
-    await AsyncStorage.setItem(WAKE_LOG_KEY, JSON.stringify(capped));
+    await AsyncStorage.setItem(key, JSON.stringify(capped));
   } catch {
     // Storage failure loses history, never the face.
   }
   return capped;
 }
 
-export async function clearWakeEvents(): Promise<void> {
+async function clearLog(key: string): Promise<void> {
   try {
-    await AsyncStorage.removeItem(WAKE_LOG_KEY);
+    await AsyncStorage.removeItem(key);
   } catch {
     // ignore
   }
 }
+
+export const getWakeEvents = (): Promise<WakeEvent[]> => readLog(WAKE_LOG_KEY);
+/** Append a detection; returns the updated (FIFO-capped) list. */
+export const appendWakeEvent = (snippet: string): Promise<WakeEvent[]> => appendLog(WAKE_LOG_KEY, snippet);
+export const clearWakeEvents = (): Promise<void> => clearLog(WAKE_LOG_KEY);
+
+export const getNearMisses = (): Promise<WakeEvent[]> => readLog(NEAR_MISS_KEY);
+export const appendNearMiss = (snippet: string): Promise<WakeEvent[]> => appendLog(NEAR_MISS_KEY, snippet);
+export const clearNearMisses = (): Promise<void> => clearLog(NEAR_MISS_KEY);

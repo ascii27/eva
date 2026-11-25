@@ -13,6 +13,12 @@ export interface SttResult {
   /** 0..1, or -1 when the platform doesn't report confidence. */
   confidence: number;
   isFinal: boolean;
+  /**
+   * Every guess the recognizer offered, best first (`transcript` is [0]).
+   * In a noisy room the right words are often a runner-up, so the wake
+   * watcher scans all of them.
+   */
+  alternatives: string[];
 }
 
 export interface SttEvents {
@@ -72,7 +78,14 @@ export function addListeners(ev: SttEvents): () => void {
   const subs = [
     m.addListener('result', (e) => {
       const best = e.results[0];
-      if (best) ev.onResult({ transcript: best.transcript, confidence: best.confidence, isFinal: e.isFinal });
+      if (best) {
+        ev.onResult({
+          transcript: best.transcript,
+          confidence: best.confidence,
+          isFinal: e.isFinal,
+          alternatives: e.results.map((r) => r.transcript),
+        });
+      }
     }),
     m.addListener('error', (e) => {
       if (__DEV__) console.log(`[stt] error ${e.error} (native ${e.code ?? '?'}): ${e.message}`);
@@ -93,8 +106,18 @@ export function addListeners(ev: SttEvents): () => void {
  */
 export type ListenProfile = 'command' | 'wake';
 
-export function startListening(profile: ListenProfile = 'command'): void {
-  if (__DEV__) console.log(`[stt] start (${profile})`);
+export interface ListenOptions {
+  /**
+   * Apple's voice processing (echo cancellation + noise suppression) on the
+   * recognizer's audio. Already compiled into the installed library, so it is
+   * a JS switch. Off by default: it may move the session to voiceChat and
+   * lower speaker volume, which is only known by trying it at the desk.
+   */
+  noiseFilter?: boolean;
+}
+
+export function startListening(profile: ListenProfile = 'command', opts: ListenOptions = {}): void {
+  if (__DEV__) console.log(`[stt] start (${profile}${opts.noiseFilter ? ', noise filter' : ''})`);
   const wake = profile === 'wake';
   getStt()?.ExpoSpeechRecognitionModule.start({
     lang: 'en-US',
@@ -102,7 +125,11 @@ export function startListening(profile: ListenProfile = 'command'): void {
     requiresOnDeviceRecognition: true,
     addsPunctuation: !wake,
     continuous: wake,
-    contextualStrings: wake ? ['Eva', 'Hey Eva'] : undefined,
+    // Explicit rather than trusting the native default of 5 — the wake
+    // watcher depends on getting runner-up guesses.
+    maxAlternatives: 5,
+    contextualStrings: wake ? ['Eva', 'Hey Eva', 'Hi Eva', 'Hello Eva'] : undefined,
+    iosVoiceProcessingEnabled: !!opts.noiseFilter,
     // If short-phrase pickup proves weak in the wake profile, try
     // iosTaskHint: 'confirmation' (recommended upstream for short prompts).
     iosTaskHint: 'dictation',
