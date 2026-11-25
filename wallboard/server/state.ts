@@ -18,6 +18,7 @@
 // never told us"; a panel present with empty data means "there is nothing".
 
 import { firstOnOrAfter, nextAfter, parseSchedule, tokyoDay, type Schedule } from './schedule.ts';
+import { weekReview, type WeekReview } from './week.ts';
 import { planList, prune, requestAdd, requestRemove, resolve, revivePlans, type EventSnapshot, type Plan, type Plans, type Report } from './plans.ts';
 
 export interface ChoreDef {
@@ -301,11 +302,14 @@ export interface ViewChore {
   done: boolean;
 }
 
-/** What the board shows at `at`: today's chores (due or done today), balances and panels. */
+/**
+ * What the board shows at `at`: today's chores (due or done today), balances,
+ * panels, plans, and the week so far (week.ts; the board shows it on Sundays).
+ */
 export function view(
   s: BoardState,
   at: number,
-): { version: number; chores: ViewChore[]; balances: Record<string, Balance>; panels: Record<string, Panel>; plans: Plan[] } {
+): { version: number; chores: ViewChore[]; balances: Record<string, Balance>; panels: Record<string, Panel>; plans: Plan[]; week: WeekReview } {
   const today = tokyoDay(at);
   const chores = s.chores.flatMap((c): ViewChore[] => {
     const done = c.doneOn === today;
@@ -314,7 +318,7 @@ export function view(
   });
   // Days that have passed are pruned at midnight; this hides them in the minute before that runs.
   const plans = planList(s.plans).filter((p) => p.day >= today);
-  return { version: s.version, chores, balances: balances(s), panels: s.panels, plans };
+  return { version: s.version, chores, balances: balances(s), panels: s.panels, plans, week: weekReview(s, at) };
 }
 
 /** Events with seq > after, oldest first, plus what hermes needs to spot a reset board. */

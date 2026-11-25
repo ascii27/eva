@@ -10,9 +10,9 @@ Standard library only. Configuration comes from the environment:
 Commands:
 
   read                       what the board shows right now (bubble, today,
-                             tomorrow, weather, countdowns, chores, this
-                             weekend's Tokyo events and the ones the family
-                             planned) as JSON
+                             tomorrow, weather, countdowns, chores, the
+                             week so far per girl, this weekend's Tokyo
+                             events and the ones the family planned) as JSON
   recent [N]                 the last N bubbles this script pushed (default 10)
   push TEXT [--sub SUB] [--mood happy|excited]
                              put a new message up; it plays the arrival
@@ -114,6 +114,26 @@ def tokyo(lst, plans, weekend_only: bool):
     return out
 
 
+def week(w):
+    """The board's week in review (Mon-Sun, wallboard/server/week.ts), told plainly."""
+    if not w:
+        return None
+    hm = lambda h: None if h is None else ("done" if h["done"] >= h["due"] else "not done yet")
+    return {
+        "from": w["start"],
+        "to": w["end"],
+        "is_sunday": w["sunday"],
+        "people": [{
+            "who": p["who"],
+            "done": f"{p['done']} of {p['due']}",
+            "level": p["level"],
+            "left_today": p["left"],
+            "hanamaru_homework": hm(p.get("hanamaru")),
+            "chores": [f"{c['title']} {c['done']}/{c['due']}" for c in p["chores"]],
+        } for p in w["people"]],
+    }
+
+
 def cmd_read(_args) -> None:
     s = call("GET", "/api/eva/state")
     weather = panel(s, "weather") or {}
@@ -137,6 +157,8 @@ def cmd_read(_args) -> None:
             "done": [f"{c['title']} ({c.get('who') or 'anyone'})" for c in chores if c.get("done")],
             "to_do": [f"{c['title']} ({c.get('who') or 'anyone'})" for c in chores if not c.get("done")],
         },
+        # Mon-Sun so far; the board shows it as "This week" all of Sunday.
+        "week": week(s.get("week")),
         # What the board's "This weekend" card lists (null: not read yet), and
         # what the family asked to put on the calendar from it.
         "tokyo_this_weekend": None if panel(s, "tokyo-events") is None else tokyo(panel(s, "tokyo-events"), s.get("plans"), True),
