@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
-import { appendWakeEvent } from './wakeLog';
-import { findWake } from './wakeword';
+import { appendNearMiss, appendWakeEvent } from './wakeLog';
+import { findNearMissIn, findWakeIn } from './wakeword';
 
 // A continuous on-device recognition session does not live forever: silence
 // eventually surfaces as no-speech, Siri/calls interrupt, and the local
@@ -34,6 +34,8 @@ export type WakeStatus = 'off' | 'watching' | 'paused';
 export interface WakeWordOptions {
   /** Master switch (persisted by the owner). */
   enabled: boolean;
+  /** Apple's noise suppression on the watcher's audio; see stt.ListenOptions. */
+  noiseFilter?: boolean;
   /** True while Eva is mid-round or speaking — never watch her own voice. */
   suspended: boolean;
   /** Wake phrase detected; snippet is the matched transcript context. */
@@ -42,12 +44,18 @@ export interface WakeWordOptions {
   onIssue?: (message: string) => void;
 }
 
-export function useWakeWord({ enabled, suspended, onWake, onIssue }: WakeWordOptions): {
+export function useWakeWord({ enabled, noiseFilter = false, suspended, onWake, onIssue }: WakeWordOptions): {
   status: WakeStatus;
 } {
   const state = useRef<WakeState>('idle');
   const [status, setStatus] = useState<WakeStatus>('off');
   const snippet = useRef('');
+  // The latest near-miss this session, flushed when the session ends without
+  // a wake. Logging at the end rather than on sight matters: an interim reading
+  // "hey ever" is often corrected to "hey eva" a moment later.
+  const nearMiss = useRef<string | null>(null);
+  const noiseFilterRef = useRef(noiseFilter);
+  noiseFilterRef.current = noiseFilter;
   const sessionStart = useRef(0);
   const consecFails = useRef(0);
   const timers = useRef<{ recycle: ReturnType<typeof setTimeout> | null; restart: ReturnType<typeof setTimeout> | null }>(
@@ -85,7 +93,8 @@ export function useWakeWord({ enabled, suspended, onWake, onIssue }: WakeWordOpt
       publishStatus();
       return;
     }
-    startListening('wake');
+    startListening('wake', { noiseFilter: noiseFilterRef.current });
+    nearMiss.current = null;
     sessionStart.current = Date.now();
     state.current = 'watching';
     publishStatus();
@@ -113,8 +122,12 @@ export function useWakeWord({ enabled, suspended, onWake, onIssue }: WakeWordOpt
     const unsubscribe = addListeners({
       onResult: (r) => {
         if (state.current !== 'watching') return; // not our session, or already handed off
-        const match = findWake(r.transcript);
-        if (!match) return;
+        const match = findWakeIn(r.alternatives);
+        if (!match) {
+          const near = findNearMissIn(r.alternatives);
+          if (near) nearMiss.current = near.snippet;
+          return;
+        }
         if (__DEV__) console.log(`[wake] matched · ${match.snippet}`);
         snippet.current = match.snippet;
         state.current = 'handoff';
@@ -139,6 +152,9 @@ export function useWakeWord({ enabled, suspended, onWake, onIssue }: WakeWordOpt
         const s = state.current;
         if (timers.current.recycle) clearTimeout(timers.current.recycle);
         timers.current.recycle = null;
+        const missed = nearMiss.current;
+        nearMiss.current = null;
+        if (missed && s !== 'handoff') void appendNearMiss(missed);
         if (s === 'handoff') {
           state.current = 'idle';
           publishStatus();
@@ -187,6 +203,22 @@ export function useWakeWord({ enabled, suspended, onWake, onIssue }: WakeWordOpt
     }
     publishStatus();
   }, [enabled, suspended, clearTimers, publishStatus, scheduleStart]);
+
+  // A new noise-filter setting only applies to a fresh session; recycle the
+  // live one so flipping it at the desk takes effect now, not in a minute.
+  const firstFilter = useRef(true);
+  useEffect(() => {
+    if (firstFilter.current) {
+      firstFilter.current = false;
+      return;
+    }
+    if (state.current === 'watching') {
+      if (timers.current.recycle) clearTimeout(timers.current.recycle);
+      timers.current.recycle = null;
+      state.current = 'recycling';
+      abortListening();
+    }
+  }, [noiseFilter]);
 
   return { status };
 }

@@ -60,6 +60,12 @@ interface DevControlsProps {
   wakeEvents: WakeEvent[];
   onToggleWake: () => void;
   onClearWakeLog: () => void;
+  /** Apple's noise suppression on every listen (ASC-37). */
+  noiseFilter: boolean;
+  onToggleNoiseFilter: () => void;
+  /** What she heard when she didn't wake. */
+  nearMisses: WakeEvent[];
+  onClearNearMisses: () => void;
   slackStatus: SlackStatus;
   onSlackPair: () => void;
   onSlackReconnect: () => void;
@@ -341,6 +347,13 @@ export function DevControls(props: DevControlsProps) {
             active={props.wakeEnabled}
             onPress={props.onToggleWake}
           />
+          <Btn
+            eyeColor={eyeColor}
+            label="Noise filter"
+            sub={props.noiseFilter ? 'on' : 'off'}
+            active={props.noiseFilter}
+            onPress={props.onToggleNoiseFilter}
+          />
           <View style={styles.headerRow}>
             <Text style={styles.sectionLabel}>WAKE LOG · {props.wakeEvents.length}</Text>
             <Pressable onPress={props.onClearWakeLog} hitSlop={12}>
@@ -348,6 +361,17 @@ export function DevControls(props: DevControlsProps) {
             </Pressable>
           </View>
           {props.wakeEvents.slice(-WAKE_LOG_SHOWN).map((e, i) => (
+            <Text key={`${e.ts}-${i}`} style={styles.wakeLine} numberOfLines={1}>
+              {hhmm(e.ts)} · {e.snippet}
+            </Text>
+          ))}
+          <View style={styles.headerRow}>
+            <Text style={styles.sectionLabel}>NEAR MISSES · {props.nearMisses.length}</Text>
+            <Pressable onPress={props.onClearNearMisses} hitSlop={12}>
+              {({ pressed }) => <Text style={[styles.close, pressed && { color: eyeColor }]}>CLEAR</Text>}
+            </Pressable>
+          </View>
+          {props.nearMisses.slice(-WAKE_LOG_SHOWN).map((e, i) => (
             <Text key={`${e.ts}-${i}`} style={styles.wakeLine} numberOfLines={1}>
               {hhmm(e.ts)} · {e.snippet}
             </Text>
