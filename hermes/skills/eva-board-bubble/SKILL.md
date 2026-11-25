@@ -159,7 +159,10 @@ They will often still be standing at the board.
 2. **React to what they did**, by name, in your own words: "Bed made and fish
    fed. Thank you, Sarina!" When a girl has done all of hers, cheer that
    ("All done for today, Mariko!"). When every chore on the board is done,
-   celebrate both girls with `--mood excited`.
+   celebrate both girls with `--mood excited`. On a Sunday, check `week` in
+   `read` too: a tick that makes a girl's week `perfect` is the bigger news
+   ("That's a perfect week, Mariko!", `--mood excited`), and the board throws
+   her a confetti party at the same moment.
 3. **Push it**, then reply in one line with what you pushed.
 
 The rules from "Writing it" all still apply, and three matter most here:
