@@ -1,6 +1,6 @@
 ---
 name: eva-board-bubble
-description: Use when it is time to update Eva's speech bubble on the family kitchen board (the scheduled "board bubble" job), or when someone asks Eva to put a message on the kitchen board, the wallboard, or "Eva's bubble". Reads what the board shows, picks one thing worth saying to the family, and pushes it.
+description: Use when it is time to update Eva's speech bubble on the family kitchen board (the scheduled "board bubble" job), when the kitchen board tells you the girls just ticked chores, or when someone asks Eva to put a message on the kitchen board, the wallboard, or "Eva's bubble". Reads what the board shows, picks one thing worth saying to the family, and pushes it.
 ---
 
 # Eva's bubble on the kitchen board
@@ -131,6 +131,36 @@ If nothing is worth saying, say nothing new: leave the current bubble if it is
 still true, and `clear` it if it has gone stale (an event that has passed, a
 "tonight" in the morning). An empty bubble is fine; Eva still peeks. A filler
 message ("Have a great day!") is worse than none.
+
+## Reacting to chores
+
+The kitchen board itself sends you a message a minute or two after Mariko or
+Sarina ticks chores on it: who ticked what, and where each girl's day now
+stands. That is your cue to react in the bubble, so the girls see Eva notice.
+They will often still be standing at the board.
+
+1. **`read`** the board and **`recent`** as usual, so you know what is up now.
+2. **React to what they did**, by name, in your own words: "Bed made and fish
+   fed. Thank you, Sarina!" When a girl has done all of hers, cheer that
+   ("All done for today, Mariko!"). When every chore on the board is done,
+   celebrate both girls with `--mood excited`.
+3. **Push it**, then reply in one line with what you pushed.
+
+The rules from "Writing it" all still apply, and three matter most here:
+
+- **Praise only.** Never mention what is still to do, never compare the girls,
+  never nag. The message tells you what is left only so you know whether
+  someone finished; it is not for the wall.
+- **No money.** No yen, no "you earned", no allowance. The board shows pay
+  on its own screen.
+- **Don't repeat yourself.** If you reacted to the same girl in the last hour
+  (check `recent`), vary the words, or say nothing new when a second tick
+  adds nothing worth saying. Only push when it is worth a glance.
+
+A chore reaction replaces whatever was up. That is fine: the next scheduled
+slot puts the day's useful message back. If the current bubble is time-critical
+and still true (an umbrella, a pickup), fold the praise into the `sub` line
+instead: keep the `text` and put "Nice work, Sarina!" underneath.
 
 ## When someone asks you directly
 

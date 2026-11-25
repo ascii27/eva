@@ -219,6 +219,21 @@ yen. The board, not hermes, decides what is due.
 - **Icons** come from the chore definition; a chore with none gets the board's
   generic one.
 
+- **Eva reacts to ticks** (ASC-29, `server/react.ts`). A tick is told to
+  hermes, which says something in Eva's bubble with its `eva-board-bubble`
+  skill ("Reacting to chores"); the board never writes the bubble itself. It
+  waits until the board has been quiet for 90 s (at most 5 min after the first
+  tick) and sends one message for the lot, so a run of ticks is one reaction and
+  a tick undone inside that window is none. Undos and payments are never told,
+  nor anything while the bubble is hidden (21:30–06:30). It is a plain
+  `POST /v1/chat/completions` to hermes' API server, one at a time, fire and
+  forget: nothing on the board waits for it and a failure is logged, not
+  retried. It needs `HERMES_API_URL` (e.g. `https://orbit-python.exe.xyz`) and
+  `HERMES_API_KEY` (hermes' `API_SERVER_KEY`) in `/etc/wallboard.env`;
+  `HERMES_API_MODEL` defaults to `hermes-agent`, and `CHORE_REACT=off` stops it.
+  Without them the board runs as before. Each day's reactions share one hermes
+  session (`eva-board-chores-<day>`), kept out of Michael's own transcript.
+
 **Migration.** The old Apple Reminders sync is gone. To export the current
 #Chore reminders once, run on the Mac (iCloud login, password + 2FA, prompted
 and never stored): `uv run scripts/export-chores.py > chores.json`.
