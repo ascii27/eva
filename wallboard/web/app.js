@@ -10,6 +10,8 @@
 //                                (with the dummy message if nothing was pushed)
 //   ?sound=off                   no countdown chimes; ?sound=announce|alarm plays that
 //                                cue on every tap (to hear it on the Echo's speaker)
+//   ?week=1                      show the Sunday "This week" card on any day (ASC-36);
+//                                ?week=demo with sample numbers instead of the board's
 
 import { icon, glyph, star, weatherIcon } from './icons.js';
 import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from './celebrate.js';
@@ -20,6 +22,7 @@ import { comingUp, shownAt } from './comingup.js';
 import { rollBath } from './bath.js';
 import { WX_BACK_MS, nextWxFace, wxFace } from './wxface.js';
 import { ANNOUNCE, ALARM, render as renderCue, wav, cueFor } from './chime.js';
+import { LEVEL_WORDS, hanamaruState, markCheered, metaLine, percent, rangeLabel, showWeek, toCheer } from './week.js';
 import { cardEvents, cardMeta, chipLabel, dateLine, dayChoices, defaultDay, hoursLine, page as eventPage, placeLine, planState, priceLine } from './events.js';
 
 const $ = (id) => document.getElementById(id);
@@ -260,6 +263,7 @@ const days = (n) => `${n} ${n === 1 ? 'day' : 'days'}`;
 
 function renderAmbient() {
   fitRightColumn();
+  cheerWeek();
 
   // Mid-celebration, leave the strip alone: a re-render would restart the burst.
   if (Date.now() >= partyUntil) $('amb-strip').innerHTML = strip().join('');
@@ -545,6 +549,13 @@ function rightColumn(level = 0) {
       ${up.bring.length ? `<div class="rc-bring"><span class="rc-k">Bring</span>${bringPills(up.bring)}</div>` : ''}
       ${evening ? bathRow() : ''}</div>`);
   }
+  // Sunday (ASC-36): the week in review takes the list card's place all day.
+  // Today's and tomorrow's rows are still one tap away in the active view.
+  const wk = weekCard('rc-card');
+  if (wk) {
+    out.push(wk);
+    return { html: out.join(''), last: true };
+  }
   if (!evening) {
     const rows = listRows(todayEvents(), t, nextIds, level);
     out.push(`<div class="rc-card">${rcHead('clock', 'Today')}${rows.html}</div>`);
@@ -577,6 +588,70 @@ function fitRightColumn() {
   }
 }
 
+// ---- Week in review (ASC-36, web/week.js) -------------------------------------
+//
+// All of Sunday the calm right column's list card becomes "This week": per
+// girl, how much of the week's chores she did (server/week.ts counts them from
+// the board's log, Monday to Sunday, today included), and her hanamaru
+// homework as a stamp. A perfect week gets the star and, once per girl per
+// week, a whole-screen party; a late Sunday finish still gets it. Every other
+// level gets a warm word, and what's still open today is shown as "N left today".
+
+const WEEK_DEMO = {
+  start: '2026-11-16', end: '2026-11-22', sunday: true,
+  people: [
+    { who: 'mariko', done: 14, due: 14, left: 0, level: 'perfect', hanamaru: { due: 1, done: 1 }, chores: [] },
+    { who: 'sarina', done: 11, due: 14, left: 2, level: 'great', hanamaru: { due: 1, done: 0 }, chores: [] },
+  ],
+};
+
+/** The week to show now, girls only, household order; null when it isn't Sunday (or nothing to show). */
+function weekNow() {
+  const pin = q.get('week');
+  if (!showWeek(now().getDay(), pin === '1' || pin === 'demo')) return null;
+  const w = pin === 'demo' ? WEEK_DEMO : server?.week;
+  const people = (w?.people ?? []).filter((p) => person(p.who).kid)
+    .sort((a, b) => (ORDER.indexOf(a.who) + 1 || 99) - (ORDER.indexOf(b.who) + 1 || 99));
+  return people.length ? { ...w, people } : null;
+}
+
+function weekRow(p) {
+  const perfect = p.level === 'perfect';
+  const badge = perfect ? `<span class="sd-star wr-star">${star(18)}</span>` : '';
+  const hm = hanamaruState(p);
+  const stamp = hm ? `<span class="wr-hm ${hm}" role="img" aria-label="Hanamaru homework: ${hm === 'done' ? 'done' : 'not done yet'}">${icon('hanamaru', 40, 1.9)}${
+    hm === 'done' ? `<span class="sd-tick">${icon('check', 16, 3.5)}</span>` : ''}<span class="wr-hm-l">はなまる</span></span>` : '';
+  return `<div class="wr-row${perfect ? ' perfect' : ''}">
+    <span class="wr-av">${avatar(p.who, 56, 22)}${badge}</span>
+    <div class="wr-body"><div class="wr-head"><span class="wr-name">${esc(person(p.who).name)}</span><span class="wr-word">${esc(LEVEL_WORDS[p.level] ?? '')}</span></div>
+      <div class="wr-bar" role="img" aria-label="${esc(metaLine(p))}"><span style="width:${percent(p)}%"></span></div>
+      <span class="wr-meta">${esc(metaLine(p))}</span></div>${stamp}</div>`;
+}
+
+/** The "This week" card, with the given card classes, or '' when it isn't showing. */
+function weekCard(cls) {
+  const w = weekNow();
+  if (!w) return '';
+  const any = w.people.some((p) => p.level === 'perfect');
+  // On the calm view a perfect week's card replays the party on tap.
+  const tap = any && cls === 'rc-card' ? ' data-action="week" role="button" aria-label="This week. Tap to celebrate."' : '';
+  const all = w.people.every((p) => p.level === 'perfect');
+  return `<div class="${cls} rc-week${all ? ' all' : ''}"${tap}>${rcHead('star', 'This week', `<span class="wr-range">${esc(rangeLabel(w.start, w.end))}</span>`)}
+    ${w.people.map(weekRow).join('')}
+    ${all ? `<div class="wr-all">${star(26)}<span>Everyone, every chore. Amazing week!</span></div>` : ''}</div>`;
+}
+
+/** Party for a perfect week the board hasn't cheered yet (once per girl per week, remembered across reloads). */
+function cheerWeek() {
+  const w = weekNow();
+  if (!w || view !== 'ambient' || Date.now() < partyUntil) return;
+  const who = toCheer(w, local.cheered);
+  if (!who.length) return;
+  local = { ...local, cheered: markCheered(w, local.cheered, who) };
+  saveLocal();
+  party('week', 'confetti');
+}
+
 // Calm strip, both themes (PaperV3HaloLandscape.dc.html by day, Main.dc.html in
 // the evening): big signals readable from across the kitchen — one icon per
 // chore, who bathes first, one countdown. Counts, chore names and pay live in
@@ -600,7 +675,7 @@ function strip() {
   out.push(`<div class="strip-card sd-bath" aria-label="Bath first tonight: ${esc(bathFirst())}">
     <span class="sd-disc sd-cool">${icon('bath', 56, 1.9)}</span>${who(local.bath.tonight, '<span class="sd-first">1st</span>')}</div>`);
   const cd = shownCountdown();
-  if (cd) out.push(countTile(cd, Date.now() < partyUntil, rotFresh));
+  if (cd) out.push(countTile(cd, Date.now() < partyUntil && partyKind === 'count', rotFresh));
   rotFresh = false;
   return out;
 }
@@ -713,6 +788,7 @@ function sky(fx) {
 const partyMs = (fx) => (fx === 'confetti' || fx === 'halloween' ? 4800 : 5600);
 let partyUntil = 0;
 let partyTimer = null;
+let partyKind = null;          // 'count' (the countdown tile) or 'week' (a perfect week)
 
 const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -737,10 +813,15 @@ function countTile(cd, party, fresh = false) {
 }
 
 function celebrate() {
-  const fx = KINDS[kindOf(shownCountdown())][2];
+  party('count', KINDS[kindOf(shownCountdown())][2]);
+}
+
+/** A whole-screen party: the countdown tile's, or a perfect week's (ASC-36). */
+function party(kind, fx) {
   const ms = partyMs(fx);
   clearTimeout(partyTimer);
   partyUntil = Date.now() + ms;
+  partyKind = kind;
   // Fresh elements every time, so a second tap replays from the start.
   $('amb-strip').innerHTML = strip().join('');
   $('amb-sky').innerHTML = sky(fx);
@@ -748,6 +829,7 @@ function celebrate() {
   evaFace();                                             // she cheers along
   partyTimer = setTimeout(() => {
     partyUntil = 0;
+    partyKind = null;
     $('amb-sky').hidden = true;
     $('amb-sky').innerHTML = '';                         // particles removed when the party ends
     renderAmbient();
@@ -894,6 +976,8 @@ function renderActive() {
   // Right column: leave/pickup, countdowns. Eva's bubble sits above
   // these in its own mount (#act-bubble), so a re-render never restarts her.
   const side = [];
+  const wkReview = weekCard('card side-week');
+  if (wkReview) side.push(wkReview);
   const pickup = content('pickup');
   const due = countdown();
   if (due || pickup) {
@@ -959,7 +1043,13 @@ function weekendCard() {
  */
 function fitWeekend() {
   const box = $('wk-rows');
-  if (!box) return;
+  if (!box) {
+    // No weekend card, but Sunday's "This week" can still push Countdowns off the
+    // bottom: it gives way, as it does for the weekend card (the calm tile has them).
+    const side = $('act-side');
+    if ($('act-count') && side.scrollHeight > side.clientHeight + 0.5) $('act-count').remove();
+    return;
+  }
   const fit = () => {
     const limit = box.getBoundingClientRect().bottom;
     for (const row of box.children) row.hidden = false;
@@ -1443,6 +1533,7 @@ $('stage').addEventListener('click', (e) => {
   switch (el.dataset.action) {
     case 'wake': return show('active', { dim: view === 'night' });
     case 'celebrate': return celebrate();
+    case 'week': return party('week', 'confetti');
     case 'weather': return rotateWeather();
     case 'home': return show(resting());
     case 'chore': return tapChore(el.dataset.id);

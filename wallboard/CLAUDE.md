@@ -253,6 +253,16 @@ References: `design/EvaCharacter.dc.html` (character, 3 expressions, light + dar
 - Same card. "What's on in Tokyo" 44 px display + "N events · from Tokyo Cheapo". 4 × 2 tiles a page: photo 200 px tall (radius 18), title 22/28 600 (2 lines), meta 18/24 (dates · km, or the plan's state). Paged with "‹ Back" / "Page 1 of 3" / "More ›" pill buttons — **single taps, no swiping or scrolling**.
 - Sheets close when the board returns to its resting view.
 
+## Week in review (ASC-36, 2026-11-25) — drafted, awaiting approval
+**Status:** drafted straight into `web/` from the existing tokens, like "What's on in Tokyo" (no `design/*.dc.html` yet). Once approved, capture it as a design file, or ask before changing its values. Numbers: `server/week.ts` (pure, tested), sent as `week` in every state. Words, timing and who gets cheered: `web/week.js` (pure, tested).
+- **When:** all of Sunday (until night mode). `?week=1` shows it any day; `?week=demo` uses sample numbers.
+- **Calm view:** the "This week" card takes the list card's place (Today/Tomorrow) in the right column; weather and Next up stay. Today's rows are still in the active view. **Active view:** the same card first in the right column; Countdowns gives way if it doesn't fit.
+- **Card:** `.rc-card`; eyebrow star + "THIS WEEK", date range right (20 px 600 muted). One row per girl: 56 px avatar, name 24 px 700 + level word 24 px 600 muted, a 14 px bar (`--surface-200` track, teal fill), meta 20 px muted ("12 of 14 done · 2 left today"), and a 64 px hanamaru stamp (teal with a check when done, a ring when not; "はなまる" 15 px under it). Rows only for people with chores due that week, girls only.
+- **Not all or nothing:** words per level — perfect "Perfect week!", ≥75% "Great week", ≥40% "Good week", any "Off to a start", none "Fresh start Monday". Never a red or a cross; what's still open today reads as "N left today".
+- **Something special for a perfect week:** the row turns `--accent-soft` with a teal star on the avatar and the word in teal; a whole-screen confetti party (the countdown tile's, Eva excited) plays once per girl per week, remembered in this browser, including for a late Sunday finish. Tapping the card replays it. Both girls perfect: the card glows (`--glow-accent`) with "Everyone, every chore. Amazing week!".
+- **Counting:** Monday–Sunday in Tokyo, today included. Due = the schedule's occurrences in the week; done = uncancelled ticks in the week, capped at due; an overdue chore with nothing due this week that still got ticked counts as done. Hanamaru homework is a Notion chore found by title (hanamaru / はなまる / 花丸) or icon `hanamaru`.
+- **Eva comments:** hermes' `eva-board-bubble` skill reads `week` and says something about it on Sunday (praise what went well, invite what's open, never single anyone out).
+
 ## Household and behaviour (don't regress)
 - Only Mariko (11) and Sarina (8) have chores. Michael and Nozomi appear in the schedule only.
 - Every chore tap answers instantly, with an 8 s Undo toast. Single taps only: no long-press, swipe or text entry.

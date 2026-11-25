@@ -39,7 +39,7 @@ npm run seed         # push the dummy chore list (WALLBOARD_URL, HERMES_TOKEN);
 ```
 
 Testing switches on the board URL: `?time=7:42` fakes the clock, `?mode=ambient|active|night`
-pins a view, `?theme=day|evening` pins a theme, `?eva=new` replays Eva's new-message arrival, `?sound=off` mutes the countdown chimes and
+pins a view, `?theme=day|evening` pins a theme, `?eva=new` replays Eva's new-message arrival, `?week=1` shows Sunday's "This week" card on any day (`?week=demo` with sample numbers), `?sound=off` mutes the countdown chimes and
 `?sound=announce|alarm` plays one on every tap, `?debug=1` shows Silk's real viewport size and
 keep-alive status (and exposes `wb.nextPhoto()` and `wb.chime('announce'|'alarm')` in the console).
 
@@ -69,7 +69,7 @@ Both are generated into `/etc/wallboard.env` on the first deploy:
 | `PUT` | `/api/eva/panels/<name>` | `{"data": <any JSON>}` | Set a panel. `name` matches `^[a-z][a-z0-9-]{0,31}$`. |
 | `DELETE` | `/api/eva/panels/<name>` | — | Remove a panel. |
 | `PUT` | `/api/eva/chores` | `{"chores": [{"id", "title", "who", "icon", "amount", "schedule": {"every", "unit": "day"\|"week", "start"}}]}` | Replace the chore definitions (a `ChoreDef`). `amount` is yen per completion. Rejects `done`: that is the board's, not hermes'. Owned by the `eva-chores` skill (see "Chores"). `who` is a household id (`mariko`, `sarina`, …); `icon` is a key in `web/icons.js`. |
-| `GET` | `/api/eva/state` | — | The computed view: `{version, chores: [{id, title, who, icon, amount, done}], balances, panels}`. |
+| `GET` | `/api/eva/state` | — | The computed view: `{version, chores: [{id, title, who, icon, amount, done}], balances, panels, plans, week}`. `week` is the week so far (Monday–Sunday, Tokyo): `{start, end, sunday, people: [{who, due, done, left, level, hanamaru: {due, done} \| null, chores: [{id, title, icon, due, done, hanamaru}]}]}` (`server/week.ts`; `level` is `perfect`, `great`, `good`, `started` or `none`; `left` is what is still on the board today). The board shows it on Sundays. |
 | `GET` | `/api/eva/activity?after=<seq>` | — | `{logId, seq, events}`: log events with `seq` greater than `after`, in order, plus the log's id and its highest `seq` so hermes can spot a reset board. |
 | `GET` | `/api/eva/balances` | — | `{balances: {who: {earned, paid, owed, lastPaidAt}}}`, computed from the log. |
 | `POST` | `/api/eva/payments` | `{"who", "amount", "note"?, "id"?}` | Record a payment (a negative amount is a credit). `amount` is a non-zero integer within ±1,000,000 yen. A repeated `id` is not recorded twice. |
