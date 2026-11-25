@@ -17,6 +17,7 @@ import { PhotoLibrary } from './photos.ts';
 import { IKEJIRI, startWeather } from './weather.ts';
 import { parsePeople, startCalendar } from './calendar.ts';
 import { MAX_KM, PHOTO_ID, startTokyoEvents } from './tokyoevents.ts';
+import { ChoreReactor, sendToHermes } from './react.ts';
 import sharp from 'sharp';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -92,6 +93,23 @@ setInterval(() => {
   if (tokyoDay(Date.now()) === broadcastDay) return;
   if (!dispatch({ type: 'plans.prune', at: Date.now() })) broadcast();
 }, 60_000).unref();
+
+// Eva reacts to chores (ASC-29): a tick on the board is told to hermes, which
+// updates Eva's bubble with its eva-board-bubble skill. Needs hermes' API server
+// (HERMES_AGENT_URL, its …/v1 base, and HERMES_AGENT_KEY; HERMES_AGENT_MODEL optional).
+// CHORE_REACT=off stops it.
+const HERMES_API_URL = process.env.HERMES_AGENT_URL?.trim() || undefined;
+const HERMES_API_KEY = process.env.HERMES_AGENT_KEY?.trim() || undefined;
+const reactor = HERMES_API_URL && HERMES_API_KEY && process.env.CHORE_REACT !== 'off'
+  ? new ChoreReactor({
+    now: Date.now,
+    setTimer: (fn, ms) => setTimeout(fn, ms).unref(),
+    clearTimer: (t) => clearTimeout(t as NodeJS.Timeout),
+    today: () => view(state, Date.now()).chores,
+    send: (message) => sendToHermes({ url: HERMES_API_URL, key: HERMES_API_KEY, model: process.env.HERMES_AGENT_MODEL?.trim() || 'hermes-agent' }, message, Date.now()),
+    log: (line) => console.log(line),
+  })
+  : null;
 
 // Keeps idle connections alive through proxies, which drop a silent stream.
 setInterval(() => { for (const c of clients) c.write(': ping\n\n'); }, 25_000).unref();
@@ -353,7 +371,9 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     if (typeof b?.done !== 'boolean') return json(res, 400, { error: 'expected {"done": true|false}' });
     if (!state.chores.some((c) => c.id === id)) return json(res, 404, { error: 'no such chore' });
     // null (a repeated tap, a stale undo) is not an error: the board is already where it wanted.
+    const seq = state.seq;
     dispatch({ type: 'chore.set', id, done: b.done, at: Date.now(), eventId: newId('ev') });
+    if (reactor && state.seq > seq) reactor.onEvent(state.log[state.log.length - 1]);
     return json(res, 200, { ok: true, version: state.version });
   }
 
@@ -397,6 +417,7 @@ server.listen(PORT, () => {
   console.log(`[wallboard] listening on :${PORT} (build ${BUILD})`);
   if (!BOARD_TOKEN) console.warn('[wallboard] BOARD_TOKEN unset — board is open (dev only)');
   if (!HERMES_TOKEN) console.warn('[wallboard] HERMES_TOKEN unset — push API is open (dev only)');
+  console.log(`[wallboard] chore reactions ${reactor ? 'on' : 'off'}`);
 });
 
 for (const sig of ['SIGTERM', 'SIGINT'] as const) {
