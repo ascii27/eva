@@ -39,6 +39,21 @@ export interface CalendarPanels {
   bedtime: LeaveBy;
   /** The countdown tile's rotation: next birthday, holiday, school event (occasions.ts). */
   occasions: Occasion[];
+  /** The month sheet (ASC-41): every calendar event from the 1st of last month to the end of next month. */
+  month: MonthEntry[];
+}
+
+/** One day's event on the month sheet. A multi-day all-day event repeats on each of its days. */
+export interface MonthEntry {
+  /** "2026-11-26", the Tokyo day it is shown on. */
+  date: string;
+  /** "H:MM" Tokyo time, or null for an all-day event. */
+  start: string | null;
+  end?: string;
+  allDay?: true;
+  title: string;
+  who: string[];
+  icon: string;
 }
 
 const TZ = 'Asia/Tokyo';
@@ -227,7 +242,7 @@ const hmKey = (hm: string) => { const [h, m] = hm.split(':').map(Number); return
  * merged with the routine (routine.ts). The leave-by is its own panel — the
  * board folds it into the schedule itself, inside its window.
  */
-export function calendarPanels(ics: string | null, now: Date, people?: Map<string, string>): CalendarPanels {
+export function calendarPanels(ics: string | null, now: Date, people?: Map<string, string>): Omit<CalendarPanels, 'month'> {
   const today = tokyoDate(now);
   const t0 = midnight(today);
   const tomorrow = tokyoDate(new Date(t0 + DAY + 1));
@@ -278,6 +293,42 @@ export function calendarPanels(ics: string | null, now: Date, people?: Map<strin
   };
 }
 
+/** "2026-11" → the first day of the month `delta` months away, "2026-12-01". */
+function monthStart(ym: string, delta: number): string {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * The month sheet's events (ASC-41): the family calendar only — no routine
+ * (school run, bedtime) — from the 1st of last month to the end of next month,
+ * Tokyo days. A multi-day all-day event appears on each of its days in range;
+ * a timed event on the day it starts. Sorted by day, all-day first, then time.
+ */
+export function monthPanel(ics: string | null, now: Date, people?: Map<string, string>): MonthEntry[] {
+  if (!ics) return [];
+  const ym = tokyoDate(now).slice(0, 7);
+  const first = monthStart(ym, -1), after = monthStart(ym, 2);
+  const occ = occurrences(ics, midnight(first), midnight(after));
+  const out: (MonthEntry & { ms: number })[] = [];
+  for (const o of occ) {
+    const base = { title: o.title, who: whoFor(o.title, o.attendees, people), icon: iconOf(o.title) };
+    if (o.allDay) {
+      for (let t = Math.max(o.start, midnight(first)); t < o.end && t < midnight(after); t += DAY) {
+        out.push({ date: tokyoDate(new Date(t)), start: null, allDay: true, ...base, ms: o.start });
+      }
+      continue;
+    }
+    if (o.startDate < first || o.startDate >= after) continue;
+    const e: MonthEntry & { ms: number } = { date: o.startDate, start: tokyoHM(new Date(o.start)), ...base, ms: o.start };
+    if (o.end > o.start && tokyoDate(new Date(o.end - 1)) === o.startDate) e.end = tokyoHM(new Date(o.end));
+    out.push(e);
+  }
+  out.sort((a, b) => a.date.localeCompare(b.date) || Number(!!b.allDay) - Number(!!a.allDay) || a.ms - b.ms || a.title.localeCompare(b.title));
+  return out.map(({ ms: _, ...e }) => e);
+}
+
 /**
  * After each fetch, say how much of the calendar is attributed by invitation,
  * so a feed that stops carrying attendees (or a new invitee nobody mapped) is
@@ -315,8 +366,9 @@ export function startCalendar(url: string | undefined, fetchMs: number, publish:
     // With a URL, wait for the first fetch rather than publish a calendar-less day.
     if (url && ics == null) return;
     try {
-      const p = calendarPanels(ics, new Date(), people);
-      for (const name of ['schedule', 'tomorrow', 'leave-by', 'bedtime', 'occasions'] as const) {
+      const t = new Date();
+      const p = { ...calendarPanels(ics, t, people), month: monthPanel(ics, t, people) };
+      for (const name of ['schedule', 'tomorrow', 'leave-by', 'bedtime', 'occasions', 'month'] as const) {
         const key = JSON.stringify(p[name]);
         if (key !== last[name]) { last[name] = key; publish(name, p[name]); }
       }

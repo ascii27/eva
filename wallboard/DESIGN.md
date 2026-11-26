@@ -56,6 +56,9 @@ Family-friendly events near home from Tokyo Cheapo. In the **active view only** 
 ## Week in review (ASC-36, drafted 2026-11-25)
 All of Sunday, the calm right column's list card becomes **This week**: per girl, a bar of the week's chores done, a warm word for how it went (never all or nothing), what's still open today, and her hanamaru homework as a stamp. A perfect week gets a star, a teal row and a one-time whole-screen confetti party; finishing late on Sunday still counts. Eva comments on the week in her bubble. Values and rules: `CLAUDE.md` "Week in review".
 
+## Month calendar (ASC-41, drafted 2026-11-26)
+Tap the **Today** card (calm or active view) for a full-screen sheet of the family calendar: a Monday-first month grid with today in a teal disc, each day's events as small chips in the person's avatar colour (neutral when it's for nobody or several people), and the tapped day's full list beside the grid. A Month/Week toggle; the week is seven columns on an hour grid. Last month, this month and next month only. Read-only: nothing is added, changed or removed from here. Close with the X or by tapping outside, like the Tokyo sheets. Mockup: `design/MonthCalendar.dc.html`; full spec in `CLAUDE.md` "Month calendar".
+
 ## Routine (decided 2026-11-15, `server/routine.ts`)
 - Leave for school: Mariko & Sarina, **7:55 every weekday** (Mon–Fri), even on school holidays in the calendar. The card shows in the 45 min before.
 - Bedtime: **20:30 Sun–Thu, 21:00 Fri–Sat**, as a "Bedtime" row in today's schedule, plus the same teal countdown card as the school run (moon icon, "in bed by 20:30") in the **30 min** before. They never overlap. It does **not** move night mode, which runs 22:00–06:00 (changed from 21:30–06:30 on 2026-11-18).

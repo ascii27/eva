@@ -102,6 +102,13 @@ Its shape is `WeatherPanel` in that file: now, today's high/low, a one-line
 outlook, `hourly` (every 3 h) and `daily` (the five days after today, for the
 calm card's tap-to-rotate faces).
 
+`month` is the server's too (ASC-41): every event in the family calendar from
+the 1st of last month to the end of next month, Tokyo days, for the month
+sheet. Each is `{date, start, end?, allDay?, title, who, icon}` (`start` is
+`H:MM`, or null all day); a multi-day all-day event repeats on each of its
+days. Calendar only: no school run or bedtime. Without `CALENDAR_URL` it is
+empty; with `DAY=off` the board shows a sample month (`dummyMonth`).
+
 `occasions` is the server's too: the nearest birthday in the calendar, the
 nearest major JP/US holiday and the nearest school event in the calendar, if
 any (`server/occasions.ts`). The countdown tile ("Coming up") rotates through
