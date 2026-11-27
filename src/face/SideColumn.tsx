@@ -1,12 +1,13 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Image, StyleSheet, Text, View } from 'react-native';
 import { hexToRgba } from './geometry';
 import type { FaceMode } from './types';
 import type { Staleness } from '../hermes/bundle';
 import type { SlackStatus } from '../slack/useSlack';
 import { CameraPreview } from '../vision/CameraPreview';
 import type { CameraHandle } from '../vision/camera';
+import { THUMBNAIL_FADE_MS } from '../vision/thumbnail';
 import { hhmm } from '../util/time';
 
 /** Per-mode "Last said" placeholder, from the design; real utterances override. */
@@ -38,6 +39,30 @@ export interface VisionProps {
 /** Design-unit size of the camera slot; fits the gap above TRANSCRIPT. */
 const CAM_W = 202;
 const CAM_H = 152;
+
+/**
+ * The last captured frame, held through its fade-out (ASC-50). When useVision
+ * clears the thumbnail, the image stays mounted just long enough to fade
+ * rather than vanish; a new capture snaps straight back to full opacity.
+ */
+function useFadingUri(uri: string | null): { shown: string | null; opacity: Animated.Value } {
+  const [shown, setShown] = useState(uri);
+  const opacity = useRef(new Animated.Value(uri ? 1 : 0)).current;
+  useEffect(() => {
+    if (uri) {
+      opacity.stopAnimation();
+      opacity.setValue(1);
+      setShown(uri);
+      return;
+    }
+    const fade = Animated.timing(opacity, { toValue: 0, duration: THUMBNAIL_FADE_MS, useNativeDriver: true });
+    fade.start(({ finished }) => {
+      if (finished) setShown(null);
+    });
+    return () => fade.stop();
+  }, [uri, opacity]);
+  return { shown, opacity };
+}
 
 interface SideColumnProps {
   mode: FaceMode;
@@ -97,6 +122,7 @@ export function SideColumn({
         : ` · picture ${Math.floor(bundle.ageMs / 60_000)}m old`
       : '';
   const dotLive = connection === 'connected';
+  const thumb = useFadingUri(vision?.thumbnailUri ?? null);
   return (
     <View style={[styles.root, { width, padding: 24 * k, paddingVertical: 26 * k }]}>
       <LinearGradient
@@ -130,8 +156,8 @@ export function SideColumn({
         </Text>
       </View>
 
-      {vision && (vision.previewing || vision.thumbnailUri) && (
-        <View style={{ gap: 6 * k, marginTop: 16 * k }}>
+      {vision && (vision.previewing || thumb.shown) && (
+        <Animated.View style={{ gap: 6 * k, marginTop: 16 * k, opacity: vision.previewing ? 1 : thumb.opacity }}>
           <Text style={[styles.sectionLabel, { fontSize: 9 * k, letterSpacing: 1.26 * k }]}>
             {vision.previewing ? 'LOOKING' : 'SAW'}
           </Text>
@@ -145,7 +171,7 @@ export function SideColumn({
             />
           ) : (
             <Image
-              source={{ uri: vision.thumbnailUri! }}
+              source={{ uri: thumb.shown! }}
               style={{
                 width: CAM_W * k,
                 height: CAM_H * k,
@@ -156,7 +182,7 @@ export function SideColumn({
               resizeMode="cover"
             />
           )}
-        </View>
+        </Animated.View>
       )}
 
       <View style={{ marginTop: 'auto', gap: 6 * k }}>
