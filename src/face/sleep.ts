@@ -60,13 +60,28 @@ export const WAKE_HOLD_MS = 30 * 60_000;
  */
 export type SleepRequest = { kind: 'asleep' } | { kind: 'awake'; until: number } | null;
 
-/** The phase once a spoken or hermes-sent request is taken into account. */
-export function requestedPhase(now: Date, busy: boolean, lastActive: number, request: SleepRequest): SleepPhase {
+/**
+ * The phase once a spoken or hermes-sent request is taken into account.
+ *
+ * `away` is presence (ASC-47): nobody has been at the desk for
+ * AWAY_SLEEP_MS, so she sleeps at any hour. It ranks below being told to stay
+ * up — that was an explicit instruction — and below a round, which means
+ * someone is talking to her whatever the camera thinks.
+ */
+export function requestedPhase(
+  now: Date,
+  busy: boolean,
+  lastActive: number,
+  request: SleepRequest,
+  away = false,
+): SleepPhase {
   if (busy) return 'awake';
   if (request?.kind === 'asleep') return 'asleep';
   if (request?.kind === 'awake') {
     if (now.getTime() < request.until) return 'awake';
+    if (away) return 'asleep';
     return sleepPhase(now, false, Math.max(lastActive, request.until));
   }
+  if (away) return 'asleep';
   return sleepPhase(now, false, lastActive);
 }

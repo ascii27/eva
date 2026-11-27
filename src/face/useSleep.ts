@@ -24,7 +24,16 @@ const TICK_MS = 15_000;
 /** The dev overlay can pin a phase to see it without waiting for 22:00. */
 export type SleepOverride = 'auto' | 'dim' | 'asleep';
 
-export function useSleep({ busy, override }: { busy: boolean; override: SleepOverride }) {
+export function useSleep({
+  busy,
+  override,
+  away = false,
+}: {
+  busy: boolean;
+  override: SleepOverride;
+  /** Presence (ASC-47): nobody at the desk long enough to sleep, at any hour. */
+  away?: boolean;
+}) {
   const lastActive = useRef(Date.now());
   const [now, setNow] = useState(() => Date.now());
   const [request, setRequest] = useState<SleepRequest>(null);
@@ -87,21 +96,31 @@ export function useSleep({ busy, override }: { busy: boolean; override: SleepOve
   const date = new Date(now);
   const night = isSleepyHour(date.getHours());
   const phase: SleepPhase =
-    override === 'auto' ? requestedPhase(date, busy, lastActive.current, request) : busy ? 'awake' : override;
+    override === 'auto' ? requestedPhase(date, busy, lastActive.current, request, away) : busy ? 'awake' : override;
   // Told to sleep by day is still asleep, screen and all; the backlight goes
   // back to the daytime level once she is woken and the request is gone.
   const toldAsleep = request?.kind === 'asleep';
+  // Asleep because nobody is there dims the screen by day too, the same way.
+  const awayAsleep = away && phase === 'asleep';
 
   // Lapsed requests drop out of the deps too, so the schedule takes over at
   // the edge on the next tick without anything else having to happen.
   const held = manualActive(manual, now) ? manual : null;
   useEffect(() => {
-    void applySleepBrightness(phase, night || override !== 'auto' || toldAsleep, held);
-  }, [phase, night, override, toldAsleep, held]);
+    void applySleepBrightness(phase, night || override !== 'auto' || toldAsleep || awayAsleep, held);
+  }, [phase, night, override, toldAsleep, awayAsleep, held]);
 
   /** For the overlay: what she was told, if anything is still in force. */
   const told =
-    pendingSleep ? 'sleep pending' : toldAsleep ? 'told to sleep' : request?.kind === 'awake' && now < request.until ? 'told to stay up' : null;
+    pendingSleep
+      ? 'sleep pending'
+      : toldAsleep
+        ? 'told to sleep'
+        : request?.kind === 'awake' && now < request.until
+          ? 'told to stay up'
+          : awayAsleep
+            ? 'nobody here'
+            : null;
 
   return { phase, poke, sleep, wake, told, setBrightness, held };
 }
