@@ -615,6 +615,8 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .mc-nav { margin-left: auto; display: flex; gap: 16px; }
 .mc-nav .round-btn[disabled] { opacity: .4; }
 .mc-body { flex: 1; min-height: 0; display: flex; gap: 32px; }
+.mc-body.is-in { animation: sd-fade-in .2s ease-out; }
+@media (prefers-reduced-motion:reduce){.mc-body.is-in{animation:none}}
 
 /* Month: six Monday-first weeks, always, so the grid never changes size. */
 .mc-grid { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 26px repeat(6, minmax(0, 1fr)); gap: 8px; }

@@ -1125,8 +1125,12 @@ function renderSheet() {
   const el = $('sheet');
   if (!sheet || view !== 'active') { el.hidden = true; el.innerHTML = ''; return; }
   const close = `<button type="button" class="round-btn sheet-x" data-action="sheet-close" aria-label="Close">${icon('close', 32, 2)}</button>`;
-  el.innerHTML = `<div class="sheet-back" data-action="sheet-close"></div><div class="sheet-card" role="dialog" aria-modal="true">${
-    sheet.kind === 'month' ? monthSheet(sheet, monthEntries(), todayKey()) : sheet.kind === 'detail' ? detailSheet() : browseSheet()}${close}</div>`;
+  const inner = `${sheet.kind === 'month' ? monthSheet(sheet, monthEntries(), todayKey()) : sheet.kind === 'detail' ? detailSheet() : browseSheet()}${close}`;
+  // Already open: swap only the card's contents, so the card stays put instead of
+  // replaying its slide-in on every tap and every panel update.
+  const card = el.hidden ? null : el.querySelector('.sheet-card');
+  if (card) card.innerHTML = inner;
+  else el.innerHTML = `<div class="sheet-back" data-action="sheet-close"></div><div class="sheet-card" role="dialog" aria-modal="true">${inner}</div>`;
   el.hidden = false;
 }
 
@@ -1158,6 +1162,8 @@ function monthTo(ym, day) {
 function monthAction(action, el) {
   if (sheet?.kind !== 'month') return;
   const today = todayKey();
+  const shown = () => (sheet.mode === 'week' ? `week ${sheet.day}` : `month ${sheet.ym}`);
+  const before = shown();
   if (action === 'mc-mode') {
     sheet.mode = el.dataset.mode === 'week' ? 'week' : 'month';
     if (sheet.mode === 'month') monthTo(sheet.day.slice(0, 7), sheet.day);
@@ -1175,6 +1181,8 @@ function monthAction(action, el) {
     } else monthTo(stepMonth(sheet.ym, dir, today));
   }
   renderSheet();
+  // A new month, week or mode fades in under the head row; picking a day in the shown month just updates.
+  if (shown() !== before) $('sheet').querySelector('.mc-body')?.classList.add('is-in');
 }
 
 function detailSheet() {
