@@ -1,6 +1,15 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import type { Photo } from '../../../vision/photos';
-import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type ToolConfig, type VisionHandles } from '../index';
+import {
+  buildToolKit,
+  type BatteryHandles,
+  type DeskHandles,
+  type ErrandHandles,
+  type LightHandles,
+  type ScreenHandles,
+  type ToolConfig,
+  type VisionHandles,
+} from '../index';
 
 /** Both handles, so a test can override only the one it is about. */
 const stubErrands = (over: Partial<ErrandHandles> = {}): ErrandHandles => ({
@@ -422,5 +431,91 @@ describe('device_battery', () => {
     const broken: BatteryHandles = { read: async () => Promise.reject(new Error('boom')) };
     expect((await buildToolKit({ ...WITHOUT_SEARCH, battery: broken }).run(call)).message.content).toMatch(/^Error.*boom/);
     expect((await buildToolKit(WITHOUT_SEARCH).run(call)).message.content).toMatch(/^Error/);
+  });
+});
+
+describe('screen tools', () => {
+  const stubScreen = (current: number | null = 0.6) => {
+    const set = jest.fn(async (level: number) => ({ before: current, after: level, until: new Date(2026, 10, 27, 22).getTime() }));
+    const screen: ScreenHandles = { read: async () => current, set };
+    return { screen, set };
+  };
+  const setCall = (args: object) => ({ id: 'c', name: 'set_screen_brightness', arguments: JSON.stringify(args) });
+
+  it('are offered only on a build that can set brightness', () => {
+    expect(names(WITHOUT_SEARCH)).not.toContain('set_screen_brightness');
+    const n = names({ ...WITHOUT_SEARCH, screen: stubScreen().screen });
+    expect(n).toEqual(expect.arrayContaining(['screen_brightness', 'set_screen_brightness']));
+  });
+
+  it('reads the level', async () => {
+    const { screen } = stubScreen(0.42);
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, screen }).run({ id: 'c', name: 'screen_brightness', arguments: '' });
+    expect(message.content).toBe("The desk phone's screen is at 42 percent brightness.");
+  });
+
+  it('sets a level without asking, and reports before and after', async () => {
+    const onConsent = jest.fn(async () => false);
+    const { screen, set } = stubScreen(0.6);
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, screen }).run(setCall({ level: 20 }), { onConsent });
+    expect(set).toHaveBeenCalledWith(0.2);
+    expect(message.content).toMatch(/was 60 percent and is now at 20 percent/);
+    expect(onConsent).not.toHaveBeenCalled();
+  });
+
+  it('steps from the current level when given only a direction', async () => {
+    const { screen, set } = stubScreen(0.6);
+    await buildToolKit({ ...WITHOUT_SEARCH, screen }).run(setCall({ adjust: 'dimmer' }));
+    expect(set).toHaveBeenCalledWith(0.3);
+  });
+
+  it('prefers a level over a direction', async () => {
+    const { screen, set } = stubScreen(0.6);
+    await buildToolKit({ ...WITHOUT_SEARCH, screen }).run(setCall({ level: 90, adjust: 'dimmer' }));
+    expect(set).toHaveBeenCalledWith(0.9);
+  });
+
+  it('errors on nonsense rather than guessing', async () => {
+    const { screen, set } = stubScreen();
+    const kit = buildToolKit({ ...WITHOUT_SEARCH, screen });
+    expect((await kit.run(setCall({}))).message.content).toMatch(/^Error.*level or a direction/);
+    expect((await kit.run(setCall({ level: 400 }))).message.content).toMatch(/^Error.*percent/);
+    expect(set).not.toHaveBeenCalled();
+    const blind = stubScreen(null).screen;
+    expect((await buildToolKit({ ...WITHOUT_SEARCH, screen: blind }).run(setCall({ adjust: 'brighter' }))).message.content).toMatch(/^Error/);
+  });
+
+  it('never throws, and reports a set that did not take', async () => {
+    const broken: ScreenHandles = { read: async () => 0.5, set: async () => Promise.reject(new Error('boom')) };
+    expect((await buildToolKit({ ...WITHOUT_SEARCH, screen: broken }).run(setCall({ level: 10 }))).message.content).toMatch(/^Error.*boom/);
+    const failed: ScreenHandles = { read: async () => 0.5, set: async () => ({ before: 0.5, after: null, until: 0 }) };
+    expect((await buildToolKit({ ...WITHOUT_SEARCH, screen: failed }).run(setCall({ level: 10 }))).message.content).toMatch(/^Error/);
+    expect((await buildToolKit(WITHOUT_SEARCH).run(setCall({ level: 10 }))).message.content).toMatch(/^Error/);
+  });
+});
+
+describe('room_light', () => {
+  const call = { id: 'c', name: 'room_light', arguments: '' };
+
+  it('is offered only where there is a camera', () => {
+    expect(names(WITHOUT_SEARCH)).not.toContain('room_light');
+    const light: LightHandles = { measure: async () => ({ error: 'x' }) };
+    expect(names({ ...WITHOUT_SEARCH, light })).toContain('room_light');
+  });
+
+  it('measures without the spoken gate, but may raise the iOS permission dialog', async () => {
+    const onConsent = jest.fn(async () => false);
+    const measure = jest.fn(async (_mayAsk: boolean) => ({ reading: { lux: 3, band: 'dark' as const, at: Date.now() } }));
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, light: { measure } }).run(call, { onConsent });
+    expect(message.content).toMatch(/^The room at the desk is dark, about 3 lux/);
+    expect(measure).toHaveBeenCalledWith(true);
+    expect(onConsent).not.toHaveBeenCalled();
+  });
+
+  it('passes a meter failure on as an error, and never throws', async () => {
+    const busy: LightHandles = { measure: async () => ({ error: 'the camera is in use right now.' }) };
+    expect((await buildToolKit({ ...WITHOUT_SEARCH, light: busy }).run(call)).message.content).toBe('Error: the camera is in use right now.');
+    const broken: LightHandles = { measure: async () => Promise.reject(new Error('boom')) };
+    expect((await buildToolKit({ ...WITHOUT_SEARCH, light: broken }).run(call)).message.content).toMatch(/^Error.*boom/);
   });
 });

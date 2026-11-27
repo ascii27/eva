@@ -49,6 +49,7 @@ it with a different `baseUrl` and two headers.
 - `skills/eva-desk-sleep/` — the `[[sleep]]` / `[[wake]]` directives that put the desk face to sleep or wake it.
 - `skills/eva-desk-camera/` — the `[[look]]` request: asking to see through the desk camera, which the device always gates on a spoken yes (ASC-43). On the hermes brain the same rule rides in `DESK_PREAMBLE`; this skill is for asking over Slack.
 - `skills/eva-desk-battery/` — the `[[battery]]` request: hermes reads the desk phone's battery and charging state, answered by the desk in Slack (ASC-45).
+- `skills/eva-desk-light/` — the `[[light]]` and `[[brightness]]` tokens: hermes measures the room's light through the desk camera (as a meter only) and reads or sets the screen brightness, answered by the desk in Slack (ASC-46).
 
 ## Where the contract actually lives
 

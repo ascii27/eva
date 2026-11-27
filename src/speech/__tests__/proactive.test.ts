@@ -353,3 +353,30 @@ describe('receive battery requests', () => {
     expect(r.batteryRequest).toBe(false);
   });
 });
+
+describe('receive light and brightness requests', () => {
+  it('reports both, with nothing to speak and the face not woken', () => {
+    const r = receive(msg({ ts: '100.1', text: `<@${BOT}> [[light]] [[brightness]]` }), NOW, BOT, {});
+    expect(r.lightRequest).toBe(true);
+    expect(r.brightness).toEqual({ kind: 'read' });
+    expect(r.item).toBeNull();
+  });
+
+  it('carries a set alongside words that are spoken', () => {
+    const r = receive(msg({ ts: '100.1', text: `<@${BOT}> Bedtime soon. [[brightness 10]]` }), NOW, BOT, {});
+    expect(r.brightness).toEqual({ kind: 'set', percent: 10 });
+    expect(r.item?.text).toBe('Bedtime soon.');
+  });
+
+  it('treats a tool echo quoting the tokens as noise, not a request', () => {
+    const r = receive(msg({ ts: '100.1', text: `:bulb: skill_view eva-desk-light <@${BOT}> [[light]] [[brightness 5]]` }), NOW, BOT, {});
+    expect(r.lightRequest).toBe(false);
+    expect(r.brightness).toBeNull();
+  });
+
+  it('ignores tokens in a thread that is not ours', () => {
+    const r = receive(msg({ ts: '100.1', text: '[[light]] [[brightness 5]]' }), NOW, BOT, {});
+    expect(r.lightRequest).toBe(false);
+    expect(r.brightness).toBeNull();
+  });
+});

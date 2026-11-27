@@ -35,7 +35,7 @@ import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage } fr
 import { addSpend, emptySpend, formatSpend, type Spend } from './spend';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
 import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from './store';
-import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type ToolKit, type VisionHandles } from './tools';
+import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type LightHandles, type ScreenHandles, type ToolKit, type VisionHandles } from './tools';
 
 /**
  * A local round should feel immediate; anything this slow has gone wrong rather
@@ -98,6 +98,10 @@ export interface UseAgentOptions {
   desk?: DeskHandles | null;
   /** Battery handles for device_battery, or null on a build without expo-battery. */
   battery?: BatteryHandles | null;
+  /** Screen handles for screen_brightness / set_screen_brightness, or null without expo-brightness. */
+  screen?: ScreenHandles | null;
+  /** Light meter for room_light, or null on a build with no camera. */
+  light?: LightHandles | null;
   /** Photo bytes by id, for the request. Null from it means aged out. */
   resolvePhoto?: PhotoResolver;
   /**
@@ -122,6 +126,8 @@ export function useAgent({
   errands = null,
   desk = null,
   battery = null,
+  screen = null,
+  light = null,
   resolvePhoto,
   bundleText,
 }: UseAgentOptions = {}) {
@@ -130,7 +136,7 @@ export function useAgent({
   const config = useRef<AgentConfig | null>(null);
   // Built once at bring-up, never per turn: the specs are part of OpenAI's
   // cached prefix, so a list that moved between turns would cost the discount.
-  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands, desk, battery }));
+  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands, desk, battery, screen, light }));
   if (__DEV__ && !toolsLogged) {
     toolsLogged = true;
     // What Eva is actually offered. Worth printing: "she says she can't do

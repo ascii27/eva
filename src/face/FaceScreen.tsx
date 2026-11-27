@@ -21,7 +21,7 @@ import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../round/speakable';
 import type { AskOptions, AskResult } from '../round/ask';
-import { readDirective, wantsLook, type DeskDirective } from '../round/directives';
+import { readBrightness, readDirective, wantsLook, type DeskDirective } from '../round/directives';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { initKokoro, type TtsEngineState } from '../speech/kokoro';
 import { FOLLOWUP_WINDOW_MS } from '../speech/conversation';
@@ -57,7 +57,11 @@ import type { DeskHandles } from '../agent/tools';
 import { useSleep, SleepOverride } from './useSleep';
 import { useBattery } from '../device/useBattery';
 import { batteryReport } from '../device/battery';
-import { canDim } from './brightness';
+import { canDim, readScreenBrightness } from './brightness';
+import { useLightMeter } from '../device/useLightMeter';
+import { LightMeter } from '../device/LightMeter';
+import { brightnessReport, changeLog, levelFromPercent, lightReport, percent, screenStatusLine, type BrightnessChange } from '../device/screen';
+import type { BrightnessToken } from '../round/directives';
 import { hhmm } from '../util/time';
 
 const TRIPLE_TAP_WINDOW_MS = 800;
@@ -159,7 +163,11 @@ export function FaceScreen() {
   // Slack listener and the ask wrapper all need to reach it, and the tool kit
   // captures its handles once at bring-up. So everything goes through a ref,
   // and the handles below never change identity.
-  const sleepRef = useRef<DeskHandles>({ sleep: () => {}, wake: () => {} });
+  const sleepRef = useRef<DeskHandles & { setBrightness(level: number): Promise<BrightnessChange> }>({
+    sleep: () => {},
+    wake: () => {},
+    setBrightness: async () => ({ before: null, after: null, until: 0 }),
+  });
   const desk = useRef<DeskHandles>({
     sleep: () => sleepRef.current.sleep(),
     wake: () => sleepRef.current.wake(),
@@ -171,6 +179,33 @@ export function FaceScreen() {
       else desk.wake();
     },
     [desk, log],
+  );
+
+  // Screen brightness (ASC-46): Eva and hermes set it freely, and every change
+  // is logged as before → after. Through sleepRef for the same reason as
+  // `desk` — useSleep owns the level it holds.
+  const setBrightness = useCallback(
+    async (level: number, from: string): Promise<BrightnessChange> => {
+      const change = await sleepRef.current.setBrightness(level);
+      log(`desk · screen ${changeLog(change)} (${from})`);
+      return change;
+    },
+    [log],
+  );
+  const screenHandles = useMemo(
+    () => (canDim() ? { read: readScreenBrightness, set: (level: number) => setBrightness(level, 'eva') } : null),
+    [setBrightness],
+  );
+
+  /** A `[[brightness …]]` from hermes: act on it, and say what happened back in Slack. */
+  const applyBrightnessToken = useCallback(
+    async (t: BrightnessToken, from: string): Promise<string> => {
+      if (t.kind === 'invalid') return brightnessReport(t);
+      if (t.kind === 'read') return brightnessReport({ kind: 'read', level: await readScreenBrightness() });
+      const level = levelFromPercent(t.percent) as number;
+      return brightnessReport({ kind: 'set', change: await setBrightness(level, from) });
+    },
+    [setBrightness],
   );
 
   // useSlack mounts before useEcho; the ref bridges tool activity to it.
@@ -247,6 +282,19 @@ export function FaceScreen() {
       if (r.batteryRequest) {
         log('desk · battery requested (hermes)');
         void battery.read().then((reading) => slackRef.current.tell(batteryReport(reading)));
+      }
+      // The screen and the room (ASC-46), answered the same way. A light
+      // reading turns the camera on for a second but never asks permission:
+      // nobody may be in the room to answer a dialog.
+      if (r.brightness) {
+        void applyBrightnessToken(r.brightness, 'hermes').then((line) => slackRef.current.tell(line));
+      }
+      if (r.lightRequest) {
+        log('desk · light requested (hermes)');
+        void (async () => {
+          const result = await lightRef.current.measure(false);
+          slackRef.current.tell(lightReport(result, await readScreenBrightness(), Date.now()));
+        })();
       }
     },
     onIssue: log,
@@ -361,6 +409,18 @@ export function FaceScreen() {
   // whether there is a camera has to be known by then.
   const vision = useVision({ onIssue: log });
 
+  // The front camera as a light meter (ASC-46): no photo kept, no consent ask.
+  // It stands down while camera_look's viewfinder holds the camera.
+  const previewingRef = useRef(false);
+  previewingRef.current = vision.state.previewing;
+  const lightMeter = useLightMeter({ cameraBusy: () => previewingRef.current, onIssue: log });
+  const lightRef = useRef(lightMeter);
+  lightRef.current = lightMeter;
+  const lightHandles = useMemo(
+    () => (lightMeter.available ? { measure: (mayAsk: boolean) => lightRef.current.measure(mayAsk) } : null),
+    [lightMeter.available],
+  );
+
   // What Eva's other half last sent down about the week. Mounted before
   // useAgent for the same reason vision is — it hands `bundleText` into the
   // round. Nothing is fetched on a timer; see the note at the top of useBundle.
@@ -407,6 +467,9 @@ export function FaceScreen() {
     desk,
     battery: batteryHandles,
     batteryReading: battery.last,
+    screen: screenHandles,
+    light: lightHandles,
+    screenStatus: async () => screenStatusLine(await readScreenBrightness(), lightRef.current.lastReading(), Date.now()),
   };
 
   const agent = useAgent(brainOptions);
@@ -443,6 +506,9 @@ export function FaceScreen() {
       const result = await ask(text, opts);
       const d = result.kind === 'reply' ? readDirective(result.raw) : null;
       if (d) applyDirective(d, brainRef.current);
+      // hermes answering the turn sets the screen with a token, not a tool.
+      const b = result.kind === 'reply' ? readBrightness(result.raw) : null;
+      if (b?.kind === 'set') void applyBrightnessToken(b, brainRef.current);
       return result;
     };
 
@@ -698,6 +764,7 @@ export function FaceScreen() {
   const sleepLabel =
     `${sleepOverride === 'auto' ? 'auto' : `pinned ${sleepOverride}`} · ${sleep.phase}` +
     (sleep.told && sleepOverride === 'auto' ? ` · ${sleep.told}` : '') +
+    (sleep.held ? ` · screen held at ${percent(sleep.held.level)}% till ${hhmm(sleep.held.until)}` : '') +
     (canDim() ? '' : ' · no dimming in this build');
 
   // Manual mode picks abandon any in-flight speech round, like the design's pick().
@@ -801,6 +868,7 @@ export function FaceScreen() {
 
       {/* On the face itself, not only in the side column, which can be off. */}
       {vision.state.previewing && fontsLoaded && <CameraBadge eyeColor={eyeColor} k={k} right={colW} />}
+      {lightMeter.metering && <LightMeter onReady={lightMeter.onReady} />}
 
       <Pressable style={styles.hotspot} onPress={onHotspotTap} />
 

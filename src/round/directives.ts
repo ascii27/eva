@@ -3,7 +3,7 @@
 // hermes has no tools on the device: when it answers a turn (the hermes and
 // Slack brains) or speaks first (a proactive Slack message), the only thing it
 // can hand down is text. So the face's few commands ride inside that text as
-// tokens — `[[sleep]]`, `[[wake]]`, `[[look]]`, `[[battery]]` — which speakableFromMrkdwn
+// tokens — `[[sleep]]`, `[[wake]]`, `[[look]]`, `[[battery]]`, `[[light]]`, `[[brightness N]]` — which speakableFromMrkdwn
 // strips before anything reaches the speaker. The local brains use real tools
 // instead (go_to_sleep / wake_up / camera_look); this is the same capability
 // for the half that can't.
@@ -14,7 +14,7 @@
 export type DeskDirective = 'sleep' | 'wake';
 
 /** Every token the device acts on — and therefore strips from speech. */
-export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery)\s*\]\]/gi;
+export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery|light|brightness(?:\s*[:=]?\s*[^\]]*)?)\s*\]\]/gi;
 
 /**
  * The sleep/wake directive a message carries, or null. When one message
@@ -56,4 +56,40 @@ export function wantsLook(raw: string): boolean {
 export function asksForBattery(raw: string): boolean {
   for (const m of raw.matchAll(DIRECTIVE_RE)) if (m[1].toLowerCase() === 'battery') return true;
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// The screen and the room (ASC-46). `[[light]]` asks for a light-meter
+// reading, answered in Slack exactly like `[[battery]]`. `[[brightness]]` asks
+// for the screen's level; `[[brightness 30]]` sets it to 30 percent — a
+// command, so it is also honoured inside a hermes-brain reply, and the desk
+// reports the change back either way.
+
+/** True when a message asks the desk for a light reading. */
+export function asksForLight(raw: string): boolean {
+  for (const m of raw.matchAll(DIRECTIVE_RE)) if (m[1].toLowerCase() === 'light') return true;
+  return false;
+}
+
+export type BrightnessToken = { kind: 'read' } | { kind: 'set'; percent: number } | { kind: 'invalid' };
+
+const BRIGHTNESS_RE = /\[\[\s*brightness\s*(?:[:=]?\s*([^\]]*?))?\s*\]\]/gi;
+
+/**
+ * The brightness token a message carries, or null. A level that isn't a
+ * percent from 0 to 100 is `invalid` rather than ignored, so hermes hears that
+ * it got the token wrong instead of silence. The last one wins, as with sleep.
+ */
+export function readBrightness(raw: string): BrightnessToken | null {
+  let last: BrightnessToken | null = null;
+  for (const m of raw.matchAll(BRIGHTNESS_RE)) {
+    const arg = (m[1] ?? '').trim();
+    if (!arg) {
+      last = { kind: 'read' };
+      continue;
+    }
+    const n = Number(arg.replace(/%$/, '').trim());
+    last = Number.isFinite(n) && n >= 0 && n <= 100 ? { kind: 'set', percent: n } : { kind: 'invalid' };
+  }
+  return last;
 }
