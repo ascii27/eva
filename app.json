@@ -17,7 +17,7 @@
         "UIRequiresFullScreen": true,
         "NSSpeechRecognitionUsageDescription": "Eva transcribes your speech on-device; audio never leaves this iPhone.",
         "NSMicrophoneUsageDescription": "Eva listens for your voice so you can talk to her hands-free.",
-        "NSCameraUsageDescription": "Eva takes a photo only after asking you out loud and hearing you agree.",
+        "NSCameraUsageDescription": "Eva checks on this iPhone whether someone is at the desk, keeping no images, and takes a photo only after asking you out loud and hearing you agree.",
         "NSLocationWhenInUseUsageDescription": "Eva uses your location only to know which town she is in. Only the town is kept, never your exact location.",
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -36,7 +36,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Eva takes a photo only after asking you out loud and hearing you agree.",
+          "cameraPermission": "Eva checks on this iPhone whether someone is at the desk, keeping no images, and takes a photo only after asking you out loud and hearing you agree.",
           "recordAudioAndroid": false
         }
       ],

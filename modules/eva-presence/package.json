@@ -1,0 +1,9 @@
+{
+  "name": "eva-presence",
+  "version": "1.0.0",
+  "description": "On-device presence for Eva: Apple Vision face counting on the front camera. Only a count leaves native code.",
+  "license": "MIT",
+  "author": "Michael Galloway",
+  "homepage": "https://github.com/ascii27/eva",
+  "private": true
+}

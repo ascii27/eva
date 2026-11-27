@@ -106,6 +106,10 @@ interface DevControlsProps {
   /** Night sleep (ASC-33): auto, or pinned to dim / asleep to see it now. */
   sleepLabel: string;
   onCycleSleep: () => void;
+  /** Presence (ASC-47): the camera watching for whether anyone is at the desk. */
+  presenceEnabled: boolean;
+  presenceLabel: string;
+  onTogglePresence: () => void;
   updateLabel: string;
   /** Fetch and reload into a new update now; says so when there is none. */
   onCheckUpdate: () => void;
@@ -293,6 +297,15 @@ export function DevControls(props: DevControlsProps) {
           <View style={styles.row}>
             {/* Pinned phases still give way to a round, like the real night. */}
             <Btn eyeColor={eyeColor} label="Sleep" sub={props.sleepLabel} onPress={props.onCycleSleep} />
+          </View>
+          <View style={styles.row}>
+            <Btn
+              eyeColor={eyeColor}
+              label="Presence"
+              sub={props.presenceLabel}
+              active={props.presenceEnabled}
+              onPress={props.onTogglePresence}
+            />
           </View>
           {props.errandsInFlight !== null && (
             <Text style={styles.note}>

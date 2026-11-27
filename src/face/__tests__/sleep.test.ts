@@ -145,4 +145,14 @@ describe('requestedPhase', () => {
     expect(requestedPhase(at('23:32'), false, t, request)).toBe('dim');
     expect(requestedPhase(at('23:41'), false, t, request)).toBe('asleep');
   });
+
+  it('nobody at the desk is asleep at any hour, but a round or a stay-up wins', () => {
+    const t = at('14:00').getTime();
+    expect(requestedPhase(at('14:00'), false, t, null, true)).toBe('asleep');
+    expect(requestedPhase(at('14:00'), true, t, null, true)).toBe('awake');
+    const hold = { kind: 'awake' as const, until: t + WAKE_HOLD_MS };
+    expect(requestedPhase(at('14:10'), false, t, hold, true)).toBe('awake');
+    expect(requestedPhase(at('14:31'), false, t, hold, true)).toBe('asleep');
+    expect(requestedPhase(at('14:00'), false, t, null, false)).toBe('awake');
+  });
 });

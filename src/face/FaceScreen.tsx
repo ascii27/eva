@@ -48,6 +48,11 @@ import { useOtaUpdates } from '../updates/useOtaUpdates';
 import { useVision } from '../vision/useVision';
 import { CameraBadge } from '../vision/CameraBadge';
 import { useResumeKey } from './useResumeKey';
+import { usePresence } from '../presence/usePresence';
+import { PresenceBadge } from '../presence/PresenceBadge';
+import { greetingFor } from '../presence/presence';
+import { readWatchCommand, watchReply } from '../presence/command';
+import { isPresenceAvailable } from '../presence/native';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
@@ -74,6 +79,7 @@ const NOISE_FILTER_KEY = 'eva.noiseFilter.v1';
 const CONV_ENABLED_KEY = 'eva.convEnabled.v1';
 const ASIDES_ENABLED_KEY = 'eva.asidesEnabled.v1';
 const PROACTIVE_ENABLED_KEY = 'eva.proactiveEnabled.v1';
+const PRESENCE_ENABLED_KEY = 'eva.presenceEnabled.v1';
 const BRAIN_LOCAL_KEY = 'eva.brainLocal.v1';
 /** More than two brains, so the old boolean key is migrated once. */
 const BRAIN_KEY = 'eva.brain.v2';
@@ -403,6 +409,19 @@ export function FaceScreen() {
     });
   }, []);
 
+  // Presence (ASC-47): the camera watches for whether anyone is at the desk.
+  // A standing yes, so default on; "stop watching" turns it off and it stays
+  // off, across launches, until he says otherwise. Starts false so nothing
+  // runs before the stored choice is read — off must never flash on.
+  const [presenceEnabled, setPresenceEnabledState] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(PRESENCE_ENABLED_KEY).then((v) => setPresenceEnabledState(v !== '0'));
+  }, []);
+  const setPresenceEnabled = useCallback((on: boolean) => {
+    setPresenceEnabledState(on);
+    void AsyncStorage.setItem(PRESENCE_ENABLED_KEY, on ? '1' : '0');
+  }, []);
+
   // Which brain answers: the local chat loop (default), the realtime session,
   // or the remote Eva over Slack. Kept switchable so they can be compared on
   // the same device — and because Slack is still the only route to Eva's real
@@ -561,6 +580,24 @@ export function FaceScreen() {
       return hermesRef.current.see(result.raw, opts, text);
     };
 
+  /**
+   * "Stop watching" is answered here, before any brain hears it: the promise
+   * is that he can turn the camera off by voice at any time, on every brain,
+   * without depending on a model choosing to call a tool (command.ts).
+   */
+  const withWatchCommand =
+    (ask: (text: string, opts?: AskOptions) => Promise<AskResult>) =>
+    async (text: string, opts?: AskOptions): Promise<AskResult> => {
+      const cmd = readWatchCommand(text);
+      if (!cmd) return ask(text, opts);
+      const available = isPresenceAvailable();
+      if (available) setPresenceEnabled(cmd === 'start');
+      log(`presence · ${cmd === 'stop' ? 'stopped watching' : 'watching again'} (asked)`);
+      const line = watchReply(cmd, available);
+      const t = Date.now();
+      return { kind: 'reply', raw: line, speakable: line, postedAt: t, replyAt: t };
+    };
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -578,18 +615,18 @@ export function FaceScreen() {
       brain === 'local'
         ? agent.status === 'unconfigured'
           ? undefined
-          : withDirectives(agent.ask)
+          : withWatchCommand(withDirectives(agent.ask))
         : brain === 'realtime'
           ? realtime.status === 'unconfigured'
             ? undefined
-            : withDirectives(realtime.ask)
+            : withWatchCommand(withDirectives(realtime.ask))
           : brain === 'hermes'
             ? hermesBrain.status === 'unconfigured'
               ? undefined
-              : withDirectives(hermesBrain.ask)
+              : withWatchCommand(withDirectives(hermesBrain.ask))
             : slack.status === 'unpaired'
               ? undefined
-              : withLook(withDirectives((text: string) => slack.ask(text, activeThread.current ?? undefined))),
+              : withWatchCommand(withLook(withDirectives((text: string) => slack.ask(text, activeThread.current ?? undefined)))),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -784,12 +821,51 @@ export function FaceScreen() {
   // minutes. Anything under way keeps her awake — a round, the overlay — and a
   // touch anywhere brightens her for a minute. The face stays 'idle' while she
   // sleeps, so the wake word still reaches her.
+  // Presence (ASC-47). Someone sitting down wakes her, and after a real
+  // absence she greets them — unless the room is busy, she is mid-round, or
+  // proactive speech is off. It steps aside while camera_look's viewfinder
+  // (or the light meter) needs the front camera.
+  const pokeRef = useRef<() => void>(() => {});
+  const lastGreetAt = useRef<number | null>(null);
+  const presence = usePresence({
+    enabled: presenceEnabled,
+    // Both camera_look's viewfinder and ASC-46's light meter need the front
+    // camera to themselves; presence steps aside for either.
+    paused: vision.state.previewing || lightMeter.metering,
+    onIssue: log,
+    onArrive: (awayMs, busy) => {
+      pokeRef.current();
+      const now = new Date();
+      const line = greetingFor({ awayMs, busy, now, lastGreetAt: lastGreetAt.current });
+      log(`presence · someone sat down after ${Math.round(awayMs / 60_000)}m${busy ? ' (busy room)' : ''}`);
+      if (!line || !proactiveRef.current || mode !== 'idle' || echoBusy) return;
+      lastGreetAt.current = now.getTime();
+      startRound(() => echoRef.current.announce(line));
+    },
+  });
+
   const [sleepOverride, setSleepOverride] = useState<SleepOverride>('auto');
-  const sleep = useSleep({ busy: mode !== 'idle' || echoBusy || devVisible, override: sleepOverride });
+  const sleep = useSleep({
+    busy: mode !== 'idle' || echoBusy || devVisible,
+    override: sleepOverride,
+    away: presence.away,
+  });
+  pokeRef.current = sleep.poke;
   sleepRef.current = sleep;
   const cycleSleep = useCallback(() => {
     setSleepOverride((o) => (o === 'auto' ? 'dim' : o === 'dim' ? 'asleep' : 'auto'));
   }, []);
+  const presenceLabel = !presence.available
+    ? 'not in this build'
+    : !presenceEnabled
+      ? 'off'
+      : presence.status !== 'running'
+        ? presence.status
+        : presence.away
+          ? 'nobody — asleep'
+          : presence.here
+            ? `${presence.faces} face${presence.faces === 1 ? '' : 's'} · here${presence.busy ? ' · busy' : ''}`
+            : `${presence.faces} face${presence.faces === 1 ? '' : 's'} · nobody`;
   const sleepLabel =
     `${sleepOverride === 'auto' ? 'auto' : `pinned ${sleepOverride}`} · ${sleep.phase}` +
     (sleep.told && sleepOverride === 'auto' ? ` · ${sleep.told}` : '') +
@@ -898,6 +974,9 @@ export function FaceScreen() {
       {/* On the face itself, not only in the side column, which can be off. */}
       {vision.state.previewing && fontsLoaded && <CameraBadge eyeColor={eyeColor} k={k} right={colW} />}
       {lightMeter.metering && <LightMeter onReady={lightMeter.onReady} />}
+
+      {/* The camera is running, so the face says so (ASC-47). */}
+      {presence.watching && fontsLoaded && <PresenceBadge eyeColor={eyeColor} k={k} right={colW} />}
 
       <Pressable style={styles.hotspot} onPress={onHotspotTap} />
 
@@ -1010,6 +1089,9 @@ export function FaceScreen() {
           errandsInFlight={errands.configured ? errands.inFlight : null}
           sleepLabel={sleepLabel}
           onCycleSleep={cycleSleep}
+          presenceEnabled={presenceEnabled}
+          presenceLabel={presenceLabel}
+          onTogglePresence={() => setPresenceEnabled(!presenceEnabled)}
           updateLabel={updates.label}
           onCheckUpdate={() => void updates.checkNow()}
           slackStatus={slack.status}
