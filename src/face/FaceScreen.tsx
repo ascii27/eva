@@ -47,6 +47,7 @@ import {
 import { useOtaUpdates } from '../updates/useOtaUpdates';
 import { useVision } from '../vision/useVision';
 import { CameraBadge } from '../vision/CameraBadge';
+import { useResumeKey } from './useResumeKey';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
@@ -731,12 +732,16 @@ export function FaceScreen() {
     }
   }, []);
 
+  // Rebuild the canvas after any trip out of the foreground; see useResumeKey.
+  const faceKey = useResumeKey();
+
   const colW = colOn ? SIDE_COLUMN_W * k : 0;
   const faceW = width - colW;
 
   return (
     <View style={styles.root} onTouchStart={sleep.poke}>
       <Face
+        key={faceKey}
         mode={mode}
         eyeColor={eyeColor}
         output={output}
