@@ -288,3 +288,41 @@ describe('receive directives', () => {
     expect(r.directive).toBe('sleep');
   });
 });
+
+describe('receive look requests (ASC-43)', () => {
+  it('flags a look request and keeps its question as the words to speak', () => {
+    const r = receive(msg({ ts: '7.0', text: `<@${BOT}> Mind if I take a look at your desk? [[look]]` }), NOW, BOT, {});
+    expect(r.item?.look).toBe(true);
+    expect(r.item?.text).toBe('Mind if I take a look at your desk?');
+    // A look is a request, never a sleep state.
+    expect(r.directive).toBeNull();
+  });
+
+  it('queues a bare token with nothing to say — the gate asks in its own words', () => {
+    const r = receive(msg({ ts: '7.0', text: `<@${BOT}> [[look]]` }), NOW, BOT, {});
+    expect(r.item).toEqual({ ts: '7.0', threadTs: '7.0', text: '', at: NOW, look: true });
+  });
+
+  it('leaves ordinary messages unflagged', () => {
+    const r = receive(msg({ ts: '7.0', text: `<@${BOT}> Your package has arrived.` }), NOW, BOT, {});
+    expect(r.item?.look).toBeUndefined();
+  });
+
+  it('ignores a look in a message not addressed to us', () => {
+    const r = receive(msg({ ts: '7.0', text: 'can I see? [[look]]' }), NOW, BOT, {});
+    expect(r.item).toBeNull();
+  });
+
+  it('carries sleep alongside look when one message asks for both', () => {
+    const r = receive(msg({ ts: '7.0', text: `<@${BOT}> One look before bed? [[look]] [[sleep]]` }), NOW, BOT, {});
+    expect(r.item?.look).toBe(true);
+    expect(r.directive).toBe('sleep');
+  });
+});
+
+describe('receive look requests from tool noise', () => {
+  it('never treats a tool echo as a request', () => {
+    const r = receive(msg({ ts: '8.0', text: `:computer: terminal [[look]]` }), NOW, BOT, { '8.0': NOW });
+    expect(r.item).toBeNull();
+  });
+});

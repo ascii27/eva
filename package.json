@@ -46,6 +46,7 @@
     "probe:action": "node scripts/probe-action.ts",
     "probe:errand": "node scripts/probe-errand.ts",
     "probe:hermes": "node scripts/probe-hermes.ts",
+    "probe:hermes-vision": "node scripts/probe-hermes-vision.ts",
     "probe:realtime": "node scripts/probe-realtime.ts",
     "probe:tavily": "node scripts/probe-tavily.ts",
     "probe:tools": "node scripts/probe-tools.ts",

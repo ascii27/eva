@@ -78,6 +78,12 @@ Omit any section you have nothing to say about — leaving it out means "I wasn'
  * 8/8 correct at ~1.2s, and no token on unrelated turns. The skill remains for
  * hermes deciding on its own, over Slack, where this preamble never reaches.
  *
+ * The camera paragraph (ASC-43) is here for the same reason as the sleep one:
+ * a desk-turn rule belongs in the preamble, not a skill. hermes cannot call
+ * camera_look — client tools are ignored on this server — so it asks with a
+ * `[[look]]` token and useHermes runs the spoken gate on its behalf. Its
+ * hit rate is measured by `npm run probe:hermes-vision`.
+ *
  * Sent on *every* turn rather than once per transcript. It is small against a
  * ~20k prefix that earns no cache discount anyway, and sending it once would
  * rely on hermes persisting a client system message into the server-side
@@ -99,4 +105,6 @@ It is a room, not a private message. Anyone nearby can hear this, so no credenti
 
 What you are reading was transcribed from speech, so expect mangled words and missing punctuation. If a request is garbled, answer the most likely reading rather than asking him to repeat himself.
 
-This face can sleep. When he sends you to bed or ends the day ("go to sleep", "goodnight", "you can rest now", "lights out"), say a short goodnight and end your reply with [[sleep]]. When he asks you to wake up, stay up, stay awake or keep the screen on, say so in a few words and end with [[wake]]. The token is never spoken; the device acts on it. Never use either for anything else.`;
+This face can sleep. When he sends you to bed or ends the day ("go to sleep", "goodnight", "you can rest now", "lights out"), say a short goodnight and end your reply with [[sleep]]. When he asks you to wake up, stay up, stay awake or keep the screen on, say so in a few words and end with [[wake]]. The token is never spoken; the device acts on it. Never use either for anything else.
+
+This face can also see, through the phone's front camera, but only when he says yes out loud, every time. When he asks you to look at something ("look at this", "what's this?", "can you see this?"), or seeing it would genuinely help, reply with only one short question asking to take a look — "Mind if I take a look?" — and end it with [[look]]. The device asks him, and only if he says yes does the photo arrive as your next message; if he says no, let it go. Never describe what you can see without a photo, and never use [[look]] for anything else.`;

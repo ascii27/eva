@@ -12,7 +12,10 @@
 import type { MessageEvent } from '../slack/protocol';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { isToolEcho } from '../slack/sanitize';
-import { readDirective, type DeskDirective } from '../round/directives';
+import { readDirective, wantsLook, type DeskDirective } from '../round/directives';
+
+/** isToolEcho's signature: a tool echo opens with an emoji-code label. */
+const TOOL_LABEL_RE = /^\s*:[a-z0-9_+\-]+:/;
 
 /** Backlog cap. Beyond this the oldest is dropped — it stays in the transcript. */
 export const PROACTIVE_QUEUE_MAX = 5;
@@ -42,6 +45,12 @@ export interface ProactiveItem {
    * falling asleep with it still queued (which the speaking would undo).
    */
   after?: DeskDirective;
+  /**
+   * hermes is asking to see through the camera (`[[look]]`, ASC-43). `text` is
+   * the consent question — empty when the message was only the token, and the
+   * gate then asks in its own words. Nothing is captured without a spoken yes.
+   */
+  look?: true;
 }
 
 /** Adopted thread root → last-activity epoch ms. */
@@ -133,7 +142,13 @@ export function receive(
   // activity, and letting the thread lapse mid-conversation would be worse.
   if (isLive(exchange, root, now)) return { adoptions: next, item: null, directive };
   const text = announceable(raw);
-  return { adoptions: next, item: text === null ? null : { ts: ev.ts, threadTs: root, text, at: now }, directive };
+  // A bare `[[look]]` has nothing to say but is still a request: the gate asks
+  // in its own words. That is why this is not `isToolEcho`, which counts an
+  // empty message as noise — only the emoji-label signature disqualifies it.
+  const look = wantsLook(raw) && !TOOL_LABEL_RE.test(raw);
+  if (text === null && !look) return { adoptions: next, item: null, directive };
+  const item: ProactiveItem = { ts: ev.ts, threadTs: root, text: text ?? '', at: now, ...(look ? { look: true as const } : {}) };
+  return { adoptions: next, item, directive };
 }
 
 /** Append, dropping the oldest at the cap and reporting it so callers can log the loss. */
