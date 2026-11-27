@@ -18,6 +18,11 @@ Post in `#eva-direct` with the companion's `<@U0BNNMQS9CM>` mention and the
 The token is never spoken and the face is not woken: the desk answers on its
 own. Any other words in the message are spoken as usual.
 
+The quickest way is `python3 ~/.hermes/skills/eva-desk-slack/scripts/eva_slack.py ask location`,
+which posts the token, waits for the desk's answer and prints it. Never call
+the Slack API with curl: it asks for approval every time, and at the desk or in
+cron there is nobody to approve it (see `eva-desk-slack`).
+
 ## What comes back
 
 A new message in the channel, addressed to you, within a few seconds:

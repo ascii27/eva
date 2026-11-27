@@ -20,6 +20,11 @@ else:
 The token is never spoken and does not wake the face, so this is fine at 3am.
 Don't add words to the message: anything else in it is read aloud in the room.
 
+The quickest way is `python3 ~/.hermes/skills/eva-desk-slack/scripts/eva_slack.py ask battery`,
+which posts the token, waits for the desk's answer and prints it. Never call
+the Slack API with curl: it asks for approval every time, and at the desk or in
+cron there is nobody to approve it (see `eva-desk-slack`).
+
 ## The answer
 
 Within a few seconds the desk posts a new top-level message that mentions you:

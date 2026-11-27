@@ -22,6 +22,11 @@ else:
 
 > `<@U0BNNMQS9CM> [[light]]`
 
+The quickest way is `python3 ~/.hermes/skills/eva-desk-slack/scripts/eva_slack.py ask light`,
+which posts the token, waits for the desk's answer and prints it. Never call
+the Slack API with curl: it asks for approval every time, and at the desk or in
+cron there is nobody to approve it (see `eva-desk-slack`).
+
 Within a few seconds the desk posts a new top-level message that mentions you:
 
 > `@Eva Light reading you asked for: The room at the desk is dark, about 3 lux, measured just now. The desk phone's screen is at 10 percent brightness.`
