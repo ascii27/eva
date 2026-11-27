@@ -14,6 +14,7 @@
 import type { ToolCall, ToolMessage, ToolSpec } from '../openai';
 import type { Photo } from '../../vision/photos';
 import { describeBattery, type BatteryReading } from '../../device/battery';
+import { placeAnswer, type Place } from '../../location/place';
 import { describeLight, type LightReading } from '../../device/light';
 import { adjustLevel, describeChange, describeScreen, levelFromPercent, type BrightnessChange } from '../../device/screen';
 import { BUSY, DECLINED, readbackLine, SENT, STARTED } from '../../hermes/errands';
@@ -52,6 +53,16 @@ export interface DeskHandles {
   wake(): void;
 }
 
+/** What `where_am_i` needs from `useLocation`, and nothing more (ASC-44). */
+export interface LocationHandles {
+  /** The stored town, or null when it has never been set. */
+  stored(): Place | null;
+  /** iOS location access — the only gate in front of a read. */
+  ensurePermission(): Promise<boolean>;
+  /** Read the sensor and store the town. */
+  refresh(): Promise<{ place: Place } | { error: string }>;
+}
+
 /** What the battery tool needs from `useBattery`, and nothing more. */
 export interface BatteryHandles {
   /** A fresh reading, or null when the phone will not say. */
@@ -87,6 +98,8 @@ export interface ToolConfig {
   screen?: ScreenHandles | null;
   /** Light meter, or null on a build with no camera. No consent gate: no photo is kept (ASC-46). */
   light?: LightHandles | null;
+  /** Town-level location, or null without expo-location. No consent gate (ASC-44). */
+  location?: LocationHandles | null;
 }
 
 /** Per-call context: the round's abort signal and its spoken-consent gate. */
@@ -247,7 +260,37 @@ async function runSetBrightness(call: ToolCall, args: Record<string, unknown>, s
   return change.after === null ? error(call, 'the screen brightness could not be set.') : answer(call, describeChange(change));
 }
 
-export function buildToolKit({ tavilyKey, vision, errands, desk = null, battery = null, screen = null, light = null }: ToolConfig): ToolKit {
+/**
+ * Where the desk is, to the nearest town. A stored town is answered without
+ * touching the sensor; otherwise it is read once and stored. No spoken ask
+ * (Michael's decision, Nov 27) — iOS permission is the only gate.
+ */
+async function runWhereAmI(call: ToolCall, location: LocationHandles | null): Promise<ToolResult> {
+  if (!location) return error(call, 'there is no way to tell where you are on this device.');
+  const known = location.stored();
+  if (known) return answer(call, placeAnswer(known));
+  if (!(await location.ensurePermission())) {
+    return error(call, "Michael hasn't allowed location access on this device.");
+  }
+  try {
+    const read = await location.refresh();
+    if ('error' in read) return error(call, read.error);
+    return answer(call, placeAnswer(read.place));
+  } catch (e) {
+    return error(call, `the location check failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+export function buildToolKit({
+  tavilyKey,
+  vision,
+  errands,
+  desk = null,
+  battery = null,
+  screen = null,
+  light = null,
+  location = null,
+}: ToolConfig): ToolKit {
   const specs: ToolSpec[] = toolSpecs(
     tavilyKey,
     vision !== null,
@@ -256,6 +299,7 @@ export function buildToolKit({ tavilyKey, vision, errands, desk = null, battery 
     battery !== null,
     screen !== null,
     light !== null,
+    location !== null,
   );
 
   return {
@@ -310,6 +354,9 @@ export function buildToolKit({ tavilyKey, vision, errands, desk = null, battery 
           if (!desk) return error(call, 'there is no face here to wake.');
           desk.wake();
           return answer(call, 'You will stay awake and bright for the next half hour. Say so in a few words.');
+
+        case 'where_am_i':
+          return runWhereAmI(call, location);
 
         case 'device_battery': {
           if (!battery) return error(call, 'this build cannot read the battery.');

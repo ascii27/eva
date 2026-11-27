@@ -57,6 +57,8 @@ import type { DeskHandles } from '../agent/tools';
 import { useSleep, SleepOverride } from './useSleep';
 import { useBattery } from '../device/useBattery';
 import { batteryReport } from '../device/battery';
+import { useLocation } from '../location/useLocation';
+import { locationReply } from '../location/place';
 import { canDim, readScreenBrightness } from './brightness';
 import { useLightMeter } from '../device/useLightMeter';
 import { LightMeter } from '../device/LightMeter';
@@ -252,6 +254,17 @@ export function FaceScreen() {
   });
   const batteryHandles = useMemo(() => (battery.available ? { read: battery.read } : null), [battery.available, battery.read]);
 
+  // Which town the desk is in (ASC-44). Read freely, like the battery — no
+  // spoken ask, by Michael's decision — and only the town is ever kept.
+  const location = useLocation({ onIssue: log });
+  const locationHandles = useMemo(
+    () =>
+      location.available
+        ? { stored: location.stored, ensurePermission: location.ensurePermission, refresh: location.refresh }
+        : null,
+    [location.available, location.stored, location.ensurePermission, location.refresh],
+  );
+
   const slack = useSlack({
     onEvaMessage: (ev, settledAnAsk) => {
       // An answer already reaches the transcript as `said ·` when it's spoken.
@@ -288,6 +301,21 @@ export function FaceScreen() {
       // nobody may be in the room to answer a dialog.
       if (r.brightness) {
         void applyBrightnessToken(r.brightness, 'hermes').then((line) => slackRef.current.tell(line));
+      }
+      // Which town: a stored one goes straight back; with none stored the
+      // sensor is read once — but only if iOS already allows it, since a
+      // permission dialog could land on an empty room.
+      if (r.locationRequest) {
+        log('desk · location requested (hermes)');
+        void (async () => {
+          if (!location.available) return slackRef.current.tell(locationReply({ error: 'there is no location on this build.' }));
+          const known = location.stored();
+          if (known) return slackRef.current.tell(locationReply({ place: known }));
+          if (!(await location.hasPermission())) {
+            return slackRef.current.tell(locationReply({ error: "location access hasn't been granted on the desk yet." }));
+          }
+          slackRef.current.tell(locationReply(await location.refresh()));
+        })();
       }
       if (r.lightRequest) {
         log('desk · light requested (hermes)');
@@ -466,6 +494,7 @@ export function FaceScreen() {
     errands: errands.configured ? { start: errands.start, send: errands.send } : null,
     desk,
     battery: batteryHandles,
+    location: locationHandles,
     batteryReading: battery.last,
     screen: screenHandles,
     light: lightHandles,
@@ -957,6 +986,17 @@ export function FaceScreen() {
                 }
               })();
             });
+          }}
+          locationAvailable={location.available}
+          placeName={location.place?.name ?? null}
+          onSetLocation={() => {
+            void (async () => {
+              if (!(await location.ensurePermission())) {
+                log('location · access denied');
+                return;
+              }
+              await location.refresh();
+            })();
           }}
           onForgetAll={() => {
             // Photos are part of what she remembers, so they go too — and

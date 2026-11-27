@@ -3,7 +3,7 @@
 // hermes has no tools on the device: when it answers a turn (the hermes and
 // Slack brains) or speaks first (a proactive Slack message), the only thing it
 // can hand down is text. So the face's few commands ride inside that text as
-// tokens — `[[sleep]]`, `[[wake]]`, `[[look]]`, `[[battery]]`, `[[light]]`, `[[brightness N]]` — which speakableFromMrkdwn
+// tokens — `[[sleep]]`, `[[wake]]`, `[[look]]`, `[[battery]]`, `[[light]]`, `[[brightness N]]`, `[[location]]` — which speakableFromMrkdwn
 // strips before anything reaches the speaker. The local brains use real tools
 // instead (go_to_sleep / wake_up / camera_look); this is the same capability
 // for the half that can't.
@@ -14,7 +14,7 @@
 export type DeskDirective = 'sleep' | 'wake';
 
 /** Every token the device acts on — and therefore strips from speech. */
-export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery|light|brightness(?:\s*[:=]?\s*[^\]]*)?)\s*\]\]/gi;
+export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery|light|location|brightness(?:\s*[:=]?\s*[^\]]*)?)\s*\]\]/gi;
 
 /**
  * The sleep/wake directive a message carries, or null. When one message
@@ -92,4 +92,14 @@ export function readBrightness(raw: string): BrightnessToken | null {
     last = Number.isFinite(n) && n >= 0 && n <= 100 ? { kind: 'set', percent: n } : { kind: 'invalid' };
   }
   return last;
+}
+
+/**
+ * Whether hermes is asking which town the desk is in (ASC-44). Answered in
+ * Slack exactly like `[[battery]]`: no gate (Michael's decision), nothing
+ * spoken, and the face is not woken for it. Only the town is ever sent.
+ */
+export function asksForLocation(raw: string): boolean {
+  for (const m of raw.matchAll(DIRECTIVE_RE)) if (m[1].toLowerCase() === 'location') return true;
+  return false;
 }

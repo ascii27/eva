@@ -18,6 +18,7 @@
         "NSSpeechRecognitionUsageDescription": "Eva transcribes your speech on-device; audio never leaves this iPhone.",
         "NSMicrophoneUsageDescription": "Eva listens for your voice so you can talk to her hands-free.",
         "NSCameraUsageDescription": "Eva takes a photo only after asking you out loud and hearing you agree.",
+        "NSLocationWhenInUseUsageDescription": "Eva uses your location only to know which town she is in. Only the town is kept, never your exact location.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -37,6 +38,12 @@
         {
           "cameraPermission": "Eva takes a photo only after asking you out loud and hearing you agree.",
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Eva uses your location only to know which town she is in. Only the town is kept, never your exact location."
         }
       ],
       "react-native-audio-api",

@@ -12,7 +12,7 @@
 import type { MessageEvent } from '../slack/protocol';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { isToolEcho } from '../slack/sanitize';
-import { asksForBattery, asksForLight, readBrightness, readDirective, wantsLook, type BrightnessToken, type DeskDirective } from '../round/directives';
+import { asksForBattery, asksForLight, asksForLocation, readBrightness, readDirective, wantsLook, type BrightnessToken, type DeskDirective } from '../round/directives';
 
 /** isToolEcho's signature: a tool echo opens with an emoji-code label. */
 const TOOL_LABEL_RE = /^\s*:[a-z0-9_+\-]+:/;
@@ -125,7 +125,7 @@ function cap(adoptions: Adoptions): Adoptions {
  * part of a live exchange — because what it asks the face to do does not
  * depend on whether the words get spoken. `batteryRequest` is reported on the
  * same terms: hermes asking for a reading wants an answer either way, and so
- * are `lightRequest` and `brightness` (ASC-46).
+ * are `lightRequest` and `brightness` (ASC-46), and `locationRequest` (ASC-44).
  */
 export function receive(
   ev: MessageEvent,
@@ -139,31 +139,33 @@ export function receive(
   directive: DeskDirective | null;
   batteryRequest: boolean;
   lightRequest: boolean;
+  locationRequest: boolean;
   brightness: BrightnessToken | null;
 } {
   const raw = ev.text ?? '';
   const root = threadRoot(ev);
   const kept = prune(adoptions, now);
   if (!mentionsBot(raw, botUserId) && kept[root] === undefined) {
-    return { adoptions: kept, item: null, directive: null, batteryRequest: false, lightRequest: false, brightness: null };
+    return { adoptions: kept, item: null, directive: null, batteryRequest: false, lightRequest: false, locationRequest: false, brightness: null };
   }
   const directive = readDirective(raw);
   // A tool echo quoting the token is noise, not hermes asking — same rule as `[[look]]`.
   const batteryRequest = asksForBattery(raw) && !TOOL_LABEL_RE.test(raw);
   const lightRequest = asksForLight(raw) && !TOOL_LABEL_RE.test(raw);
+  const locationRequest = asksForLocation(raw) && !TOOL_LABEL_RE.test(raw);
   const brightness = TOOL_LABEL_RE.test(raw) ? null : readBrightness(raw);
   const next = cap({ ...kept, [root]: now });
   // Adoption is refreshed above either way — a suppressed message is still
   // activity, and letting the thread lapse mid-conversation would be worse.
-  if (isLive(exchange, root, now)) return { adoptions: next, item: null, directive, batteryRequest, lightRequest, brightness };
+  if (isLive(exchange, root, now)) return { adoptions: next, item: null, directive, batteryRequest, lightRequest, locationRequest, brightness };
   const text = announceable(raw);
   // A bare `[[look]]` has nothing to say but is still a request: the gate asks
   // in its own words. That is why this is not `isToolEcho`, which counts an
   // empty message as noise — only the emoji-label signature disqualifies it.
   const look = wantsLook(raw) && !TOOL_LABEL_RE.test(raw);
-  if (text === null && !look) return { adoptions: next, item: null, directive, batteryRequest, lightRequest, brightness };
+  if (text === null && !look) return { adoptions: next, item: null, directive, batteryRequest, lightRequest, locationRequest, brightness };
   const item: ProactiveItem = { ts: ev.ts, threadTs: root, text: text ?? '', at: now, ...(look ? { look: true as const } : {}) };
-  return { adoptions: next, item, directive, batteryRequest, lightRequest, brightness };
+  return { adoptions: next, item, directive, batteryRequest, lightRequest, locationRequest, brightness };
 }
 
 /** Append, dropping the oldest at the cap and reporting it so callers can log the loss. */

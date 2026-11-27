@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { asksForBattery, asksForLight, readBrightness, readDirective, wantsLook } from '../directives';
+import { asksForBattery, asksForLight, asksForLocation, readBrightness, readDirective, wantsLook } from '../directives';
 import { speakableFromMrkdwn } from '../speakable';
 
 describe('readDirective', () => {
@@ -120,5 +120,26 @@ describe('readBrightness', () => {
   it('does not disturb sleep and wake', () => {
     expect(readDirective('[[brightness 5]] [[sleep]]')).toBe('sleep');
     expect(readBrightness('[[sleep]]')).toBeNull();
+  });
+});
+
+describe('asksForLocation', () => {
+  it('finds a location request', () => {
+    expect(asksForLocation('<@U1> [[location]]')).toBe(true);
+    expect(asksForLocation('[[ Location ]] please')).toBe(true);
+  });
+
+  it('is false for ordinary text and for other tokens', () => {
+    expect(asksForLocation('what location is that?')).toBe(false);
+    expect(asksForLocation('[[sleep]] [[look]] [[battery]]')).toBe(false);
+  });
+
+  it('is not a sleep/wake directive', () => {
+    expect(readDirective('[[location]]')).toBeNull();
+  });
+
+  it('is never spoken', () => {
+    expect(speakableFromMrkdwn('Quick one. [[location]]')).toBe('Quick one.');
+    expect(speakableFromMrkdwn('[[location]]')).toBe('');
   });
 });

@@ -49,7 +49,7 @@ import { chat, type ChatUsage, formatUsage, type ToolCall } from '../agent/opena
 import { addSpend, emptySpend, formatSpend, type Spend } from '../agent/spend';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from '../agent/persona';
 import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from '../agent/store';
-import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type LightHandles, type ScreenHandles, type ToolKit, type VisionHandles } from '../agent/tools';
+import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type LightHandles, type LocationHandles, type ScreenHandles, type ToolKit, type VisionHandles } from '../agent/tools';
 import {
   assistantText,
   deleteItem,
@@ -130,6 +130,8 @@ export interface UseRealtimeOptions {
   screen?: ScreenHandles | null;
   /** Light meter for room_light, or null on a build with no camera. */
   light?: LightHandles | null;
+  /** Town-level location for where_am_i, or null without expo-location. */
+  location?: LocationHandles | null;
   resolvePhoto?: PhotoResolver;
   bundleText?: (now: number) => BundleText | null;
 }
@@ -143,6 +145,7 @@ export function useRealtime({
   battery = null,
   screen = null,
   light = null,
+  location = null,
   resolvePhoto,
   bundleText,
 }: UseRealtimeOptions = {}) {
@@ -154,7 +157,7 @@ export function useRealtime({
   // Built once, like the chat brain's. The reason differs — a realtime session
   // declares its tools once at session.update, so a list that moved between
   // turns would mean rewriting session config mid-conversation.
-  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands, desk, battery, screen, light }));
+  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands, desk, battery, screen, light, location }));
   if (__DEV__ && !toolsLogged) {
     toolsLogged = true;
     console.log(`[realtime] tools offered: ${tools.current.specs.map((s) => s.name).join(', ') || 'none'}`);
