@@ -21,7 +21,7 @@ import { DevControls } from '../controls/DevControls';
 import { SlackPairing } from '../controls/SlackPairing';
 import { speakableFromMrkdwn } from '../round/speakable';
 import type { AskOptions, AskResult } from '../round/ask';
-import { readDirective, type DeskDirective } from '../round/directives';
+import { readDirective, wantsLook, type DeskDirective } from '../round/directives';
 import { useSlack, type SlackStatus } from '../slack/useSlack';
 import { initKokoro, type TtsEngineState } from '../speech/kokoro';
 import { FOLLOWUP_WINDOW_MS } from '../speech/conversation';
@@ -46,6 +46,7 @@ import {
 } from '../speech/wakeLog';
 import { useOtaUpdates } from '../updates/useOtaUpdates';
 import { useVision } from '../vision/useVision';
+import { CameraBadge } from '../vision/CameraBadge';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
@@ -392,6 +393,8 @@ export function FaceScreen() {
   // errands and no photos, and hermes is where a bundle comes from rather than
   // something it reads. See useHermes for why each absence is measured.
   const hermesBrain = useHermes(brainOptions);
+  const hermesRef = useRef(hermesBrain);
+  hermesRef.current = hermesBrain;
 
   /**
    * Handles of whichever brain is selected. All of them return the same shape,
@@ -414,6 +417,26 @@ export function FaceScreen() {
       const d = result.kind === 'reply' ? readDirective(result.raw) : null;
       if (d) applyDirective(d, brainRef.current);
       return result;
+    };
+
+  /**
+   * A Slack-brain answer carrying `[[look]]` is hermes asking to see (ASC-43).
+   * It arrived whole over Slack, so nothing has been said yet: `see` speaks it
+   * as the consent question, runs the gate, and takes the photo back to hermes
+   * over the API server — Slack is not a channel a photo can ride. The hermes
+   * brain handles its own `[[look]]` inside `ask`, so it is not wrapped.
+   * Outside withDirectives, so a `[[sleep]]` in the same message still counts.
+   */
+  const withLook =
+    (ask: (text: string, opts?: AskOptions) => Promise<AskResult>) =>
+    async (text: string, opts?: AskOptions): Promise<AskResult> => {
+      const result = await ask(text, opts);
+      if (result.kind !== 'reply' || !wantsLook(result.raw)) return result;
+      if (hermesRef.current.status !== 'ready') {
+        log('hermes · asked to look, but no API server is configured to send a photo to');
+        return result;
+      }
+      return hermesRef.current.see(result.raw, opts, text);
     };
 
   const echo = useEcho({
@@ -444,7 +467,7 @@ export function FaceScreen() {
               : withDirectives(hermesBrain.ask)
             : slack.status === 'unpaired'
               ? undefined
-              : withDirectives((text: string) => slack.ask(text, activeThread.current ?? undefined)),
+              : withLook(withDirectives((text: string) => slack.ask(text, activeThread.current ?? undefined))),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -572,6 +595,17 @@ export function FaceScreen() {
     const { text } = d.item;
     // Pending until the round below has finished: she says it, then sleeps.
     if (d.item.after) applyDirective(d.item.after, 'hermes');
+    if (d.item.look) {
+      // hermes asking to see (ASC-43). The announcement *is* the consent
+      // question; `see` gates, shoots and streams hermes' answer, all in the
+      // one round. With nowhere to send a photo, the words are still said.
+      if (hermesRef.current.status === 'ready') {
+        startRound(() => echoRef.current.announce(text, (opts) => hermesRef.current.see(text, opts)));
+        return;
+      }
+      log('hermes · asked to look, but no API server is configured to send a photo to');
+      if (!text) return;
+    }
     startRound(() => echoRef.current.announce(text));
   }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound, applyDirective]);
 
@@ -733,6 +767,9 @@ export function FaceScreen() {
           }
         />
       )}
+
+      {/* On the face itself, not only in the side column, which can be off. */}
+      {vision.state.previewing && fontsLoaded && <CameraBadge eyeColor={eyeColor} k={k} right={colW} />}
 
       <Pressable style={styles.hotspot} onPress={onHotspotTap} />
 

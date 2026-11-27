@@ -43,6 +43,9 @@ const OFFLINE_LINE = "I can't reach Eva right now.";
  */
 const FAILED_LINE = "Sorry — that didn't work out.";
 
+/** A round's brain: whichever transport is selected, or a one-off override. */
+type AskHandler = (text: string, opts?: AskOptions) => Promise<AskResult>;
+
 export interface EchoHandlers {
   setMode: (m: FaceMode) => void;
   /** Final transcript captured from the mic. */
@@ -64,7 +67,7 @@ export interface EchoHandlers {
    * Route captured speech to Eva and speak her reply. When absent (unpaired
    * device, no API key, Expo Go), rounds fall back to the Phase-1 echo.
    */
-  ask?: (text: string, opts?: AskOptions) => Promise<AskResult>;
+  ask?: AskHandler;
   /** Formatted round-latency line, emitted as the reply starts speaking. */
   onLatency?: (line: string) => void;
   /**
@@ -465,8 +468,8 @@ export function useEcho({
 
   /** The Phase-3 round: post to Eva, hold thinking for the real wait, speak. */
   const askEva = useCallback(
-    async (text: string) => {
-      const doAsk = handlers.current.ask;
+    async (text: string, override?: AskHandler) => {
+      const doAsk = override ?? handlers.current.ask;
       if (!doAsk) {
         sayBack(text);
         return;
@@ -806,7 +809,7 @@ export function useEcho({
    * to say "Hey Eva" to answer her.
    */
   const announce = useCallback(
-    (text: string) => {
+    (text: string, run?: (opts: AskOptions) => Promise<AskResult>) => {
       const round = ++epoch.current;
       clearRoundSpeech();
       voiceRound.current = true;
@@ -818,10 +821,18 @@ export function useEcho({
         // openMic bumps the epoch before its awaits but only clears the timer
         // after them, so this beat can still fire into a superseded round.
         if (round !== epoch.current) return;
+        if (run) {
+          // Not a line but a round: hermes asked to see (ASC-43), so `run`
+          // speaks the question, holds the consent gate and streams the answer.
+          // askEva is what owns all of that choreography, so it runs there —
+          // and the follow-up mic still opens afterwards, as for any announce.
+          void askEva(text, (_text, opts) => run(opts ?? {}));
+          return;
+        }
         deliver(text, 'pleased');
       });
     },
-    [after, clearRoundSpeech, clearTimer, deliver, setMode],
+    [after, askEva, clearRoundSpeech, clearTimer, deliver, setMode],
   );
 
   /** Typed question straight to Eva — the dev/simulator round path. */

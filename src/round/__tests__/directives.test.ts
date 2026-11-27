@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { readDirective } from '../directives';
+import { readDirective, wantsLook } from '../directives';
 import { speakableFromMrkdwn } from '../speakable';
 
 describe('readDirective', () => {
@@ -26,7 +26,33 @@ describe('readDirective', () => {
   });
 });
 
+describe('look (ASC-43)', () => {
+  it('is a request, never a sleep state', () => {
+    expect(readDirective('Mind if I take a look? [[look]]')).toBeNull();
+    expect(readDirective('[[wake]] can I see? [[look]]')).toBe('wake');
+  });
+
+  it('is found anywhere, in any case', () => {
+    expect(wantsLook('Mind if I take a look? [[look]]')).toBe(true);
+    expect(wantsLook('[[ LOOK ]] hi')).toBe(true);
+  });
+
+  it('is false for prose about looking and for other tokens', () => {
+    expect(wantsLook('Let me look at your calendar.')).toBe(false);
+    expect(wantsLook('[look] at this')).toBe(false);
+    expect(wantsLook('Goodnight [[sleep]]')).toBe(false);
+  });
+
+  it('is stateless across calls despite the global regex', () => {
+    for (let i = 0; i < 3; i++) expect(wantsLook('ok [[look]]')).toBe(true);
+  });
+});
+
 describe('speakableFromMrkdwn strips directives', () => {
+  it('never speaks the look token', () => {
+    expect(speakableFromMrkdwn('Mind if I take a look? [[look]]')).toBe('Mind if I take a look?');
+  });
+
   it('never speaks the token', () => {
     expect(speakableFromMrkdwn('Goodnight, Michael. [[sleep]]')).toBe('Goodnight, Michael.');
     expect(speakableFromMrkdwn('<@U0BNNMQS9CM> [[wake]] Morning!')).toBe('Morning!');

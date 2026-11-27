@@ -70,6 +70,14 @@ with the screen dark until something wakes it. `[[wake]]` wakes it and keeps it 
 half an hour. The token is never spoken, and a message can be only the token. The
 `eva-desk-sleep` skill has the details.
 
+### Asking to see through the camera
+
+Put `[[look]]` at the end of a short question ("Mind if I take a look at your desk? I want
+to check the parcel arrived. [[look]]") and the device says the question, shows CAMERA ON
+on the face, and waits for a spoken yes. Only on a yes is one photo taken; it comes back to
+you through the API server, not Slack, with your question quoted, and your answer is spoken.
+Anything but a yes and nothing is captured. The `eva-desk-camera` skill has the details.
+
 ### It's a room, not a DM
 
 This plays out loud on a desk where anyone nearby can hear it. No credentials, no sensitive
