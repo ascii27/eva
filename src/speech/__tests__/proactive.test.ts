@@ -326,3 +326,30 @@ describe('receive look requests from tool noise', () => {
     expect(r.item).toBeNull();
   });
 });
+
+describe('receive battery requests', () => {
+  it('reports a battery request addressed to us, with nothing to speak', () => {
+    const r = receive(msg({ ts: '100.1', text: `<@${BOT}> [[battery]]` }), NOW, BOT, {});
+    expect(r.batteryRequest).toBe(true);
+    expect(r.item).toBeNull();
+    expect(r.directive).toBeNull();
+  });
+
+  it('ignores a battery token in a thread that is not ours', () => {
+    const r = receive(msg({ ts: '100.1', text: '[[battery]]' }), NOW, BOT, {});
+    expect(r.batteryRequest).toBe(false);
+  });
+
+  it('still reports the request inside a live exchange', () => {
+    const r = receive(msg({ ts: '200.2', thread_ts: '100.1', text: '[[battery]]' }), NOW, BOT, { '100.1': NOW }, {
+      threadTs: '100.1',
+      until: null,
+    });
+    expect(r.batteryRequest).toBe(true);
+  });
+
+  it('never treats a tool echo quoting the token as a request', () => {
+    const r = receive(msg({ ts: '8.0', text: ':computer: terminal [[battery]]' }), NOW, BOT, { '8.0': NOW });
+    expect(r.batteryRequest).toBe(false);
+  });
+});

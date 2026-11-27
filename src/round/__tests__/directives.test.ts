@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { readDirective, wantsLook } from '../directives';
+import { asksForBattery, readDirective, wantsLook } from '../directives';
 import { speakableFromMrkdwn } from '../speakable';
 
 describe('readDirective', () => {
@@ -60,5 +60,23 @@ describe('speakableFromMrkdwn strips directives', () => {
 
   it('leaves a directive-only message empty', () => {
     expect(speakableFromMrkdwn('[[sleep]]')).toBe('');
+  });
+});
+
+describe('[[battery]] request', () => {
+  it('is recognised, tolerating case and spaces, and is stateless', () => {
+    expect(asksForBattery('<@U1> [[battery]]')).toBe(true);
+    expect(asksForBattery('[[ Battery ]]')).toBe(true);
+    expect(asksForBattery('[[ Battery ]]')).toBe(true);
+    expect(asksForBattery('how is the battery?')).toBe(false);
+  });
+
+  it('is not a face directive', () => {
+    expect(readDirective('[[battery]]')).toBeNull();
+  });
+
+  it('is never spoken', () => {
+    expect(speakableFromMrkdwn('<@U1> [[battery]]')).toBe('');
+    expect(speakableFromMrkdwn('Quick check. [[battery]]')).toBe('Quick check.');
   });
 });

@@ -121,6 +121,13 @@ export const WAKE_UP: ToolSpec = {
   parameters: { type: 'object', properties: {}, required: [] },
 };
 
+export const DEVICE_BATTERY: ToolSpec = {
+  name: 'device_battery',
+  description:
+    "Read the battery level and charging state of the iPhone you live on — the phone on Michael's desk that is your face. Use it whenever he asks how your battery is, whether you are charging or plugged in, or whether you are running low. You already speak up on your own when you are unplugged or low, so there is no need to check it unprompted.",
+  parameters: { type: 'object', properties: {}, required: [] },
+};
+
 /**
  * The specs offered for a session. Order is fixed and the list is built once —
  * specs sit inside OpenAI's cached prefix, so a list that moved between turns
@@ -137,8 +144,17 @@ export const WAKE_UP: ToolSpec = {
  *
  * `desk` is whether the face can be put to sleep and woken — always true on
  * the device; optional so a probe can leave them out.
+ *
+ * `battery` is whether expo-battery loaded — false on a build from before it
+ * was added, where the tool is absent rather than present and failing.
  */
-export function toolSpecs(tavilyKey: string | null, camera = false, otherHalf = false, desk = false): ToolSpec[] {
+export function toolSpecs(
+  tavilyKey: string | null,
+  camera = false,
+  otherHalf = false,
+  desk = false,
+  battery = false,
+): ToolSpec[] {
   return [
     CLOCK,
     MEMORY_SEARCH,
@@ -146,5 +162,6 @@ export function toolSpecs(tavilyKey: string | null, camera = false, otherHalf = 
     ...(camera ? [CAMERA_LOOK] : []),
     ...(otherHalf ? [ASK_OTHER_HALF, TELL_OTHER_HALF] : []),
     ...(desk ? [GO_TO_SLEEP, WAKE_UP] : []),
+    ...(battery ? [DEVICE_BATTERY] : []),
   ];
 }

@@ -35,7 +35,7 @@ import { chat, chatStream, type ChatUsage, formatUsage, type RequestMessage } fr
 import { addSpend, emptySpend, formatSpend, type Spend } from './spend';
 import { NOTHING_TO_REMEMBER, PERSONA, SUMMARIZE_SESSION, SUMMARIZE_TURNS } from './persona';
 import { archiveSession, clearAll, loadSession, recentMemories, saveSession } from './store';
-import { buildToolKit, type DeskHandles, type ErrandHandles, type ToolKit, type VisionHandles } from './tools';
+import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type ToolKit, type VisionHandles } from './tools';
 
 /**
  * A local round should feel immediate; anything this slow has gone wrong rather
@@ -96,6 +96,8 @@ export interface UseAgentOptions {
   errands?: ErrandHandles | null;
   /** Sleep/wake handles for go_to_sleep and wake_up. Read once, at bring-up. */
   desk?: DeskHandles | null;
+  /** Battery handles for device_battery, or null on a build without expo-battery. */
+  battery?: BatteryHandles | null;
   /** Photo bytes by id, for the request. Null from it means aged out. */
   resolvePhoto?: PhotoResolver;
   /**
@@ -113,13 +115,22 @@ export interface UseAgentOptions {
   bundleText?: (now: number) => BundleText | null;
 }
 
-export function useAgent({ onIssue, onUsage, vision = null, errands = null, desk = null, resolvePhoto, bundleText }: UseAgentOptions = {}) {
+export function useAgent({
+  onIssue,
+  onUsage,
+  vision = null,
+  errands = null,
+  desk = null,
+  battery = null,
+  resolvePhoto,
+  bundleText,
+}: UseAgentOptions = {}) {
   const [status, setStatus] = useState<AgentStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<AgentConfig | null>(null);
   // Built once at bring-up, never per turn: the specs are part of OpenAI's
   // cached prefix, so a list that moved between turns would cost the discount.
-  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands, desk }));
+  const tools = useRef<ToolKit>(buildToolKit({ tavilyKey: envTavilyKey(), vision, errands, desk, battery }));
   if (__DEV__ && !toolsLogged) {
     toolsLogged = true;
     // What Eva is actually offered. Worth printing: "she says she can't do

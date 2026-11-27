@@ -78,6 +78,13 @@ on the face, and waits for a spoken yes. Only on a yes is one photo taken; it co
 you through the API server, not Slack, with your question quoted, and your answer is spoken.
 Anything but a yes and nothing is captured. The `eva-desk-camera` skill has the details.
 
+### Reading the desk phone's battery
+
+Post `<@U0BNNMQS9CM> [[battery]]` and the desk answers with a new message mentioning you:
+its battery level, whether it is charging, and whether low power mode is on. Nothing is
+spoken and the face is not woken, so this is fine at any hour. The desk already speaks up
+on its own when it is unplugged or low. The `eva-desk-battery` skill has the details.
+
 ### It's a room, not a DM
 
 This plays out loud on a desk where anyone nearby can hear it. No credentials, no sensitive

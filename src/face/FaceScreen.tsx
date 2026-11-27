@@ -8,7 +8,7 @@ import {
 } from '@expo-google-fonts/space-grotesk';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFonts } from 'expo-font';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useAgent } from '../agent/useAgent';
 import { useRealtime } from '../realtime/useRealtime';
@@ -55,6 +55,8 @@ import type { FaceMode, MouthOutput } from './types';
 import type { VisemeKey } from './visemes';
 import type { DeskHandles } from '../agent/tools';
 import { useSleep, SleepOverride } from './useSleep';
+import { useBattery } from '../device/useBattery';
+import { batteryReport } from '../device/battery';
 import { canDim } from './brightness';
 import { hhmm } from '../util/time';
 
@@ -201,6 +203,20 @@ export function FaceScreen() {
     [log],
   );
 
+  // Battery and charging state (ASC-45). Read freely — no consent gate, by
+  // Michael's decision — and spoken up about unprompted when the cable comes
+  // out or the level runs low, through the same quiet-face queue as hermes'
+  // pushes. A build without expo-battery has none of this.
+  const battery = useBattery({
+    onAlert: (line) => {
+      const at = Date.now();
+      log(`eva · ${line}`);
+      pushProactive({ ts: `battery.${at}`, threadTs: null, text: line, at });
+    },
+    onIssue: log,
+  });
+  const batteryHandles = useMemo(() => (battery.available ? { read: battery.read } : null), [battery.available, battery.read]);
+
   const slack = useSlack({
     onEvaMessage: (ev, settledAnAsk) => {
       // An answer already reaches the transcript as `said ·` when it's spoken.
@@ -226,11 +242,19 @@ export function FaceScreen() {
       const carried = r.directive === 'sleep' && r.item !== null && proactiveRef.current;
       if (r.directive && !carried) applyDirective(r.directive, 'hermes');
       if (r.item) pushProactive(carried ? { ...r.item, after: 'sleep' } : r.item);
+      // hermes reading the battery: answered in Slack, never spoken, and the
+      // face is not woken for it.
+      if (r.batteryRequest) {
+        log('desk · battery requested (hermes)');
+        void battery.read().then((reading) => slackRef.current.tell(batteryReport(reading)));
+      }
     },
     onIssue: log,
     onToolActivity: (label) => noteToolRef.current(label),
   });
   botUserIdRef.current = slack.botUserId;
+  const slackRef = useRef(slack);
+  slackRef.current = slack;
 
   // Continuous conversation: after a reply, keep listening for follow-ups
   // until the window lapses silently. Persisted, default on.
@@ -381,6 +405,8 @@ export function FaceScreen() {
     bundleText: bundle.text,
     errands: errands.configured ? { start: errands.start, send: errands.send } : null,
     desk,
+    battery: batteryHandles,
+    batteryReading: battery.last,
   };
 
   const agent = useAgent(brainOptions);
