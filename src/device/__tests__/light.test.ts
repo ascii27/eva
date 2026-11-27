@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { agePhrase, bandFor, describeLight, ev100FromExif, isDark, luxFromEv100, readingFromExif, roundLux } from '../light';
+import { agePhrase, bandFor, describeLight, ev100FromExif, luxFromEv100, readingFromExif, roundLux } from '../light';
 
 describe('ev100FromExif', () => {
   it("prefers iOS's BrightnessValue (APEX Bv): EV100 is Bv + 5", () => {
@@ -41,11 +41,6 @@ describe('bands', () => {
     expect(band(-1)).toBe('dim'); // one lamp across the room
     expect(band(2)).toBe('lit'); // an ordinary lit room
     expect(band(9)).toBe('daylight');
-  });
-
-  it('only dark counts as dark', () => {
-    expect(isDark({ lux: 2, band: 'dark', at: 0 })).toBe(true);
-    expect(isDark({ lux: 20, band: 'dim', at: 0 })).toBe(false);
   });
 
   it('is a monotone conversion', () => {

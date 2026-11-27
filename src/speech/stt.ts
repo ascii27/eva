@@ -52,10 +52,6 @@ function getStt(): SttModule | null {
   return mod;
 }
 
-export function sttAvailable(): boolean {
-  return getStt() !== null;
-}
-
 /** Returns null when ready to listen, otherwise a human-readable blocker. */
 export async function ensureReady(): Promise<string | null> {
   const stt = getStt();
@@ -143,10 +139,6 @@ export function startListening(profile: ListenProfile = 'command', opts: ListenO
       mode: 'default',
     },
   });
-}
-
-export function stopListening(): void {
-  getStt()?.ExpoSpeechRecognitionModule.stop();
 }
 
 export function abortListening(): void {

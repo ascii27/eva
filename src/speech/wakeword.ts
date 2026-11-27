@@ -76,10 +76,6 @@ export function findWakeIn(transcripts: string[]): WakeMatch | null {
   return null;
 }
 
-export function findNearMiss(raw: string): WakeMatch | null {
-  return findWake(raw) ? null : scanTail(raw, NEAR_RE);
-}
-
 /** A near-miss only if no alternative actually woke her. */
 export function findNearMissIn(transcripts: string[]): WakeMatch | null {
   if (findWakeIn(transcripts)) return null;

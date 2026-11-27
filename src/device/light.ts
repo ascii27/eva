@@ -104,8 +104,3 @@ export function describeLight(r: LightReading, now: number): string {
   const when = agePhrase(now - r.at);
   return `The room at the desk is ${BAND_PHRASE[r.band]}, about ${roundLux(r.lux)} lux, measured ${when}.`;
 }
-
-/** Dark enough that speaking aloud may wake someone, or a lit screen glares. */
-export function isDark(r: LightReading): boolean {
-  return r.band === 'dark';
-}
