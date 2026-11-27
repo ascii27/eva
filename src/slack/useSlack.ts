@@ -260,5 +260,23 @@ export function useSlack({ onEvaMessage, onIssue, onToolActivity }: UseSlackOpti
     [settleIfReply, settlePending],
   );
 
-  return { status, botUserId, ask, pair, unpair, reconnect };
+  /**
+   * Post to Eva's Slack half outside any ask: a new top-level message that
+   * @-mentions her, so hermes sees it, and resolves no pending round. Used for
+   * answers to her requests (`[[battery]]`, ASC-45). Never throws — a lost
+   * report is logged and hermes simply hears nothing back.
+   */
+  const tell = useCallback(async (text: string): Promise<boolean> => {
+    const cfg = config.current;
+    if (!cfg) return false;
+    try {
+      await postMessage(cfg.botToken, cfg.channelId, `<@${cfg.evaUserId}> ${text}`);
+      return true;
+    } catch (e) {
+      callbacks.current.onIssue?.(`slack · couldn't reply to Eva: ${e instanceof Error ? e.message : String(e)}`);
+      return false;
+    }
+  }, []);
+
+  return { status, botUserId, ask, pair, unpair, reconnect, tell };
 }

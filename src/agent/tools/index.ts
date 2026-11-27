@@ -13,6 +13,7 @@
 
 import type { ToolCall, ToolMessage, ToolSpec } from '../openai';
 import type { Photo } from '../../vision/photos';
+import { describeBattery, type BatteryReading } from '../../device/battery';
 import { BUSY, DECLINED, readbackLine, SENT, STARTED } from '../../hermes/errands';
 import { formatClock } from './clock';
 import { runMemorySearch } from './memory';
@@ -49,6 +50,12 @@ export interface DeskHandles {
   wake(): void;
 }
 
+/** What the battery tool needs from `useBattery`, and nothing more. */
+export interface BatteryHandles {
+  /** A fresh reading, or null when the phone will not say. */
+  read(): Promise<BatteryReading | null>;
+}
+
 export interface ToolConfig {
   /** Tavily key, or null when web search is not configured. */
   tavilyKey: string | null;
@@ -58,6 +65,8 @@ export interface ToolConfig {
   errands: ErrandHandles | null;
   /** Sleep/wake handles, or null where there is no face to put to sleep. */
   desk?: DeskHandles | null;
+  /** Battery handles, or null on a build without expo-battery. No consent gate (ASC-45). */
+  battery?: BatteryHandles | null;
 }
 
 /** Per-call context: the round's abort signal and its spoken-consent gate. */
@@ -199,8 +208,8 @@ async function runTellOtherHalf(
   return answer(call, id ? SENT : BUSY);
 }
 
-export function buildToolKit({ tavilyKey, vision, errands, desk = null }: ToolConfig): ToolKit {
-  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null, errands !== null, desk !== null);
+export function buildToolKit({ tavilyKey, vision, errands, desk = null, battery = null }: ToolConfig): ToolKit {
+  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null, errands !== null, desk !== null, battery !== null);
 
   return {
     specs,
@@ -254,6 +263,16 @@ export function buildToolKit({ tavilyKey, vision, errands, desk = null }: ToolCo
           if (!desk) return error(call, 'there is no face here to wake.');
           desk.wake();
           return answer(call, 'You will stay awake and bright for the next half hour. Say so in a few words.');
+
+        case 'device_battery': {
+          if (!battery) return error(call, 'this build cannot read the battery.');
+          try {
+            const reading = await battery.read();
+            return reading ? answer(call, describeBattery(reading)) : error(call, 'the phone did not report its battery.');
+          } catch (e) {
+            return error(call, `reading the battery failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
 
         default:
           return error(call, `no tool named ${call.name}.`);

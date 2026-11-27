@@ -38,6 +38,7 @@ import { chatStream, type ChatUsage, formatUsage } from '../agent/openai';
 import { addSpend, emptySpend, formatSpend, type Spend } from '../agent/spend';
 import { brainSessionId, envHermesConfig, type HermesConfig, hermesHeaders } from './config';
 import { DESK_PREAMBLE } from './prompt';
+import { deskStatusLine, type BatteryReading } from '../device/battery';
 import { startedTools } from './progress';
 import type { ContentPart } from '../agent/history';
 import type { VisionHandles } from '../agent/tools';
@@ -92,9 +93,14 @@ export interface UseHermesOptions {
    * runs the gate and the shutter on its behalf.
    */
   vision?: VisionHandles | null;
+  /**
+   * The last battery reading, or null. hermes cannot call device_battery, so
+   * the reading rides along as its own system line on every turn (ASC-45).
+   */
+  batteryReading?: () => BatteryReading | null;
 }
 
-export function useHermes({ onIssue, onUsage, vision = null }: UseHermesOptions = {}) {
+export function useHermes({ onIssue, onUsage, vision = null, batteryReading }: UseHermesOptions = {}) {
   const [status, setStatus] = useState<HermesBrainStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<HermesConfig | null>(null);
@@ -107,8 +113,8 @@ export function useHermes({ onIssue, onUsage, vision = null }: UseHermesOptions 
 
   // Callbacks via ref so a re-render of FaceScreen never re-creates `ask` and
   // strands an in-flight round — same reason useAgent does it.
-  const callbacks = useRef({ onIssue, onUsage });
-  callbacks.current = { onIssue, onUsage };
+  const callbacks = useRef({ onIssue, onUsage, batteryReading });
+  callbacks.current = { onIssue, onUsage, batteryReading };
   const visionRef = useRef(vision);
   visionRef.current = vision;
   /** Something hermes should hear at the top of its next turn — a refused photo. */
@@ -181,6 +187,9 @@ export function useHermes({ onIssue, onUsage, vision = null }: UseHermesOptions 
       /** Tools already reported, so a second progress frame is not a second gap. */
       const announced = new Set<string>();
 
+      // The battery, read fresh each turn — hermes has no device_battery (ASC-45).
+      const battery = callbacks.current.batteryReading?.() ?? null;
+
       try {
         const res = await chatStream({
           apiKey: cfg.apiKey,
@@ -191,6 +200,7 @@ export function useHermes({ onIssue, onUsage, vision = null }: UseHermesOptions 
           // session once.
           messages: [
             { role: 'system', content: DESK_PREAMBLE },
+            ...(battery ? [{ role: 'system' as const, content: deskStatusLine(battery) }] : []),
             { role: 'user', content },
           ],
           baseUrl: cfg.baseUrl,

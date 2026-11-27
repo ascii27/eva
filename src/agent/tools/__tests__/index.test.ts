@@ -1,6 +1,6 @@
 import { describe, expect, it, jest } from '@jest/globals';
 import type { Photo } from '../../../vision/photos';
-import { buildToolKit, type DeskHandles, type ErrandHandles, type ToolConfig, type VisionHandles } from '../index';
+import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type ToolConfig, type VisionHandles } from '../index';
 
 /** Both handles, so a test can override only the one it is about. */
 const stubErrands = (over: Partial<ErrandHandles> = {}): ErrandHandles => ({
@@ -396,5 +396,31 @@ describe('go_to_sleep / wake_up', () => {
   it('errors rather than throwing with no face', async () => {
     const { message } = await buildToolKit(WITHOUT_SEARCH).run({ id: 'c', name: 'go_to_sleep', arguments: '{}' });
     expect(message.content).toMatch(/^Error/);
+  });
+});
+
+describe('device_battery', () => {
+  const call = { id: 'c', name: 'device_battery', arguments: '' };
+
+  it('is offered only on a build that can read the battery', () => {
+    expect(names(WITHOUT_SEARCH)).not.toContain('device_battery');
+    const battery: BatteryHandles = { read: async () => null };
+    expect(names({ ...WITHOUT_SEARCH, battery })).toContain('device_battery');
+  });
+
+  it('reads without asking — no consent gate for the battery', async () => {
+    const onConsent = jest.fn(async () => false);
+    const battery: BatteryHandles = { read: async () => ({ level: 0.42, state: 'unplugged', lowPowerMode: false }) };
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, battery }).run(call, { onConsent });
+    expect(message.content).toBe("The desk phone's battery is at 42 percent and not plugged in.");
+    expect(onConsent).not.toHaveBeenCalled();
+  });
+
+  it('errors rather than throwing when the phone will not say', async () => {
+    const silent: BatteryHandles = { read: async () => null };
+    expect((await buildToolKit({ ...WITHOUT_SEARCH, battery: silent }).run(call)).message.content).toMatch(/^Error/);
+    const broken: BatteryHandles = { read: async () => Promise.reject(new Error('boom')) };
+    expect((await buildToolKit({ ...WITHOUT_SEARCH, battery: broken }).run(call)).message.content).toMatch(/^Error.*boom/);
+    expect((await buildToolKit(WITHOUT_SEARCH).run(call)).message.content).toMatch(/^Error/);
   });
 });

@@ -48,6 +48,8 @@ const DEFAULT_CASES: [string, string][] = [
   ['thanks, that is all for tonight, you can rest now', 'go_to_sleep'],
   ['wake up, stay up with me for a bit', 'wake_up'],
   ['keep the screen on tonight please', 'wake_up'],
+  ["how's your battery doing", 'device_battery'],
+  ['are you plugged in right now', 'device_battery'],
   ['be quiet for a second', 'none'],
 ];
 
@@ -85,7 +87,7 @@ async function ask(question: string, memories: string[] = []): Promise<Choice['m
     body: JSON.stringify({
       model,
       messages: buildRequest(PERSONA, memories, session),
-      tools: toolSpecs('probe-key', false, false, true).map((t) => ({ type: 'function', function: t })),
+      tools: toolSpecs('probe-key', false, false, true, true).map((t) => ({ type: 'function', function: t })),
       // max_completion_tokens works on every family; max_tokens is rejected
       // outright by the gpt-5 and o-series models.
       max_completion_tokens: budget,
@@ -100,7 +102,7 @@ async function ask(question: string, memories: string[] = []): Promise<Choice['m
 }
 
 console.log(`\nmodel: ${model}`);
-console.log(`tools offered: ${toolSpecs('probe-key', false, false, true).map((t) => t.name).join(', ')}\n`);
+console.log(`tools offered: ${toolSpecs('probe-key', false, false, true, true).map((t) => t.name).join(', ')}\n`);
 
 let called = 0;
 for (const [question, expected] of cases) {
