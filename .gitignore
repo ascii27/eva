@@ -51,3 +51,7 @@ yarn-error.*
 
 # Playwright MCP screenshots and logs
 /.playwright-mcp/
+
+# Python bytecode (hermes skill scripts)
+__pycache__/
+*.pyc
