@@ -82,3 +82,32 @@ export const SEED_CHORES = [
   { id: 'sa-laundry', title: 'Put away laundry', who: 'sarina', icon: 'laundry' },
   { id: 'sa-plants', title: 'Water plants', who: 'sarina', icon: 'plants' },
 ];
+
+// A sample `month` panel (ASC-41) around `today` ("YYYY-MM-DD"): the same
+// people and kinds of events as the sample day, repeating through last, this
+// and next month, so the month sheet can be tried without a calendar.
+export function dummyMonth(today) {
+  const [y, m] = today.split('-').map(Number);
+  const first = Date.UTC(y, m - 2, 1), end = Date.UTC(y, m + 1, 1);
+  const weekly = [
+    [1, { start: '9:00', end: '18:00', title: 'Office', who: ['michael'], icon: 'work' }],
+    [2, { start: '17:00', end: '18:00', title: 'Swim', who: ['sarina'], icon: 'swim' }],
+    [3, { start: '16:00', end: '16:45', title: 'Piano', who: ['mariko'], icon: 'music' }],
+    [3, { start: '9:00', end: '18:00', title: 'Office', who: ['michael'], icon: 'work' }],
+    [5, { start: '17:00', end: '18:30', title: 'Tennis', who: ['mariko'], icon: 'tennis' }],
+    [6, { start: '10:00', end: '12:00', title: 'Family lunch', who: [], icon: 'calendar' }],
+  ];
+  const out = [];
+  for (let t = first; t < end; t += 86_400_000) {
+    const d = new Date(t);
+    const date = d.toISOString().slice(0, 10);
+    const dom = d.getUTCDate();
+    if (dom >= 12 && dom <= 14) out.push({ date, start: null, allDay: true, title: 'School trip', who: ['mariko'], icon: 'calendar' });
+    if (dom === 20) out.push({ date, start: null, allDay: true, title: 'Sports day', who: ['mariko', 'sarina'], icon: 'calendar' });
+    if (dom === 8) out.push({ date, start: '15:30', end: '16:00', title: 'Dentist', who: ['nozomi', 'sarina'], icon: 'tooth' });
+    if (dom === 18) out.push({ date, start: '19:00', end: '21:00', title: 'Dinner with friends', who: ['nozomi'], icon: 'calendar' });
+    for (const [wd, e] of weekly) if (d.getUTCDay() === wd) out.push({ date, ...e });
+  }
+  const key = (e) => (e.allDay ? -1 : Number(e.start.split(':')[0]) * 60 + Number(e.start.split(':')[1]));
+  return out.sort((a, b) => a.date.localeCompare(b.date) || key(a) - key(b));
+}

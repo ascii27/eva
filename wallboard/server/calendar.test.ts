@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { calendarPanels, httpsUrl, iconOf, parsePeople, personOf, whoFor, whoOf } from './calendar.ts';
+import { calendarPanels, httpsUrl, monthPanel, iconOf, parsePeople, personOf, whoFor, whoOf } from './calendar.ts';
 
 // Synthetic feed — never the family's real calendar.
 const LA = `BEGIN:VTIMEZONE
@@ -143,4 +143,38 @@ test('routine: leave at 7:55 Mon–Fri only, bedtime 20:30 Sun–Thu and 21:00 F
     ev('UID:y\nDTSTART;VALUE=DATE:20261116\nDTEND;VALUE=DATE:20261117\nSUMMARY:Holiday'),
   );
   assert.deepEqual(calendarPanels(ics, at('2026-11-16T06:00:00')).schedule.map((e) => e.start ?? 'all day'), ['all day', '20:30', '21:00']);
+});
+
+test('month panel (ASC-41): last month to next month, all-day repeated per day, sorted, no routine', () => {
+  const ics = cal(
+    ev('UID:old\nDTSTART;TZID=Asia/Tokyo:20260930T100000\nSUMMARY:Too early'),
+    ev('UID:oct\nDTSTART;TZID=Asia/Tokyo:20261001T090000\nDTEND;TZID=Asia/Tokyo:20261001T100000\nSUMMARY:First in range'),
+    ev('UID:w\nDTSTART;TZID=Asia/Tokyo:20261123T170000\nDTEND;TZID=Asia/Tokyo:20261123T180000\nRRULE:FREQ=WEEKLY;COUNT=3\nSUMMARY:さりな スイミング'),
+    ev('UID:trip\nDTSTART;VALUE=DATE:20261130\nDTEND;VALUE=DATE:20261202\nSUMMARY:まりこ trip'),
+    ev('UID:early\nDTSTART;TZID=Asia/Tokyo:20261130T080000\nSUMMARY:Dentist'),
+    ev('UID:longtrip\nDTSTART;VALUE=DATE:20261230\nDTEND;VALUE=DATE:20270104\nSUMMARY:Ski'),
+    ev('UID:jan\nDTSTART;TZID=Asia/Tokyo:20270101T100000\nSUMMARY:Too late'),
+  );
+  const m = monthPanel(ics, at('2026-11-26T12:00:00'));
+  assert.deepEqual(m.map((e) => `${e.date} ${e.start ?? 'all-day'} ${e.title}`), [
+    '2026-10-01 9:00 First in range',
+    '2026-11-23 17:00 さりな スイミング',
+    '2026-11-30 all-day まりこ trip',
+    '2026-11-30 8:00 Dentist',
+    '2026-11-30 17:00 さりな スイミング',
+    '2026-12-01 all-day まりこ trip',
+    '2026-12-07 17:00 さりな スイミング',
+    '2026-12-30 all-day Ski',
+    '2026-12-31 all-day Ski',
+  ]);
+  assert.deepEqual(m[1], { date: '2026-11-23', start: '17:00', end: '18:00', title: 'さりな スイミング', who: ['sarina'], icon: 'swim' });
+  assert.deepEqual(m[2], { date: '2026-11-30', start: null, allDay: true, title: 'まりこ trip', who: ['mariko'], icon: 'calendar' });
+  assert.ok(!m.some((e) => e.title === 'Bedtime' || e.title === 'School'));
+  assert.deepEqual(monthPanel(null, at('2026-11-26T12:00:00')), []);
+});
+
+test('month panel spans a year boundary', () => {
+  const ics = cal(ev('UID:nov\nDTSTART;TZID=Asia/Tokyo:20261130T100000\nSUMMARY:Nov'), ev('UID:dec\nDTSTART;TZID=Asia/Tokyo:20261201T100000\nSUMMARY:Dec'),
+    ev('UID:feb\nDTSTART;TZID=Asia/Tokyo:20270228T100000\nSUMMARY:Feb'), ev('UID:mar\nDTSTART;TZID=Asia/Tokyo:20270301T100000\nSUMMARY:Mar'));
+  assert.deepEqual(monthPanel(ics, at('2027-01-15T12:00:00')).map((e) => e.title), ['Dec', 'Feb']);
 });

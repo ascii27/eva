@@ -17,7 +17,9 @@ import { isStale, retryDelay, shouldReload } from './link.js';
 import { icon, glyph, star, weatherIcon } from './icons.js';
 import { BITS, BALLOONS, FLAKES, RAIN, UP, SNOW, FLAKE_SVG, TILE_ICONS } from './celebrate.js';
 import { ORDER, person } from './household.js';
-import { dummy } from './dummy.js';
+import { dummy, dummyMonth } from './dummy.js';
+import { monthSheet } from './monthview.js';
+import { monthRange, stepMonth, stepWeek } from './month.js';
 import { EvaSpot, evaMessage, evaSig } from './eva.js';
 import { comingUp, shownAt } from './comingup.js';
 import { BIG, badgeUrl, garlandSvg, heroHtml, holidayOn, motifSvg } from './holiday.js';
@@ -579,7 +581,7 @@ function rightColumn(level = 0) {
   }
   if (!evening) {
     const rows = listRows(todayEvents(), t, nextIds, level);
-    out.push(`<div class="rc-card">${rcHead('clock', 'Today')}${rows.html}</div>`);
+    out.push(`<div class="rc-card" data-action="month" role="button" aria-label="Today. Tap for the month.">${rcHead('clock', 'Today')}${rows.html}</div>`);
     return { html: out.join(''), last: rows.last };
   }
   // After dinner: tomorrow, and what to pack for it tonight.
@@ -990,7 +992,7 @@ function renderActive() {
   items = items.map((e, i) => ({ ...e, i })).filter((e) => !e.leave || startOf(e) > t);
   // Too many rows: drop the earliest finished timed events; all-day rows stay pinned on top.
   for (let k; items.length > 7 && (k = items.findIndex((e) => !e.allDay && startOf(e) <= t)) >= 0;) items.splice(k, 1);
-  $('act-schedule').innerHTML = `<div class="card-head"><span class="ico-muted">${icon('calendar', 32)}</span><span class="card-title">Today</span></div>${
+  $('act-schedule').innerHTML = `<div class="card-head"><span class="ico-muted">${icon('calendar', 32)}</span><span class="card-title">Today</span><span class="wk-all">Month${icon('next', 22, 2)}</span></div>${
     items.length ? items.map((e) => {
       const next = e.i === nextIdx;
       const past = !e.allDay && startOf(e) <= t;
@@ -1107,7 +1109,8 @@ function fitWeekend() {
   $('act-wk').remove();
 }
 
-// The sheet over the active view: null, { kind: 'detail', id, day, from }, or { kind: 'browse', page }.
+// The sheet over the active view: null, { kind: 'detail', id, day, from }, { kind: 'browse', page },
+// or { kind: 'month', mode: 'month' | 'week', ym, day } (ASC-41, web/monthview.js).
 let sheet = null;
 const asking = new Set();   // event ids with a request in flight
 
@@ -1122,9 +1125,64 @@ function renderSheet() {
   const el = $('sheet');
   if (!sheet || view !== 'active') { el.hidden = true; el.innerHTML = ''; return; }
   const close = `<button type="button" class="round-btn sheet-x" data-action="sheet-close" aria-label="Close">${icon('close', 32, 2)}</button>`;
-  el.innerHTML = `<div class="sheet-back" data-action="sheet-close"></div><div class="sheet-card" role="dialog" aria-modal="true">${
-    sheet.kind === 'detail' ? detailSheet() : browseSheet()}${close}</div>`;
+  const inner = `${sheet.kind === 'month' ? monthSheet(sheet, monthEntries(), todayKey()) : sheet.kind === 'detail' ? detailSheet() : browseSheet()}${close}`;
+  // Already open: swap only the card's contents, so the card stays put instead of
+  // replaying its slide-in on every tap and every panel update.
+  const card = el.hidden ? null : el.querySelector('.sheet-card');
+  if (card) card.innerHTML = inner;
+  else el.innerHTML = `<div class="sheet-back" data-action="sheet-close"></div><div class="sheet-card" role="dialog" aria-modal="true">${inner}</div>`;
   el.hidden = false;
+}
+
+// ---- month calendar (ASC-41) ----------------------------------------------------
+
+/** The `month` panel (the family calendar, server/calendar.ts); the sample month until the server has one. */
+function monthEntries() {
+  const p = server?.panels?.month;
+  if (p) return Array.isArray(p.data) ? p.data : [];
+  return dummyMonth(todayKey());
+}
+
+/** Tap the Today card: from the calm view this wakes the active view first. */
+function openMonth() {
+  if (view !== 'active') show('active');
+  const today = todayKey();
+  sheet = { kind: 'month', mode: 'month', ym: today.slice(0, 7), day: today };
+  renderSheet();
+}
+
+/** Keep the month and the selected day together, inside last / this / next month. */
+function monthTo(ym, day) {
+  const today = todayKey();
+  if (!monthRange(today).includes(ym)) return;
+  sheet.ym = ym;
+  sheet.day = day ?? (ym === today.slice(0, 7) ? today : `${ym}-01`);
+}
+
+function monthAction(action, el) {
+  if (sheet?.kind !== 'month') return;
+  const today = todayKey();
+  const shown = () => (sheet.mode === 'week' ? `week ${sheet.day}` : `month ${sheet.ym}`);
+  const before = shown();
+  if (action === 'mc-mode') {
+    sheet.mode = el.dataset.mode === 'week' ? 'week' : 'month';
+    if (sheet.mode === 'month') monthTo(sheet.day.slice(0, 7), sheet.day);
+  } else if (action === 'mc-day') {
+    const day = el.dataset.day;
+    if (day.slice(0, 7) === sheet.ym) sheet.day = day;
+    else monthTo(day.slice(0, 7), day);
+  } else if (action === 'mc-step') {
+    const dir = Number(el.dataset.dir);
+    if (sheet.mode === 'week') {
+      sheet.day = stepWeek(sheet.day, dir, today);
+      const r = monthRange(today);
+      const ym = sheet.day.slice(0, 7);
+      sheet.ym = r.includes(ym) ? ym : r[ym < r[0] ? 0 : 2];
+    } else monthTo(stepMonth(sheet.ym, dir, today));
+  }
+  renderSheet();
+  // A new month, week or mode fades in under the head row; picking a day in the shown month just updates.
+  if (shown() !== before) $('sheet').querySelector('.mc-body')?.classList.add('is-in');
 }
 
 function detailSheet() {
@@ -1584,6 +1642,8 @@ $('stage').addEventListener('click', (e) => {
     case 'swap': return swapBath();
     case 'undo': { const u = undoFn; hideToast(); if (u) u(); return; }
     case 'event': return openEvent(el.dataset.id);
+    case 'month': return openMonth();
+    case 'mc-mode': case 'mc-day': case 'mc-step': return monthAction(el.dataset.action, el);
     case 'events': sheet = { kind: 'browse', page: 0 }; return renderSheet();
     case 'browse-page': sheet.page += Number(el.dataset.dir); return renderSheet();
     case 'sheet-back': sheet = sheet?.from ?? null; return renderSheet();

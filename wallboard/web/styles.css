@@ -603,3 +603,56 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .evb-foot { flex: none; display: flex; align-items: center; justify-content: center; gap: 28px; }
 .evb-foot .pill-btn[disabled] { opacity: .4; }
 .evb-page { font-size: 22px; color: var(--ink-muted); min-width: 140px; text-align: center; }
+
+/* ---- Month calendar (ASC-41) — design/MonthCalendar.dc.html ------------------
+   A sheet over the active view, opened from the Today card (calm or active).
+   Read-only: the family calendar's last, this and next month. Chips take the
+   person's avatar colours; shared events (nobody, or several) are neutral. */
+.mc { flex: 1; min-width: 0; padding: 28px 48px 40px; display: flex; flex-direction: column; gap: 24px; }
+.mc-head { flex: none; display: flex; align-items: center; gap: 28px; min-height: 72px; padding-right: 88px; }
+.mc-toggle { display: flex; gap: 12px; }
+.mc-title { margin: 0; font-family: var(--font-display); font-size: 44px; line-height: 52px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; }
+.mc-nav { margin-left: auto; display: flex; gap: 16px; }
+.mc-nav .round-btn[disabled] { opacity: .4; }
+.mc-body { flex: 1; min-height: 0; display: flex; gap: 32px; }
+.mc-body.is-in { animation: sd-fade-in .2s ease-out; }
+@media (prefers-reduced-motion:reduce){.mc-body.is-in{animation:none}}
+
+/* Month: six Monday-first weeks, always, so the grid never changes size. */
+.mc-grid { flex: 1; min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 26px repeat(6, minmax(0, 1fr)); gap: 8px; }
+.mc-wd { font-size: 18px; line-height: 26px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; color: var(--ink-muted); padding-left: 10px; }
+.mc-day { min-width: 0; min-height: 0; overflow: hidden; padding: 6px 8px; border-radius: 18px; background: var(--surface-200); border: 2px solid transparent; text-align: left; display: flex; flex-direction: column; align-items: stretch; gap: 4px; transition: transform .12s ease; }
+.mc-day:active { transform: scale(.97); }
+.mc-day.out { background: none; opacity: .45; }
+.mc-day.on { border-color: var(--accent); }
+.mc-top { flex: none; display: flex; align-items: center; justify-content: space-between; }
+.mc-count { font-size: 18px; line-height: 26px; font-weight: 600; color: var(--ink-muted); padding-right: 4px; }
+.mc-n { flex: none; min-width: 34px; height: 34px; padding: 0 4px; border-radius: 999px; display: grid; place-items: center; font-family: var(--font-display); font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.today .mc-n { background: var(--accent); color: var(--on-accent); }
+.mc-chip { flex: none; height: 26px; padding: 0 10px; border-radius: 999px; font-size: 16px; line-height: 26px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc-chip.shared, .mc-blk.shared { background: var(--surface-300); color: var(--ink); }
+.mc-ct { font-family: var(--font-display); font-variant-numeric: tabular-nums; margin-right: 6px; }
+.mc-more { flex: none; padding-left: 10px; font-size: 16px; line-height: 26px; font-weight: 600; color: var(--ink-muted); }
+
+/* The tapped day's whole list, beside the grid: the Today card's rows. */
+.mc-side { width: 440px; flex: none; min-height: 0; padding-left: 32px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 16px; overflow: hidden; }
+.mc-side-head { display: flex; flex-direction: column; padding: 0 16px; }
+.mc-date { font-family: var(--font-display); font-size: 36px; line-height: 44px; font-weight: 600; }
+.mc-list { min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+
+/* Week: seven columns, an all-day row, then the hours (7:00–21:00 unless an event is outside them). */
+.mc-week { flex: 1; min-width: 0; display: grid; grid-template-columns: 76px repeat(7, minmax(0, 1fr)); grid-template-rows: auto auto minmax(0, 1fr); column-gap: 8px; row-gap: 10px; }
+.mc-wh { display: flex; align-items: center; gap: 8px; padding-left: 2px; }
+.mc-wh .mc-wd { padding-left: 0; }
+.mc-adk { white-space: nowrap; font-size: 14px; line-height: 26px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; color: var(--ink-muted); }
+.mc-ad { min-width: 0; min-height: 56px; display: flex; flex-direction: column; gap: 4px; }
+.mc-hours { position: relative; }
+.mc-hn { position: absolute; right: 0; transform: translateY(-50%); font-family: var(--font-display); font-size: 16px; line-height: 20px; font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.mc-hn:first-child { transform: none; }
+.mc-col { position: relative; min-width: 0; border-radius: 12px; background: var(--surface-200); }
+.mc-col.today { background: var(--accent-soft); }
+.mc-hl { position: absolute; left: 0; right: 0; height: 1px; background: var(--line); }
+.mc-hl:first-child { display: none; }
+.mc-blk { position: absolute; min-height: 0; padding: 2px 8px; border: 1px solid var(--surface-100); border-radius: 8px; overflow: hidden; font-size: 16px; line-height: 20px; font-weight: 600; }
+/* The Today card says it opens the month. */
+.act-schedule .wk-all { margin-left: auto; }
