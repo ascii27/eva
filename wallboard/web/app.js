@@ -23,7 +23,6 @@ import { monthRange, stepMonth, stepWeek } from './month.js';
 import { EvaSpot, evaMessage, evaSig } from './eva.js';
 import { comingUp, shownAt } from './comingup.js';
 import { BIG, badgeUrl, garlandSvg, heroHtml, holidayOn, motifSvg } from './holiday.js';
-import { rollBath } from './bath.js';
 import { WX_BACK_MS, nextWxFace, wxFace } from './wxface.js';
 import { ANNOUNCE, ALARM, render as renderCue, wav, cueFor } from './chime.js';
 import { LEVEL_WORDS, hanamaruState, markCheered, metaLine, percent, rangeLabel, showWeek, toCheer } from './week.js';
@@ -118,19 +117,16 @@ let server = null;               // BoardState from the server
 const pending = new Map();       // chore id → done, sent but not yet confirmed
 const DUMMY = dummy();
 
-// Bath order lives only in this browser for now (no server model yet), and
-// rolls forward a night at a time (web/bath.js, ASC-34). Persisted so a reload
-// doesn't reset it. Pay is the server's.
+// What only this browser needs to remember across a reload (which week it has
+// already cheered). Pay is the server's. A `bath` key left by the old bath
+// order (ASC-34, removed in ASC-48) is dropped on load.
 let local = loadLocal();
-saveLocal();   // pin the rolled bath state's date, or a reload tomorrow would adopt it as new
 function loadLocal() {
   try {
     const s = JSON.parse(localStorage.getItem('wallboard.local') ?? 'null');
-    if (s && s.bath) return { ...s, bath: rollBath(s.bath, dayKey(now())) };
+    if (s && typeof s === 'object') { const { bath, ...rest } = s; return rest; }
   } catch {}
-  return {
-    bath: { date: dayKey(now()), tonight: 'sarina', history: [] },
-  };
+  return {};
 }
 function saveLocal() {
   try { localStorage.setItem('wallboard.local', JSON.stringify(local)); } catch {}
@@ -255,17 +251,13 @@ function countdown() {
   return mins > 0 && mins <= BED_WINDOW_MIN ? { item: bt, mins, icon: 'moon', verb: 'in bed by' } : null;
 }
 
-function bathFirst() {
-  return person(local.bath.tonight).name;
-}
-
 /** Sort key: all-day events (from the calendar) before anything timed. */
 const startOf = (e) => (e.allDay ? -1 : parseHM(e.start ?? e.at));
 const timeLabel = (e) => (e.allDay ? 'All day' : fmtMin(parseHM(e.start ?? e.at)));
 const fmtMin = (m) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 
 function schedule() {
-  const items = (content('schedule') ?? []).map((e) => ({ ...e, sub: String(e.sub ?? '').replace('{bath}', bathFirst()) }));
+  const items = [...(content('schedule') ?? [])];
   const lb = content('leave-by');
   if (lb?.at) items.push({ at: lb.at, title: lb.label, who: lb.who, leave: true });
   return items.filter((e) => startOf(e) != null).sort((a, b) => startOf(a) - startOf(b));
@@ -296,8 +288,7 @@ function renderAmbient() {
 //
 // Who has what today, so the family can prepare: a "Next up" card when
 // something starts within the hour, then a per-person "Today" card; after
-// dinner (everything done, or 18:30) "Tomorrow", with bath order riding in the
-// evening's Next-up card. Never more than two cards. Reference:
+// dinner (everything done, or 18:30) "Tomorrow". Never more than two cards. Reference:
 // design/DayFlow.dc.html. Everything here sits on a card, never on the photo.
 
 const SOON_MIN = 60;                    // "Next up" appears this long before an event
@@ -548,12 +539,6 @@ function listRows(list, t, nextIds, level) {
   return { html, last: drop === rows.length };
 }
 
-/** Who bathes first tonight: a row inside the evening's Next-up card (or atop Tomorrow). */
-function bathRow() {
-  const id = local.bath.tonight;
-  return `<div class="rc-bathrow"><span class="rc-bath">${icon('bath', 28, 1.9)}</span><span class="rc-bt">Bath first</span>${avatar(id, 44, 16)}<span class="rc-bt">${esc(person(id).name)}</span></div>`;
-}
-
 /**
  * The calm right column at compaction `level`. At most two cards: Next up (if
  * any) and one list — Today, or Tomorrow after the switch. Returns the html and
@@ -569,8 +554,7 @@ function rightColumn(level = 0) {
     const avs = up.who.length ? `<span class="rc-avs">${up.who.map((id) => avatar(id, 44, 16)).join('')}</span>` : '';
     out.push(`<div class="rc-card rc-next">${rcHead(up.icon, up.label, avs)}
       <div class="rc-count"><span class="big">${up.mins}</span><span class="unit">min</span><span class="what">${esc(up.title)}</span></div>
-      ${up.bring.length ? `<div class="rc-bring"><span class="rc-k">Bring</span>${bringPills(up.bring)}</div>` : ''}
-      ${evening ? bathRow() : ''}</div>`);
+      ${up.bring.length ? `<div class="rc-bring"><span class="rc-k">Bring</span>${bringPills(up.bring)}</div>` : ''}</div>`);
   }
   // Sunday (ASC-36): the week in review takes the list card's place all day.
   // Today's and tomorrow's rows are still one tap away in the active view.
@@ -585,15 +569,11 @@ function rightColumn(level = 0) {
     return { html: out.join(''), last: rows.last };
   }
   // After dinner: tomorrow, and what to pack for it tonight.
-  const bath = up ? '' : bathRow();
   const tm = events('tomorrow');
-  if (!tm) {
-    if (bath) out.push(`<div class="rc-card">${rcHead('moon', 'Tonight')}${bath}</div>`);
-    return { html: out.join(''), last: true };
-  }
+  if (!tm) return { html: out.join(''), last: true };
   const pack = unionBring(tm.map((e) => e.bring));
   const rows = listRows(tm, null, new Set(), level);
-  out.push(`<div class="rc-card">${rcHead('clock', `Tomorrow · ${WEEKDAYS[(now().getDay() + 1) % 7]}`)}${bath}${rows.html}
+  out.push(`<div class="rc-card">${rcHead('clock', `Tomorrow · ${WEEKDAYS[(now().getDay() + 1) % 7]}`)}${rows.html}
     ${pack.length ? `<div class="rc-bring rc-pack"><span class="rc-k">Pack tonight</span>${bringPills(pack)}</div>` : ''}</div>`);
   return { html: out.join(''), last: rows.last };
 }
@@ -677,7 +657,7 @@ function cheerWeek() {
 
 // Calm strip, both themes (PaperV3HaloLandscape.dc.html by day, Main.dc.html in
 // the evening): big signals readable from across the kitchen — one icon per
-// chore, who bathes first, one countdown. Counts, chore names and pay live in
+// chore, one countdown. Counts, chore names and pay live in
 // the active view.
 const DOT_ROOM = 345;   // px for the chore dots in a kid tile at 1920 wide
 
@@ -695,8 +675,6 @@ function strip() {
     const badge = g.all ? `<span class="sd-star">${star(24)}</span>` : '';
     return `<div class="strip-card sd-kid">${who(g.id, badge)}<div class="sd-dots">${dots}</div></div>`;
   });
-  out.push(`<div class="strip-card sd-bath" aria-label="Bath first tonight: ${esc(bathFirst())}">
-    <span class="sd-disc sd-cool">${icon('bath', 56, 1.9)}</span>${who(local.bath.tonight, '<span class="sd-first">1st</span>')}</div>`);
   const cd = shownCountdown();
   if (cd) out.push(countTile(cd, Date.now() < partyUntil && partyKind === 'count', rotFresh));
   rotFresh = false;
@@ -1006,16 +984,6 @@ function renderActive() {
 
   renderChores();
 
-  // Bath order (this browser's, rolled nightly by web/bath.js).
-  const b = local.bath;
-  const last = b.history[b.history.length - 1];
-  const auto = last === 'mariko' ? 'sarina' : 'mariko';
-  $('act-bath').innerHTML = `<div class="bath-row"><div class="bath-ico">${icon('drop', 32)}</div>
-      <span class="bath-k">Bath first tonight</span>${avatar(b.tonight, 48, 18)}<span class="bath-v">${esc(bathFirst())}</span>
-      <button type="button" class="pill-btn pill-neutral" style="margin-left:auto" data-action="swap">${icon('swap', 26, 2)}Swap</button></div>
-    <div class="bath-hist"><span class="k">Went first</span>${b.history.map((id, i, a) =>
-      `<span style="opacity:${i === a.length - 1 ? 1 : 0.55};display:flex">${avatar(id, 32, 12)}</span>`).join('')}
-      ${last ? `<span class="note">Last night: ${esc(person(last).name)}${b.tonight === auto ? '' : ' · swapped tonight'}</span>` : ''}</div>`;
 
   // Right column: leave/pickup, countdowns. Eva's bubble sits above
   // these in its own mount (#act-bubble), so a re-render never restarts her.
@@ -1495,7 +1463,6 @@ function tick() {
   const m = minutesOfDay(d);
   if (m !== lastMinute) {
     lastMinute = m;
-    rollBathToday();
     applyTheme(true);
     applyHoliday();
     // Day/night handover happens on its own, but never yanks the active view from under a finger.
@@ -1566,15 +1533,6 @@ function tapChore(id) {
   });
 }
 
-function snapshot() { return JSON.parse(JSON.stringify(local)); }
-function changeLocal(mutate, toast) {
-  const prev = snapshot();
-  mutate();
-  saveLocal();
-  renderAll();
-  showToast({ ...toast, undo: () => { local = prev; saveLocal(); renderAll(); } });
-}
-
 // One Mark paid in flight per person: a second tap while the first is pending
 // does nothing. The server also refuses (409) any amount that isn't what is owed.
 const paying = new Set();
@@ -1613,20 +1571,6 @@ async function cancelPayment(id) {
   }
 }
 
-/** A new day: last night's first goes on the history and the other girl is up. */
-function rollBathToday() {
-  const b = rollBath(local.bath, dayKey(now()));
-  if (b.date === local.bath.date && b.tonight === local.bath.tonight) return;
-  local.bath = b;
-  saveLocal();
-}
-
-function swapBath() {
-  const next = local.bath.tonight === 'mariko' ? 'sarina' : 'mariko';
-  changeLocal(() => { local.bath.tonight = next; },
-    { ok: true, title: `${person(next).name} goes first tonight`, sub: 'Swapped by hand · next turn adjusts' });
-}
-
 $('stage').addEventListener('pointerdown', () => { if (view === 'active') armIdle(); });
 $('stage').addEventListener('click', (e) => {
   const el = e.target.closest('[data-action]');
@@ -1639,7 +1583,6 @@ $('stage').addEventListener('click', (e) => {
     case 'home': return show(resting());
     case 'chore': return tapChore(el.dataset.id);
     case 'pay': return pay(el.dataset.who);
-    case 'swap': return swapBath();
     case 'undo': { const u = undoFn; hideToast(); if (u) u(); return; }
     case 'event': return openEvent(el.dataset.id);
     case 'month': return openMonth();

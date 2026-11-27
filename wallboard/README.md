@@ -21,9 +21,7 @@ Separate from the phone app: its own Node project, its own deploy, hosted at
   day: "Morning paper" 06:00–21:00, dark Haven Night until 22:00, switched
   with a 1.5 s crossfade, no reload.
 - `web/dummy.js` — **dummy content** for everything Eva doesn't push yet. Each
-  key is replaced by the pushed panel of the same name. Bath order lives
-  only in the board's browser (localStorage) and alternates nightly
-  (`web/bath.js`). Pay is real:
+  key is replaced by the pushed panel of the same name. Pay is real:
   it comes from the board's activity log.
 
 Node 24 runs the TypeScript directly (type stripping), so there is no build step.

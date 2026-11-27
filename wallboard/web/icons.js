@@ -34,7 +34,7 @@ const CHORES = {
   laundry: '<path d="M8 4L3 7l2 4 2-1v10h10V10l2 1 2-4-5-3c-.5 1.7-2 2.5-4 2.5S8.5 5.7 8 4z"/>',
   plants: '<path d="M12 21v-8M12 13c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5zM8 21h8"/>',
   // design/ChoreIcons.dc.html (CLAUDE.md "Chore icons"), copied verbatim. The
-  // cleaning ones carry a small sparkle; `tub-clean` is not `bath` (bath order).
+  // cleaning ones carry a small sparkle; `tub-clean` (a chore) is not `bath` (the plain tub, for events).
   dishes: '<path d="M3 12h18a9 9 0 0 1-18 0zM8 21h8"/><circle cx="8" cy="6.5" r="1.6"/><circle cx="12.5" cy="4" r="1.1"/><circle cx="15.5" cy="7.5" r="1.9"/>',
   'clear-table': '<path d="M3 14h18M6 14v7M18 14v7M7 10h10M9 10a3 1.6 0 0 0 6 0M12 7V2.5M10 4.5l2-2 2 2"/>',
   'tub-clean': '<path d="M3 12h18v3a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5zM6 12V6a2 2 0 0 1 4 0M7 20l-1 2M17 20l1 2"/><path d="M19 2.5v3.5M17.25 4.25h3.5"/>',

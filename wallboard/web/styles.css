@@ -205,10 +205,6 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .side-week .wr-head { flex-wrap: wrap; row-gap: 0; }
 .side-week .wr-word, .side-week .wr-meta { white-space: normal; }
 .rc-home { width: 48px; height: 48px; background: var(--surface-300); color: var(--ink); }
-/* Bath order, inside the evening's Next-up card (or atop Tomorrow). */
-.rc-bathrow { display: flex; align-items: center; gap: 12px; }
-.rc-bath { width: 48px; height: 48px; flex: none; border-radius: 50%; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center; }
-.rc-bt { font-size: 28px; font-weight: 600; }
 
 
 .segs { display: flex; gap: 6px; }
@@ -229,7 +225,6 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .amb-strip { position: relative; z-index: 2; display: flex; gap: 24px; height: 168px; min-height: 0; }
 .strip-card { border-radius: 28px; background: var(--surface-100); border: 1px solid var(--line); box-shadow: var(--strip-shadow); display: flex; align-items: center; }
 .sd-kid { flex: 1; min-width: 0; padding: 0 24px; gap: 20px; }
-.sd-bath { width: 300px; flex: none; padding: 0 26px; gap: 22px; }
 .sd-count { width: 330px; flex: none; padding: 0 26px; gap: 18px; }
 /* Coming-up rotation (ASC-25): the tile stays put, its content crossfades. */
 .sd-count > * { transition: opacity .4s ease; }
@@ -240,13 +235,11 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .sd-av { position: relative; width: 84px; height: 84px; font-size: 32px; }
 .sd-name { font-size: 22px; line-height: 26px; font-weight: 700; }
 .sd-star { position: absolute; right: -6px; top: -6px; width: 40px; height: 40px; border-radius: 50%; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; box-shadow: var(--glow-accent); }
-.sd-first { position: absolute; left: -8px; top: -8px; height: 32px; padding: 0 9px; border-radius: 999px; background: var(--cool); color: var(--on-cool); display: grid; place-items: center; font-size: 17px; font-weight: 700; }
 .sd-dots { display: flex; gap: 12px; }
 .sd-dot { position: relative; flex: none; border-radius: 50%; border: 3px solid var(--line); background: var(--surface-200); color: var(--ink); display: grid; place-items: center; transition: background .24s ease, border-color .24s ease; }
 .sd-dot.on { border-color: transparent; background: var(--accent); color: var(--on-accent); }
 .sd-tick { position: absolute; right: -4px; bottom: -4px; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-100); color: var(--accent); display: grid; place-items: center; box-shadow: 0 1px 3px rgba(50,35,15,0.3); }
 .sd-disc { width: 96px; height: 96px; flex: none; border-radius: 50%; display: grid; place-items: center; }
-.sd-cool { background: var(--cool-soft); color: var(--cool); }
 .sd-warm { background: var(--warm-soft); color: var(--warm); }
 .sd-num { font-family: var(--font-display); font-size: 88px; line-height: 88px; font-weight: 400; font-variant-numeric: tabular-nums; color: var(--warm); }
 .sd-lbl { font-size: 22px; line-height: 26px; font-weight: 700; }
@@ -368,7 +361,7 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 /* "All day" doesn't fit the time column at clock size; the size is the
    eyebrow's (DESIGN.md "All-day events"). */
 .ev .t.allday { font-family: var(--font-sans); font-size: 20px; line-height: 32px; font-weight: 600; letter-spacing: var(--label); text-transform: uppercase; white-space: nowrap; }
-.ev .t.allday { font-size: 18px; }   /* the Today card's 84 px column; 18 px as in .bath-hist .k */
+.ev .t.allday { font-size: 18px; }   /* fits the Today card's 84 px column */
 .ev.next .t { color: var(--accent); }
 .ev .body { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ev .title { font-size: 24px; line-height: 30px; font-weight: 600; }
@@ -413,15 +406,6 @@ button { font-family: var(--font-sans); color: inherit; border: 0; cursor: point
 .pill-btn:active { transform: scale(.96); }
 .pill-warm { background: var(--warm); color: var(--on-warm); }
 .pill-neutral { background: var(--surface-300); color: var(--ink); }
-
-.act-bath { flex: none; padding: 20px 20px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
-.bath-row { display: flex; align-items: center; gap: 20px; }
-.bath-ico { width: 56px; height: 56px; flex: none; border-radius: 16px; background: var(--cool-soft); color: var(--cool); display: grid; place-items: center; }
-.bath-k { font-size: 26px; line-height: 32px; font-weight: 600; color: var(--ink-muted); }
-.bath-v { font-size: 36px; line-height: 42px; font-weight: 600; }
-.bath-hist { display: flex; align-items: center; gap: 8px; padding-left: 76px; }
-.bath-hist .k { font-size: 18px; line-height: 24px; color: var(--ink-faint); margin-right: 6px; }
-.bath-hist .note { margin-left: 12px; font-size: 20px; line-height: 26px; color: var(--ink-muted); }
 
 .act-side { width: 368px; flex: none; display: flex; flex-direction: column; gap: 20px; }
 .act-side-cards { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 20px; }

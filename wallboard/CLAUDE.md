@@ -62,18 +62,18 @@ Purpose: **who has what today, so the family can prepare.** Reference: `design/D
 
 **3. After dinner: Tomorrow (plus the evening "Next up")**
 - Switch when every item today is done, or at 18:30, whichever comes first. Night mode takes over at bedtime as before.
-- Evening "Next up" is usually Bedtime, with the bath-order row inside it (see the space budget below).
+- Evening "Next up" is usually Bedtime (see the space budget below).
 - **Tomorrow · <weekday>** card: same per-person rows and pills as Today, for tomorrow. Footer row **Pack tonight** with amber pills (union of tomorrow's `bring` lists, deduplicated).
 
 **Space budget — the right column must never run under the bottom strip** (seen on the Echo 2026-11-15: Bedtime + Tonight + Tomorrow overflowed)
 - The calm stage is a fixed layout: top area above the strip, then the 168 px strip. Build it as a grid with the strip in its own row (`grid-template-rows: minmax(0, 1fr) 168px`) and give the right column `min-height: 0; overflow: hidden`, so content can only be trimmed, never overlap. At 1920×1080 the right column has ~740 px of height.
 - **Weather card first, then at most 2 cards** in the right column: the "Next up" card (if any) + one list card (Today, or Tomorrow after the switch).
-- **No separate "Tonight" card.** Bath order goes inside the evening "Next up" card (e.g. Bedtime) as a row: tub icon, "Bath first", avatar, name. If there's no Next-up card, put that row at the top of the Tomorrow card.
+- **No separate "Tonight" card.** The evening is the "Next up" card (e.g. Bedtime) and Tomorrow. (Bath order used to ride in the Next-up card; removed in ASC-48.)
 - **Compact list rules**, applied in this order until it fits:
   1. Merge people who share the same event (same title and time) into one row with overlapping avatars (e.g. Mariko + Sarina, 7:55 School).
   2. Max 2 pills per row + a "+N more" pill.
   3. If it still doesn't fit, drop rows from the bottom (latest first) and end with a "+N more" row. The active view always has everything.
-- Test the worst case: `?time=20:21` with bedtime, bath and a full tomorrow; nothing may touch the strip.
+- Test the worst case: `?time=20:21` with bedtime and a full tomorrow; nothing may touch the strip.
 
 **Data (from Eva; absent vs empty rules apply)**
 - `schedule` (today) and `tomorrow`: `[{ id, who: ["mariko", ...], start: "HH:MM", end?: "HH:MM", title, icon, bring?: [{ icon, label }] }]`. `end` defaults to `start` + 60 min for the done state.
@@ -82,12 +82,11 @@ Purpose: **who has what today, so the family can prepare.** Reference: `design/D
 
 ## Calm view: big, icon-led signals (2026-11-15)
 The calm view is read from 2–4 m, so it shows a few large signals, **icons first, words second**. Details live one tap away in the active view.
-- Bottom strip is 168 px tall with four tiles (cards, no halo):
+- Bottom strip is 168 px tall with three tiles (cards, no halo):
   - **Each girl:** an 84 px avatar with her name (22 px bold) under it, then **one 64 px circle per chore showing that chore's icon** (`web/icons.js`: bed, bag, table, shoes, laundry, plants).
     - Done: solid teal circle, white icon, small white check badge at the bottom-right.
     - To do: sand circle (`--surface-200`) with a 3 px `--line` ring and a dark icon.
     - All done: a 40 px teal star badge (with glow) on the avatar's top-right.
-  - **Bath:** a 96 px bathtub icon in a `--cool-soft` circle, then the avatar of whoever goes first with a blue "1st" pill on it.
   - **Countdown:** a 96 px gift icon in a `--warm-soft` circle, the number at 88 px amber, "days · Grandma" at 22 px bold.
   - **Tap to celebrate:** the countdown tile is the one tile that does NOT open the active view. It sits above the tap-anywhere layer (z-index 3) and stops propagation. On tap, for 4 s:
     - The gift wiggles and its lid pops open.
@@ -105,7 +104,7 @@ The calm view is read from 2–4 m, so it shows a few large signals, **icons fir
       - Particle budget on Silk: ≤ 40 elements, transform + opacity only, removed when the effect ends.
       - Party text is always: what (e.g. "Sarina turns 9"), the day ("Sat 28"), "N sleeps to go".
       - Push shape: `countdowns: [{ id, label, date, kind, who?, headline? }]`. The calm tile rotates through them with the server's defaults (see "Household and behaviour"). `headline` is the party's first line ("Grandma comes"); without it the label is used.
-- No counts, chore names, pay text or bath history on the calm view; those live in the active view.
+- No counts, chore names or pay text on the calm view; those live in the active view.
 - Every icon tile has an `aria-label` that says it in words (e.g. "Make bed: done").
 - Rule of thumb: if it can't be read from across the kitchen, it belongs in the active view.
 
@@ -116,7 +115,7 @@ Reference: `design/ChoreIcons.dc.html` (each icon large, plus to-do and done sta
 |---|---|---|
 | `dishes` | Wash the dishes | bowl with soap bubbles |
 | `clear-table` | Clear the table | plate lifting off a table, up arrow |
-| `tub-clean` | Clean the bathtub | bathtub + sparkle (distinct from `bath`, which means bath order) |
+| `tub-clean` | Clean the bathtub | bathtub + sparkle (distinct from `bath`, the plain bathtub icon events can use) |
 | `vacuum` | Vacuum | upright vacuum |
 | `dust` | Dusting | feather duster |
 | `garbage` | Take out the garbage | tied garbage bag |
@@ -190,7 +189,7 @@ References: `design/WeatherIcons.dc.html` (icons, day + dark, example cards), `d
 - **Space budget update.** The right column is now: weather (128) + "Next up" + Today/Tomorrow, still ≤ ~740 px and never under the strip. To make it fit, the DayFlow cards are compacted:
   - Next-up countdown at 80 px (was 104); card padding 20 × 28.
   - Today/Tomorrow rows: 48 px avatars, 48 px pills, 24 px text, row gap 10.
-  - Check: busiest morning (weather + leave-for-school + 4 people) and busiest evening (weather + bedtime with bath + tomorrow with pack row) both fit. If not, the existing trim rules apply.
+  - Check: busiest morning (weather + leave-for-school + 4 people) and busiest evening (weather + bedtime + tomorrow with pack row) both fit. If not, the existing trim rules apply.
 - The active view keeps its hourly strip in the header (unchanged).
 
 **Tap to rotate (ASC-27) — approved 2026-11-24.** Seen on the Echo and approved as built. There is no `design/*.dc.html` for these faces, so the values below are the spec: change this section first, then port, as for any design file.
