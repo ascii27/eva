@@ -456,6 +456,20 @@ export function FaceScreen() {
   // whether there is a camera has to be known by then.
   const vision = useVision({ onIssue: log });
 
+  // A captured photo comes off the side column shortly after the answer has
+  // been spoken (ASC-50). Leaving `speaking` is that moment: the face stays in
+  // speaking through every gap inside one reply, and the consent question's
+  // own speech end predates the capture, which thumbnailDeadline ignores.
+  const spokeRef = useRef(false);
+  const { replyEnded } = vision;
+  useEffect(() => {
+    if (mode === 'speaking') spokeRef.current = true;
+    else if (spokeRef.current) {
+      spokeRef.current = false;
+      replyEnded();
+    }
+  }, [mode, replyEnded]);
+
   // The front camera as a light meter (ASC-46): no photo kept, no consent ask.
   // It stands down while camera_look's viewfinder holds the camera.
   const previewingRef = useRef(false);

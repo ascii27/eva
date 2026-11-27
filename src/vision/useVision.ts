@@ -8,8 +8,12 @@
 // agent loop resolves photo bytes synchronously while building a request, so
 // it cannot wait for a render — but the *thumbnail* is state, because the side
 // column does need to re-render. They are updated together.
+//
+// The thumbnail expires on its own (ASC-50, `thumbnail.ts`): shortly after the
+// reply is spoken, or at a hard ceiling. Only the display goes — the photo
+// stays in the window for follow-ups.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   capture,
   deletePhotoFile,
@@ -19,6 +23,7 @@ import {
   type CameraHandle,
 } from './camera';
 import { remember, resolveDataUrl, type Photo } from './photos';
+import { thumbnailDeadline } from './thumbnail';
 
 /** How long the shutter waits for a camera that is still coming up. */
 const CAMERA_READY_TIMEOUT_MS = 3_000;
@@ -43,6 +48,38 @@ export function useVision({ onIssue }: UseVisionOptions = {}) {
   const available = useRef(isCameraAvailable());
   const notify = useRef(onIssue);
   notify.current = onIssue;
+  /** Capture time of the photo the thumbnail shows, while it is up. */
+  const shownAt = useRef<number | null>(null);
+  const expiry = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearExpiry = useCallback(() => {
+    if (expiry.current) clearTimeout(expiry.current);
+    expiry.current = null;
+  }, []);
+
+  /** (Re)arm the thumbnail's take-down for the photo captured at `shownAt`. */
+  const scheduleExpiry = useCallback(
+    (replyEndedAt: number | null) => {
+      const capturedAt = shownAt.current;
+      if (capturedAt === null) return;
+      clearExpiry();
+      const delay = Math.max(0, thumbnailDeadline(capturedAt, replyEndedAt) - Date.now());
+      expiry.current = setTimeout(() => {
+        expiry.current = null;
+        shownAt.current = null;
+        setThumbnailUri(null);
+      }, delay);
+    },
+    [clearExpiry],
+  );
+
+  useEffect(() => clearExpiry, [clearExpiry]);
+
+  /**
+   * The face just stopped speaking. If a thumbnail is up and this was the
+   * answer to its look, bring the take-down forward. Harmless otherwise.
+   */
+  const replyEnded = useCallback(() => scheduleExpiry(Date.now()), [scheduleExpiry]);
 
   /** Wired to CameraPreview; null on unmount. */
   const onCameraReady = useCallback((handle: CameraHandle | null) => {
@@ -98,6 +135,8 @@ export function useVision({ onIssue }: UseVisionOptions = {}) {
     const next = remember(photos.current, result.photo);
     photos.current = next.photos;
     setThumbnailUri(result.photo.uri);
+    shownAt.current = result.photo.takenAt;
+    scheduleExpiry(null);
     // Whatever aged out is gone from the conversation, so its bytes should go
     // too — the cache is the only place a photo was ever durable.
     for (const old of next.evicted) deletePhotoFile(old);
@@ -107,7 +146,7 @@ export function useVision({ onIssue }: UseVisionOptions = {}) {
       );
     }
     return result;
-  }, [waitForCamera]);
+  }, [waitForCamera, scheduleExpiry]);
 
   /**
    * Photo bytes by id, for `buildRequest`. Returns null once a photo has aged
@@ -119,8 +158,10 @@ export function useVision({ onIssue }: UseVisionOptions = {}) {
   const forgetPhotos = useCallback(() => {
     for (const photo of photos.current) deletePhotoFile(photo);
     photos.current = [];
+    clearExpiry();
+    shownAt.current = null;
     setThumbnailUri(null);
-  }, []);
+  }, [clearExpiry]);
 
   return {
     available: available.current,
@@ -128,6 +169,7 @@ export function useVision({ onIssue }: UseVisionOptions = {}) {
     onCameraReady,
     showPreview,
     hidePreview,
+    replyEnded,
     ensurePermission,
     takePhoto,
     resolvePhoto,
