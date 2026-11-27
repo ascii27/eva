@@ -38,7 +38,6 @@ import {
   appendTurn,
   applyCompaction,
   buildRequest,
-  type BundleText,
   MEMORY_LIMIT,
   newSession,
   planCompaction,
@@ -133,7 +132,6 @@ export interface UseRealtimeOptions {
   /** Town-level location for where_am_i, or null without expo-location. */
   location?: LocationHandles | null;
   resolvePhoto?: PhotoResolver;
-  bundleText?: (now: number) => BundleText | null;
 }
 
 export function useRealtime({
@@ -147,7 +145,6 @@ export function useRealtime({
   light = null,
   location = null,
   resolvePhoto,
-  bundleText,
 }: UseRealtimeOptions = {}) {
   const [status, setStatus] = useState<RealtimeBrainStatus>('unconfigured');
   const [connection, setConnection] = useState<RealtimeStatus>('closed');
@@ -178,8 +175,8 @@ export function useRealtime({
   /** Resolves once the session has been configured and seeded. */
   const seeded = useRef<{ promise: Promise<boolean>; resolve: (ok: boolean) => void } | null>(null);
 
-  const callbacks = useRef({ onIssue, onUsage, resolvePhoto, bundleText });
-  callbacks.current = { onIssue, onUsage, resolvePhoto, bundleText };
+  const callbacks = useRef({ onIssue, onUsage, resolvePhoto });
+  callbacks.current = { onIssue, onUsage, resolvePhoto };
 
   /**
    * The summarizers still go over HTTP.
@@ -267,9 +264,7 @@ export function useRealtime({
    * `buildRequest` stays the single author of what Eva knows and in what order,
    * so this is a replay of the same request the chat brain would have sent,
    * mapped onto conversation items. The persona becomes session instructions;
-   * everything else — remembered summaries, the hermes bundle, the turns so
-   * far — becomes items, which is what lets a bundle refresh arrive as an item
-   * rather than as a rewrite of session config.
+   * everything else — remembered summaries and the turns so far — becomes items.
    */
   const flushSeed = useCallback(async () => {
     const sock = socket.current;
@@ -283,15 +278,14 @@ export function useRealtime({
     memories.current = await recentMemories(MEMORY_LIMIT);
     if (sock.state !== 'open') return; // closed while we were reading
     const now = Date.now();
-    const bundle = callbacks.current.bundleText?.(now) ?? null;
     const current = session.current ?? newSession(now);
-    const request = buildRequest(PERSONA, memories.current, current, callbacks.current.resolvePhoto, bundle);
+    const request = buildRequest(PERSONA, memories.current, current, callbacks.current.resolvePhoto);
     const s = seed(request);
     sock.send(sessionUpdate({ instructions: s.instructions, specs: tools.current.specs }));
     for (const item of s.items) sock.send(item);
     if (__DEV__) {
       console.log(
-        `[realtime] seeded · ${current.turns.length} turns · ${memories.current.length} memories · bundle ${bundle ? 'yes' : 'no'}`,
+        `[realtime] seeded · ${current.turns.length} turns · ${memories.current.length} memories`,
       );
     }
     seeded.current?.resolve(true);

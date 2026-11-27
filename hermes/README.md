@@ -3,30 +3,29 @@
 This directory is not device code. It is what runs on (or configures)
 **hermes-agent**, kept in this repo so both halves of Eva version together.
 
-The device half is `src/hermes/`. The two have to agree about the bundle
-contract, and the fastest way to break Eva is to change one without the other.
+The device half is `src/hermes/`.
 
 ## The two halves
 
 ```
 hermes-agent (Eva-back)                    iPhone (Eva-front)
   durable memory, tools, slow work           eyes, ears, mouth, personality
-  POST /v1/chat/completions  ◀── pull ────   src/hermes/useBundle.ts
-  OpenAI-compatible, bearer auth             every 150s, backing off when quiet
-                                                        │
-                                             the bundle goes in the prompt
-                                                        ▼
-                                             OpenAI fast model — the spoken turn
+  POST /v1/chat/completions  ◀── errand ──   src/hermes/useErrands.ts
+  OpenAI-compatible, bearer auth             returns at once; the answer
+                                             lands minutes later, spoken
+                                             through the proactive queue
+                             ◀── turn ────   src/hermes/useHermes.ts
+                                             (the experimental hermes brain)
 ```
 
 Two invariants. Break either and this stops being one assistant:
 
-1. **hermes is never synchronously on the critical path of a spoken turn.** The
-   device answers from whatever bundle is resident, and says how old it is.
-   A refresh in flight blocks nothing; a failed refresh changes nothing.
-2. **hermes is the sole writer of durable memory.** The device reads a
-   projection. Two memories would mean two Evas who disagree about the week,
-   with Michael as the sync layer — the thing this is escaping.
+1. **hermes is never synchronously on the critical path of a local brain's
+   spoken turn.** An errand returns at once and the round settles at local
+   speed; the answer is delivered later.
+2. **hermes is the sole writer of durable memory.** Two memories would mean two
+   Evas who disagree about the week, with Michael as the sync layer — the thing
+   this is escaping.
 
 ## What hermes has to provide
 
@@ -36,13 +35,9 @@ it with a different `baseUrl` and two headers.
 
 - `config/api-server.example.env` — the settings, and the one that bites (the
   default bind is loopback, which a phone cannot reach).
-- `skills/eva-bundle/SKILL.md` — the skill hermes uses to *gather* the bundle
-  well. **Unused today; don't install it** (see Skills, below).
-- `schemas/bundle.schema.json` — the contract.
 
 ## Skills
 
-- `skills/eva-bundle/` — **unused; not installed on hermes.** Gathers the context bundle for the device. The polled bundle was dropped after it measured at 325k hermes-side tokens per fetch; the device's receiving half (`bundle.ts`, `useBundle`) is kept for the day hermes broadcasts one, and this skill is kept with it. Install it only alongside that.
 - `skills/eva-board-bubble/` — Eva's speech bubble on the kitchen board. Also used when the board itself tells hermes the girls ticked chores (ASC-29; `wallboard/server/react.ts`).
 - `skills/eva-chores/` — the chores ledger: copies board activity into Notion, pushes chore definitions, records payments, answers allowance questions.
 - `skills/eva-events/` — Tokyo events the family picked on the kitchen board: puts them on the family calendar, or takes them off, and reports back to the board.
@@ -53,29 +48,12 @@ it with a different `baseUrl` and two headers.
 - `skills/eva-desk-light/` — the `[[light]]` and `[[brightness]]` tokens: hermes measures the room's light through the desk camera (as a meter only) and reads or sets the screen brightness, answered by the desk in Slack (ASC-46).
 - `skills/eva-desk-slack/` — everything hermes does in `#eva-direct` (`ask battery|light|brightness|location`, `post`, `read`), through `scripts/eva_slack.py` rather than curl (ASC-49). Hand-built `curl … | python3 -c …` trips tirith's `curl_pipe_shell` finding. That finding is session-scoped by design, so `command_allowlist` can't cover it, and it asked for approval on every desk turn and is denied outright in cron. A plain `python3 eva_slack.py …` raises no finding. The script reads `SLACK_BOT_TOKEN` from `~/.hermes/.env` itself, because hermes strips it from the terminal tool's environment, and it can only reach `#eva-direct`. The `eva-desk-battery`, `-light` and `-location` skills point at it.
 
-## Where the contract actually lives
-
-`schemas/bundle.schema.json` is the reference copy, and the schema the skill is
-written against. But the authoritative copy at runtime is the one inlined in
-`src/hermes/prompt.ts` on the device.
-
-That is deliberate. The prompt and `parseBundle` have to agree, and they ship
-together in the same bundle to the same phone. Putting the schema only on the
-server would mean a hermes deploy could hand the device a shape its parser was
-never taught to read — a contract split across two deploy cadences, which is a
-guaranteed outage with an unpleasant failure mode (Eva confidently describing an
-empty afternoon).
-
-So: **change the schema here and in `prompt.ts` in the same commit.** The skill
-can then drift freely, because it only affects how well hermes gathers, not
-whether the device can read the result.
-
 ## Headers the device sends
 
 | Header | Value | Why |
 |---|---|---|
 | `X-Hermes-Session-Key` | `eva-device` | Stable long-term memory scope, so what hermes learns from the desk accumulates in one place. |
-| `X-Hermes-Session-Id` | a bundle-only id | Keeps ~500 refreshes a day out of hermes' actual transcript with Michael. A refresh is machinery, not a conversation. |
+| `X-Hermes-Session-Id` | per errand, or per spoken session on the hermes brain | Keeps the desk's machinery out of hermes' actual transcript with Michael, and on the hermes brain is the only copy of the conversation. |
 
 ## Delegation
 
@@ -135,7 +113,6 @@ repeating itself without relying on memory.
 Replay and the mem0 wiring. The outbox records what was sent and never
 re-sends it: de-duplicating across a relaunch needs an idempotency key hermes
 does not promise to honour, and a task added twice is worse than one Eva admits
-losing track of. `pendingOps` in the bundle schema is still empty — the journal
-is what would feed it, once hermes broadcasts.
+losing track of.
 
 Design: `docs/superpowers/specs/2026-08-21-hermes-bridge-design.md`.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { findNearMiss, findNearMissIn, findWake, findWakeIn, normalizeWake, TAIL_WINDOW } from '../wakeword';
+import { findNearMissIn, findWake, findWakeIn, normalizeWake, TAIL_WINDOW } from '../wakeword';
 
 describe('normalizeWake', () => {
   it('lowercases and strips punctuation', () => {
@@ -102,22 +102,22 @@ describe('findWakeIn', () => {
   });
 });
 
-describe('findNearMiss', () => {
+describe('findNearMissIn', () => {
   it('flags a greeting followed by a vowel-initial word', () => {
-    expect(findNearMiss('hey ever')).not.toBeNull();
-    expect(findNearMiss('hi even')).not.toBeNull();
+    expect(findNearMissIn(['hey ever'])).not.toBeNull();
+    expect(findNearMissIn(['hi even'])).not.toBeNull();
   });
 
   it('flags an Eva-like word without a greeting', () => {
-    expect(findNearMiss('ask ava about it')).not.toBeNull();
-    expect(findNearMiss('eva')).not.toBeNull();
+    expect(findNearMissIn(['ask ava about it'])).not.toBeNull();
+    expect(findNearMissIn(['eva'])).not.toBeNull();
   });
 
   it('is null for a real wake or for unrelated speech', () => {
-    expect(findNearMiss('hey eva')).toBeNull();
-    expect(findNearMiss('hi there')).toBeNull();
-    expect(findNearMiss('evaluate this')).toBeNull();
-    expect(findNearMiss('')).toBeNull();
+    expect(findNearMissIn(['hey eva'])).toBeNull();
+    expect(findNearMissIn(['hi there'])).toBeNull();
+    expect(findNearMissIn(['evaluate this'])).toBeNull();
+    expect(findNearMissIn([''])).toBeNull();
   });
 
   it('returns null across alternatives when any of them wakes', () => {

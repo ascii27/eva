@@ -122,19 +122,3 @@ export async function getAgentConfig(): Promise<AgentConfig | null> {
     return null;
   }
 }
-
-export async function setAgentConfig(config: AgentConfig): Promise<void> {
-  try {
-    await AsyncStorage.setItem(AGENT_CONFIG_KEY, JSON.stringify(config));
-  } catch {
-    // Persistence failure means re-entering the key after a restart, never a crash.
-  }
-}
-
-export async function clearAgentConfig(): Promise<void> {
-  try {
-    await AsyncStorage.removeItem(AGENT_CONFIG_KEY);
-  } catch {
-    // ignore
-  }
-}

@@ -1,24 +1,20 @@
-// Is Eva's other half reachable, and what does a bundle actually cost?
+// Is Eva's other half reachable, and does it take what the device sends?
 // `npm run probe:hermes`
 //
-// Everything about the bridge that this repo cannot know without asking:
-// whether the API server is up and the key works, whether it accepts the
-// options the device sends, how long a real bundle run takes, how many tokens
-// it burns, whether what comes back parses, and what it looks like once
-// rendered into the prompt.
+// Everything about the gateway that this repo cannot know without asking:
+// whether the API server is up and the key works, which model and skills it
+// advertises, whether it accepts the options the device sends, and how long
+// one trivial turn takes end to end.
 //
 // Same reason probe-tools.ts and probe-vision.ts exist: jest cannot reach the
-// network, and "the model won't do X" / "the server won't take Y" are claims
-// about a specific deployment that should be measured in a second rather than
-// discovered on the device.
+// network, and "the server won't take Y" is a claim about a specific
+// deployment that should be measured in a second rather than discovered on the
+// device.
 //
-// Costs one hermes agent run — which is not free, and finding out how not-free
-// is half the point.
+// Costs one short hermes agent run, in a throwaway transcript.
 
 import { readFileSync } from 'node:fs';
-import { BUNDLE_REQUEST } from '../src/hermes/prompt.ts';
-import { BUNDLE_SESSION_ID, envHermesConfig, hermesHeaders } from '../src/hermes/config.ts';
-import { budgetCore, coreTokens, parseBundle, renderCore, renderVolatile } from '../src/hermes/bundle.ts';
+import { envHermesConfig, hermesHeaders } from '../src/hermes/config.ts';
 
 function envLocal(name: string): string | null {
   try {
@@ -50,7 +46,7 @@ if (!cfg) {
   process.exit(1);
 }
 
-const auth = { Authorization: `Bearer ${cfg.apiKey}`, ...hermesHeaders(BUNDLE_SESSION_ID) };
+const auth = { Authorization: `Bearer ${cfg.apiKey}`, ...hermesHeaders('eva-probe') };
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
 async function probeGet(path: string): Promise<unknown | null> {
@@ -83,14 +79,12 @@ if (caps) console.log(`  /capabilities → ${Object.keys(caps).join(', ')}`);
 const skills = (await probeGet('/skills')) as { data?: { name?: string }[] } | null;
 if (skills?.data) {
   const names = skills.data.map((s) => s.name).filter(Boolean);
-  console.log(`  /skills → ${names.length} installed${names.includes('eva-bundle') ? ', including eva-bundle' : ''}`);
-  if (!names.includes('eva-bundle')) {
-    console.log('  ⚠  eva-bundle is not installed — see hermes/skills/eva-bundle/SKILL.md.');
-  }
+  const desk = names.filter((n) => typeof n === 'string' && n.startsWith('eva-desk-'));
+  console.log(`  /skills → ${names.length} installed${desk.length ? `, including ${desk.join(', ')}` : ''}`);
 }
 
-/** One bundle request. `maxTokens` is the option whose acceptance is in doubt. */
-async function requestBundle(maxTokens: number | null): Promise<{ text: string; usage: unknown; ms: number } | string> {
+/** One trivial turn. `maxTokens` is the option whose acceptance is in doubt. */
+async function requestTurn(maxTokens: number | null): Promise<{ text: string; usage: unknown; ms: number } | string> {
   const startedAt = Date.now();
   try {
     const res = await fetch(`${cfg!.baseUrl}/chat/completions`, {
@@ -98,7 +92,7 @@ async function requestBundle(maxTokens: number | null): Promise<{ text: string; 
       headers: { ...auth, 'Content-Type': 'application/json; charset=utf-8' },
       body: JSON.stringify({
         model: cfg!.model,
-        messages: [{ role: 'user', content: BUNDLE_REQUEST }],
+        messages: [{ role: 'user', content: 'Connectivity check from the Eva device. Reply with the single word: ok' }],
         ...(maxTokens === null ? {} : { max_completion_tokens: maxTokens }),
       }),
     });
@@ -111,15 +105,15 @@ async function requestBundle(maxTokens: number | null): Promise<{ text: string; 
   }
 }
 
-console.log('\nBundle request');
+console.log('\nOne turn');
 // The device sends max_completion_tokens. Every OpenAI family accepts it, but
 // hermes is compatible rather than OpenAI, so it is worth one explicit answer.
-let result = await requestBundle(4_000);
+let result = await requestTurn(200);
 if (typeof result === 'string') {
   console.log(`  with max_completion_tokens → ${result}`);
   console.log('  retrying without it…');
-  result = await requestBundle(null);
-  if (typeof result !== 'string') console.log('  ⚠  hermes rejects max_completion_tokens — drop it from client.ts.');
+  result = await requestTurn(null);
+  if (typeof result !== 'string') console.log('  ⚠  hermes rejects max_completion_tokens.');
 } else {
   console.log('  max_completion_tokens accepted');
 }
@@ -131,43 +125,4 @@ if (typeof result === 'string') {
 
 console.log(`  round trip ${secs(result.ms)}`);
 if (result.usage) console.log(`  usage ${JSON.stringify(result.usage)}`);
-console.log(`  ${result.text.length} chars back\n`);
-
-console.log('Raw response');
-console.log(result.text.length > 2_000 ? `${result.text.slice(0, 2_000)}\n  …truncated` : result.text);
-
-console.log('\nParsed');
-const bundle = parseBundle(result.text);
-if (!bundle) {
-  console.log('  ✗ did not parse — the device would keep its previous bundle and log this.');
-  console.log('    Check that hermes replied with the object and nothing else, and that');
-  console.log('    generatedAt is an ISO stamp. See src/hermes/prompt.ts for the shape.');
-  process.exit(1);
-}
-
-const filled = (Object.entries(bundle) as [string, unknown][])
-  .filter(([k]) => k !== 'generatedAt')
-  .map(([k, v]) => {
-    if (Array.isArray(v)) return `${k}=${v.length}`;
-    if (v && typeof v === 'object') {
-      const parts = Object.entries(v as Record<string, unknown>)
-        .map(([sk, sv]) => `${sk}=${Array.isArray(sv) ? sv.length : sv === null ? '—' : 'set'}`)
-        .join(' ');
-      return `${k}(${parts})`;
-    }
-    return `${k}=${v === null ? '—' : String(v)}`;
-  });
-console.log(`  stamped ${new Date(bundle.generatedAt).toISOString()}`);
-console.log(`  ${filled.join('  ')}`);
-console.log(`  (— means the section was absent, which reads differently to Eva than 0)`);
-
-const cut = budgetCore(bundle);
-const before = coreTokens(bundle);
-console.log(`\n  core ≈ ${before} tokens${before === coreTokens(cut) ? '' : ` → ${coreTokens(cut)} after truncation`}`);
-
-console.log('\nRendered core');
-console.log(renderCore(cut));
-console.log('\nRendered volatile, now');
-console.log(renderVolatile(cut, Date.now()));
-console.log('\nRendered volatile, if this were 35 minutes old');
-console.log(renderVolatile(cut, bundle.generatedAt + 35 * 60_000));
+console.log(`  reply: ${JSON.stringify(result.text.slice(0, 200))}`);

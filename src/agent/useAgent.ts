@@ -23,7 +23,6 @@ import {
   appendTurn,
   applyCompaction,
   buildRequest,
-  type BundleText,
   isGap,
   MEMORY_LIMIT,
   newSession,
@@ -106,19 +105,6 @@ export interface UseAgentOptions {
   location?: LocationHandles | null;
   /** Photo bytes by id, for the request. Null from it means aged out. */
   resolvePhoto?: PhotoResolver;
-  /**
-   * What hermes knows about Michael's week, or null when there is no bundle.
-   *
-   * A getter taking `now`, not a value, for two reasons: a round must use the
-   * bundle that is current when it is *asked* rather than whichever one the
-   * hook last rendered with, and the freshness half has to be rendered against
-   * this moment. Same shape and same reasoning as `resolvePhoto`.
-   *
-   * Nothing here ever waits on hermes. If this returns null — no hermes
-   * configured, or none fetched yet — the request is exactly what it was before
-   * the bridge existed.
-   */
-  bundleText?: (now: number) => BundleText | null;
 }
 
 export function useAgent({
@@ -132,7 +118,6 @@ export function useAgent({
   light = null,
   location = null,
   resolvePhoto,
-  bundleText,
 }: UseAgentOptions = {}) {
   const [status, setStatus] = useState<AgentStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
@@ -160,16 +145,15 @@ export function useAgent({
   /**
    * Rounds answered straight off vs. rounds that had to reach for a tool, since
    * launch. The harness spec calls this the single best health metric for the
-   * system, on the reading that a low direct rate means the bundle is too thin
-   * rather than the model too weak. Counted on the first lap only — later laps
+   * system. Counted on the first lap only — later laps
    * are the same round continuing.
    */
   const recall = useRef({ direct: 0, tool: 0 });
   /** Cumulative token spend since launch, in the same units the realtime brain
    *  reports, so the two transports can be compared on one console. */
   const spend = useRef<Spend>(emptySpend(Date.now()));
-  const callbacks = useRef({ onIssue, onUsage, resolvePhoto, bundleText });
-  callbacks.current = { onIssue, onUsage, resolvePhoto, bundleText };
+  const callbacks = useRef({ onIssue, onUsage, resolvePhoto });
+  callbacks.current = { onIssue, onUsage, resolvePhoto };
 
   /** One completion, outside the conversation — used for both summarizers. */
   const complete = useCallback(async (instruction: string, body: string): Promise<string | null> => {
@@ -328,13 +312,11 @@ export function useAgent({
       };
 
       try {
-        const bundle = callbacks.current.bundleText?.(postedAt) ?? null;
         const messages: RequestMessage[] = buildRequest(
           PERSONA,
           memories.current,
           asked,
           callbacks.current.resolvePhoto,
-          bundle,
         );
         let raw = '';
         if (__DEV__) {
@@ -343,7 +325,7 @@ export function useAgent({
           // arrives through speech-to-text and may not be the question that
           // was actually spoken.
           console.log(
-            `[agent] ask "${text}" · ${asked.turns.length} turns · ${memories.current.length} memories · ${tools.current.specs.length} tools · bundle ${bundle ? 'yes' : 'no'}`,
+            `[agent] ask "${text}" · ${asked.turns.length} turns · ${memories.current.length} memories · ${tools.current.specs.length} tools`,
           );
         }
 
@@ -383,7 +365,7 @@ export function useAgent({
 
           if (!res.toolCalls.length) {
             // A turn that reached no tool answered from what was already
-            // resident — the bundle, memory, or the conversation. That ratio is
+            // resident — memory, or the conversation. That ratio is
             // the health metric the whole bridge is judged on, and it is
             // measured here rather than declared by the model.
             if (step === 0) recall.current.direct += 1;

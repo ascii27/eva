@@ -3,8 +3,8 @@
 // Env-only, with no pairing screen and nothing in AsyncStorage — the same
 // posture as the Tavily key in src/agent/config.ts, and for the same reason:
 // its absence is a supported state. With no hermes configured the device simply
-// never fetches a bundle and `buildRequest` gets none, which is exactly how the
-// app behaved before this existed. A half-configured hermes that fails on every
+// offers no errands and no hermes brain, which is exactly how the app behaved
+// before this existed. A half-configured hermes that fails on every
 // refresh would be strictly worse than no hermes at all.
 //
 // Note that EXPO_PUBLIC_* vars are inlined into the JS bundle at Metro start, so
@@ -35,18 +35,10 @@ export const DEFAULT_HERMES_MODEL = 'hermes-agent';
 export const SESSION_KEY = 'eva-device';
 
 /**
- * Transcript scope for bundle refreshes, kept separate from anything Michael
- * says. A refresh is machinery, and several hundred of them a day landing in
- * hermes' actual conversation with him would bury it.
- */
-export const BUNDLE_SESSION_ID = 'eva-bundle';
-
-/**
  * Transcript scope for one spoken session on the hermes brain.
  *
- * Distinct from both of the above on purpose. The bundle's scope is machinery,
- * and SESSION_KEY is the long-term memory scope that deliberately spans every
- * session — the server keys *history* on this one, so it has to turn over when
+ * Distinct from SESSION_KEY on purpose: that is the long-term memory scope
+ * that deliberately spans every session, while the server keys *history* on this one, so it has to turn over when
  * a session does and stay put while one is running. A new id mid-conversation
  * is Eva forgetting the previous turn, because on this brain the device sends
  * no history of its own and the server's copy is the only copy.
@@ -71,7 +63,7 @@ function normalize(url: string): string {
 
 /**
  * hermes from .env.local, or null when it is not configured. Both the URL and
- * the key are required: a base URL with no key would fail on every refresh
+ * the key are required: a base URL with no key would fail on every request
  * rather than being cleanly absent.
  */
 export function envHermesConfig(): HermesConfig | null {

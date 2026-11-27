@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { BUNDLE_SESSION_ID, SESSION_KEY, brainSessionId } from '../config';
+import { SESSION_KEY, brainSessionId } from '../config';
 
 describe('brainSessionId', () => {
   const noon = Date.UTC(2026, 9, 2, 12, 0, 0);
@@ -12,12 +12,6 @@ describe('brainSessionId', () => {
 
   it('is a new transcript for a new session', () => {
     expect(brainSessionId(noon)).not.toBe(brainSessionId(noon + 1_000));
-  });
-
-  it('is not the bundle transcript', () => {
-    // A refresh is machinery; spoken turns are the actual conversation. Several
-    // hundred refreshes a day landing in it would bury him.
-    expect(brainSessionId(noon)).not.toBe(BUNDLE_SESSION_ID);
   });
 
   it('is not the long-term memory scope, which spans every session', () => {
