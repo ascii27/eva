@@ -14,7 +14,6 @@ import { useAgent } from '../agent/useAgent';
 import { useRealtime } from '../realtime/useRealtime';
 import { playEarcon } from '../speech/tts';
 import { HEARD } from '../speech/earcon';
-import { useBundle, type BundleState } from '../hermes/useBundle';
 import { useHermes } from '../hermes/useHermes';
 import { useErrands } from '../hermes/useErrands';
 import { DevControls } from '../controls/DevControls';
@@ -121,19 +120,6 @@ function describeTtsState(s: TtsEngineState): { line: string | null; label: stri
       // Expo Go / simulator without the dev build: silence, system voice covers it.
       return { line: null, label: 'system voice' };
   }
-}
-
-/**
- * The overlay's one-line summary of the bundle. Distinguishes "no hermes" from
- * "hermes, but nothing yet" from a live one — three states that all look like
- * Eva not knowing about the two o'clock.
- */
-function describeBundle(configured: boolean, state: BundleState | null): string {
-  if (!configured) return 'no hermes';
-  if (!state) return 'none yet';
-  const minutes = Math.floor((Date.now() - state.generatedAt) / 60_000);
-  const age = minutes < 1 ? 'just now' : `${minutes}m`;
-  return `${age} · ${state.coreTokens} tok${state.staleness === 'fresh' ? '' : ` · ${state.staleness === 'outOfSync' ? 'out of sync' : 'stale'}`}`;
 }
 
 export function FaceScreen() {
@@ -482,11 +468,6 @@ export function FaceScreen() {
     [lightMeter.available],
   );
 
-  // What Eva's other half last sent down about the week. Mounted before
-  // useAgent for the same reason vision is — it hands `bundleText` into the
-  // round. Nothing is fetched on a timer; see the note at the top of useBundle.
-  const bundle = useBundle({ onIssue: log });
-
   // Questions Eva handed to hermes and walked away from. An answer arrives
   // minutes later and is spoken through the proactive queue — the same path
   // her unprompted Slack messages take, with the same wait-for-a-quiet-face
@@ -523,7 +504,6 @@ export function FaceScreen() {
         }
       : null,
     resolvePhoto: vision.resolvePhoto,
-    bundleText: bundle.text,
     errands: errands.configured ? { start: errands.start, send: errands.send } : null,
     desk,
     battery: batteryHandles,
@@ -542,8 +522,7 @@ export function FaceScreen() {
 
   // Eva's other half answering the spoken turn herself. Takes the same options
   // object and uses almost none of it: no client tools means no vision, no
-  // errands and no photos, and hermes is where a bundle comes from rather than
-  // something it reads. See useHermes for why each absence is measured.
+  // errands and no photos. See useHermes for why each absence is measured.
   const hermesBrain = useHermes(brainOptions);
   const hermesRef = useRef(hermesBrain);
   hermesRef.current = hermesBrain;
@@ -976,7 +955,6 @@ export function FaceScreen() {
           entries={entries}
           watching={wake.status === 'watching'}
           connection={slack.status}
-          bundle={bundle.state ? { staleness: bundle.state.staleness, ageMs: Date.now() - bundle.state.generatedAt } : null}
           vision={
             vision.available
               ? { ...vision.state, onCameraReady: vision.onCameraReady }
@@ -1098,8 +1076,6 @@ export function FaceScreen() {
             void selected.forgetAll();
           }}
           onCycleModel={() => void selected.cycleModel()}
-          bundleLabel={describeBundle(bundle.configured, bundle.state)}
-          onBundleRefresh={bundle.refresh}
           errandsInFlight={errands.configured ? errands.inFlight : null}
           sleepLabel={sleepLabel}
           onCycleSleep={cycleSleep}

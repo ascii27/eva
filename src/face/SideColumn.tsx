@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Image, StyleSheet, Text, View } from 'react-native';
 import { hexToRgba } from './geometry';
 import type { FaceMode } from './types';
-import type { Staleness } from '../hermes/bundle';
 import type { SlackStatus } from '../slack/useSlack';
 import { CameraPreview } from '../vision/CameraPreview';
 import type { CameraHandle } from '../vision/camera';
@@ -75,18 +74,6 @@ interface SideColumnProps {
   watching?: boolean;
   /** Real Slack link state — drives the label and dot. */
   connection: SlackStatus;
-  /**
-   * How old Eva's picture of the week is, or null when there is no bundle.
-   *
-   * Shown only when it is *not* fresh: a working appliance should say nothing,
-   * and a picture going stale is the one thing about the bridge somebody
-   * walking past the desk would want to know without asking.
-   *
-   * The harness spec wanted this as a desaturated face. The face is a port of an
-   * approved design and CLAUDE.md forbids inventing values for it, so it lands
-   * here instead — this column is ours.
-   */
-  bundle?: { staleness: Staleness; ageMs: number } | null;
   /** Absent on a build with no camera, which renders no slot at all. */
   vision?: VisionProps;
 }
@@ -100,7 +87,6 @@ export function SideColumn({
   entries,
   watching,
   connection,
-  bundle,
   vision,
 }: SideColumnProps) {
   const connLabel =
@@ -115,12 +101,6 @@ export function SideColumn({
           : connection === 'disconnected'
             ? 'Eva · offline'
             : 'Eva · not paired';
-  const staleNote =
-    bundle && bundle.staleness !== 'fresh'
-      ? bundle.staleness === 'outOfSync'
-        ? ' · out of sync'
-        : ` · picture ${Math.floor(bundle.ageMs / 60_000)}m old`
-      : '';
   const dotLive = connection === 'connected';
   const thumb = useFadingUri(vision?.thumbnailUri ?? null);
   return (
@@ -145,7 +125,7 @@ export function SideColumn({
           }}
         />
         <Text style={[styles.connLabel, { fontSize: 10 * k, letterSpacing: 1.4 * k }]}>
-          {(connLabel + staleNote).toUpperCase()}
+          {connLabel.toUpperCase()}
         </Text>
       </View>
 

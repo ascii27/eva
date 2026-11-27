@@ -75,8 +75,8 @@ export interface ChatOptions {
    */
   temperature?: number;
   /**
-   * Where to send it, without a trailing slash. Defaults to OpenAI; the bundle
-   * fetch points it at hermes-agent's API server instead.
+   * Where to send it, without a trailing slash. Defaults to OpenAI; the hermes
+   * brain and errands point it at hermes-agent's API server instead.
    */
   baseUrl?: string;
   /**

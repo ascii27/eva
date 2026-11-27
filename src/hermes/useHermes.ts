@@ -79,9 +79,9 @@ export type HermesBrainStatus = 'unconfigured' | 'ready';
 
 /**
  * Structurally a subset of UseAgentOptions, so FaceScreen can hand all three
- * brains the same object and they cannot drift. The errand, photo and bundle
+ * brains the same object and they cannot drift. The errand and photo
  * handles are accepted and unused: this brain has no client tools to reach
- * them with, and hermes *is* where a bundle comes from. The vision handles are
+ * them with. The vision handles are
  * used, by `[[look]]`.
  */
 export interface UseHermesOptions {

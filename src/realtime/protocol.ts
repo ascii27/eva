@@ -1,7 +1,7 @@
 // The Realtime API wire format — encode what we send, decode what we act on.
 //
 // Pure: no React, no storage, no sockets, so `node scripts/probe-realtime.ts`
-// can load it (the constraint commit e0c64b0 established for bundle.ts). The
+// can load it (the constraint commit e0c64b0 established). The
 // socket owns the connection, this file owns the shapes.
 //
 // Everything here is the GA interface, not the beta one, and the difference is
@@ -263,12 +263,9 @@ export interface Seed {
  * Turn a built chat request into what a fresh socket needs.
  *
  * `buildRequest` stays the single author of what Eva knows and in what order —
- * persona and memories, then the running summary, then the bundle, then the
- * turns — so this is a mapping and never a second opinion. The leading system
+ * persona and memories, then the running summary, then the turns — so this is a mapping and never a second opinion. The leading system
  * message becomes session `instructions` because it is the one part that never
- * changes for the life of the session; everything after it becomes an item,
- * which is also what lets the bundle arrive as a system item rather than being
- * folded into instructions where a refresh would rewrite session config.
+ * changes for the life of the session; everything after it becomes an item.
  */
 export function seed(messages: ChatMessage[]): Seed {
   const [first, ...rest] = messages;

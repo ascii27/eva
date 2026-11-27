@@ -97,9 +97,6 @@ interface DevControlsProps {
   onSetLocation: () => void;
   /** Step to the next model in MODEL_PRESETS; takes effect on the next round. */
   onCycleModel: () => void;
-  /** Bundle age and cost, or why there isn't one. */
-  bundleLabel: string;
-  onBundleRefresh: () => void;
   /** Errands out to hermes, or null when none is configured. */
   errandsInFlight: number | null;
   /** The running OTA update, and whether a newer one is waiting. */
@@ -284,12 +281,6 @@ export function DevControls(props: DevControlsProps) {
               above is squeezed to nothing. */}
           <View style={styles.row}>
             <Btn eyeColor={eyeColor} label="Model" sub={props.agentModel} onPress={props.onCycleModel} />
-          </View>
-          <View style={styles.row}>
-            {/* What hermes last sent down, and how old it is. Worth a button:
-                "she doesn't know about the two o'clock" looks identical whether
-                the bundle is stale, unparseable, or was never fetched at all. */}
-            <Btn eyeColor={eyeColor} label="Bundle" sub={props.bundleLabel} onPress={props.onBundleRefresh} />
           </View>
           <View style={styles.row}>
             <Btn eyeColor={eyeColor} label="Check for update" sub={props.updateLabel} onPress={props.onCheckUpdate} />
