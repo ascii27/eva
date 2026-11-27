@@ -163,6 +163,13 @@ export const ROOM_LIGHT: ToolSpec = {
   parameters: { type: 'object', properties: {}, required: [] },
 };
 
+export const WHERE_AM_I: ToolSpec = {
+  name: 'where_am_i',
+  description:
+    "Which town or city you and Michael's desk are in. Use it whenever the answer depends on where you are — local weather, what is nearby, the time somewhere else relative to here, or simply being asked where you are. You have no other way to know. It answers to the nearest town, never a street or an address.",
+  parameters: { type: 'object', properties: {}, required: [] },
+};
+
 /**
  * The specs offered for a session. Order is fixed and the list is built once —
  * specs sit inside OpenAI's cached prefix, so a list that moved between turns
@@ -185,6 +192,9 @@ export const ROOM_LIGHT: ToolSpec = {
  *
  * `screen` is whether expo-brightness loaded, and `light` whether the camera
  * did (ASC-46) — the same absent-not-failing rule.
+ *
+ * `location` is whether expo-location loaded (ASC-44) — the same
+ * absent-not-failing rule; never whether iOS has granted it.
  */
 export function toolSpecs(
   tavilyKey: string | null,
@@ -194,6 +204,7 @@ export function toolSpecs(
   battery = false,
   screen = false,
   light = false,
+  location = false,
 ): ToolSpec[] {
   return [
     CLOCK,
@@ -205,5 +216,6 @@ export function toolSpecs(
     ...(battery ? [DEVICE_BATTERY] : []),
     ...(screen ? [SCREEN_BRIGHTNESS, SET_SCREEN_BRIGHTNESS] : []),
     ...(light ? [ROOM_LIGHT] : []),
+    ...(location ? [WHERE_AM_I] : []),
   ];
 }

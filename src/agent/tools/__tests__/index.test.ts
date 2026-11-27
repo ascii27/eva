@@ -6,6 +6,7 @@ import {
   type DeskHandles,
   type ErrandHandles,
   type LightHandles,
+  type LocationHandles,
   type ScreenHandles,
   type ToolConfig,
   type VisionHandles,
@@ -517,5 +518,70 @@ describe('room_light', () => {
     expect((await buildToolKit({ ...WITHOUT_SEARCH, light: busy }).run(call)).message.content).toBe('Error: the camera is in use right now.');
     const broken: LightHandles = { measure: async () => Promise.reject(new Error('boom')) };
     expect((await buildToolKit({ ...WITHOUT_SEARCH, light: broken }).run(call)).message.content).toMatch(/^Error.*boom/);
+  });
+});
+
+describe('where_am_i', () => {
+  const YOKOHAMA = { name: 'Yokohama, Kanagawa', setAt: 1 };
+  const WHERE = { id: 'w', name: 'where_am_i', arguments: '' };
+
+  /** Records every handle call, in order, so tests can assert what never ran. */
+  const stubLocation = (stored: typeof YOKOHAMA | null, over: Partial<LocationHandles> = {}) => {
+    const calls: string[] = [];
+    const location: LocationHandles = {
+      stored: () => stored,
+      ensurePermission: async () => {
+        calls.push('permission');
+        return true;
+      },
+      refresh: async () => {
+        calls.push('read');
+        return { place: YOKOHAMA };
+      },
+      ...over,
+    };
+    return { location, calls };
+  };
+
+  it('is offered only when the location module loaded', () => {
+    expect(names(WITHOUT_SEARCH)).not.toContain('where_am_i');
+    expect(names({ ...WITHOUT_SEARCH, location: stubLocation(null).location })).toContain('where_am_i');
+  });
+
+  it('answers a stored town without touching the sensor', async () => {
+    const { location, calls } = stubLocation(YOKOHAMA);
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, location }).run(WHERE);
+    expect(message.content).toContain('Yokohama, Kanagawa');
+    expect(calls).toEqual([]);
+  });
+
+  it('with nothing stored, settles permission then reads — no spoken ask', async () => {
+    const { location, calls } = stubLocation(null);
+    const gate = jest.fn(async () => false);
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, location }).run(WHERE, { onConsent: gate });
+    expect(calls).toEqual(['permission', 'read']);
+    expect(gate).not.toHaveBeenCalled();
+    expect(message.content).toContain('Yokohama, Kanagawa');
+  });
+
+  it('does not read when iOS has refused access', async () => {
+    const { location, calls } = stubLocation(null, { ensurePermission: async () => false });
+    const { message } = await buildToolKit({ ...WITHOUT_SEARCH, location }).run(WHERE);
+    expect(calls).not.toContain('read');
+    expect(message.content).toMatch(/allowed location access/);
+  });
+
+  it('returns a failed read as an error, and a throwing one too', async () => {
+    const failing = stubLocation(null, { refresh: async () => ({ error: 'no fix' }) }).location;
+    const a = await buildToolKit({ ...WITHOUT_SEARCH, location: failing }).run(WHERE);
+    expect(a.message.content).toBe('Error: no fix');
+
+    const throwing = stubLocation(null, {
+      refresh: async () => {
+        throw new Error('boom');
+      },
+    }).location;
+    const b = await buildToolKit({ ...WITHOUT_SEARCH, location: throwing }).run(WHERE);
+    expect(b.message.content).toMatch(/^Error: .*boom/);
   });
 });

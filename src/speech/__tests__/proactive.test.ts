@@ -380,3 +380,37 @@ describe('receive light and brightness requests', () => {
     expect(r.brightness).toBeNull();
   });
 });
+
+describe('receive location requests (ASC-44)', () => {
+  it('reports a bare [[location]] with nothing to speak', () => {
+    const r = receive(msg({ ts: '5.0', text: `<@${BOT}> [[location]]` }), NOW, BOT, {});
+    expect(r.locationRequest).toBe(true);
+    expect(r.item).toBeNull();
+    expect(r.directive).toBeNull();
+  });
+
+  it('reports it inside a live exchange even though the words are suppressed', () => {
+    const adoptions: Adoptions = { '1.0': NOW - 1000 };
+    const r = receive(msg({ ts: '6.0', thread_ts: '1.0', text: 'where are you? [[location]]' }), NOW, BOT, adoptions, {
+      threadTs: '1.0',
+      until: null,
+    });
+    expect(r.locationRequest).toBe(true);
+    expect(r.item).toBeNull();
+  });
+
+  it('still speaks any words that come with it', () => {
+    const r = receive(msg({ ts: '5.0', text: `<@${BOT}> Checking the weather. [[location]]` }), NOW, BOT, {});
+    expect(r.locationRequest).toBe(true);
+    expect(r.item?.text).toBe('Checking the weather.');
+  });
+
+  it('ignores a request in a message not addressed to us', () => {
+    expect(receive(msg({ ts: '5.0', text: 'where is it [[location]]' }), NOW, BOT, {}).locationRequest).toBe(false);
+  });
+
+  it('never treats a tool echo as a request', () => {
+    const r = receive(msg({ ts: '8.0', text: `:computer: terminal [[location]]` }), NOW, BOT, { '8.0': NOW });
+    expect(r.locationRequest).toBe(false);
+  });
+});

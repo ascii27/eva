@@ -89,6 +89,12 @@ interface DevControlsProps {
   visionAvailable: boolean;
   /** Drive the consent gate end to end without the model. */
   onLookTest: () => void;
+  /** Whether the native location module loaded at all. */
+  locationAvailable: boolean;
+  /** The stored town, or null when it has never been set. */
+  placeName: string | null;
+  /** Read the location now and store the town. */
+  onSetLocation: () => void;
   /** Step to the next model in MODEL_PRESETS; takes effect on the next round. */
   onCycleModel: () => void;
   /** Bundle age and cost, or why there isn't one. */
@@ -331,6 +337,13 @@ export function DevControls(props: DevControlsProps) {
               it when the model declines to reach for the camera. */}
           <View style={styles.row}>
             <Btn eyeColor={eyeColor} label="Look" sub="asks first" onPress={props.onLookTest} />
+          </View>
+
+          <Text style={styles.sectionLabel}>LOCATION · {props.locationAvailable ? 'town only' : 'none'}</Text>
+          {/* Re-reads and replaces the stored town. Only the town is
+              stored, never coordinates. */}
+          <View style={styles.row}>
+            <Btn eyeColor={eyeColor} label="Set location" sub={props.placeName ?? 'not set'} onPress={props.onSetLocation} />
           </View>
 
           <Text style={styles.sectionLabel}>SLACK</Text>
