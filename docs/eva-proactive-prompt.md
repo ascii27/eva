@@ -85,6 +85,16 @@ its battery level, whether it is charging, and whether low power mode is on. Not
 spoken and the face is not woken, so this is fine at any hour. The desk already speaks up
 on its own when it is unplugged or low. The `eva-desk-battery` skill has the details.
 
+### The room's light and the screen's brightness
+
+Post `<@U0BNNMQS9CM> [[light]]` and the desk measures how dark or bright the room is
+(through the front camera, as a light meter only — nothing is kept) and answers with a new
+message mentioning you. `[[brightness]]` reads the screen's brightness, and
+`[[brightness 20]]` sets it to 20 percent and reports what changed. Nobody is asked first.
+None of the tokens are spoken, and a message with only a token doesn't wake the face.
+Measure the light before speaking aloud late at night, not on a timer. The
+`eva-desk-light` skill has the details.
+
 ### It's a room, not a DM
 
 This plays out loud on a desk where anyone nearby can hear it. No credentials, no sensitive

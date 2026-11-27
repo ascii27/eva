@@ -98,9 +98,16 @@ export interface UseHermesOptions {
    * the reading rides along as its own system line on every turn (ASC-45).
    */
   batteryReading?: () => BatteryReading | null;
+  /**
+   * The screen's level and the last room-light reading, as one system line
+   * (ASC-46), or null. Same reason as the battery: hermes has no device tools.
+   * Async because the brightness read is; it never measures light, which would
+   * flash the camera on every turn.
+   */
+  screenStatus?: () => Promise<string | null>;
 }
 
-export function useHermes({ onIssue, onUsage, vision = null, batteryReading }: UseHermesOptions = {}) {
+export function useHermes({ onIssue, onUsage, vision = null, batteryReading, screenStatus }: UseHermesOptions = {}) {
   const [status, setStatus] = useState<HermesBrainStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<HermesConfig | null>(null);
@@ -113,8 +120,8 @@ export function useHermes({ onIssue, onUsage, vision = null, batteryReading }: U
 
   // Callbacks via ref so a re-render of FaceScreen never re-creates `ask` and
   // strands an in-flight round — same reason useAgent does it.
-  const callbacks = useRef({ onIssue, onUsage, batteryReading });
-  callbacks.current = { onIssue, onUsage, batteryReading };
+  const callbacks = useRef({ onIssue, onUsage, batteryReading, screenStatus });
+  callbacks.current = { onIssue, onUsage, batteryReading, screenStatus };
   const visionRef = useRef(vision);
   visionRef.current = vision;
   /** Something hermes should hear at the top of its next turn — a refused photo. */
@@ -189,6 +196,7 @@ export function useHermes({ onIssue, onUsage, vision = null, batteryReading }: U
 
       // The battery, read fresh each turn — hermes has no device_battery (ASC-45).
       const battery = callbacks.current.batteryReading?.() ?? null;
+      const screen = (await callbacks.current.screenStatus?.().catch(() => null)) ?? null;
 
       try {
         const res = await chatStream({
@@ -201,6 +209,7 @@ export function useHermes({ onIssue, onUsage, vision = null, batteryReading }: U
           messages: [
             { role: 'system', content: DESK_PREAMBLE },
             ...(battery ? [{ role: 'system' as const, content: deskStatusLine(battery) }] : []),
+            ...(screen ? [{ role: 'system' as const, content: screen }] : []),
             { role: 'user', content },
           ],
           baseUrl: cfg.baseUrl,

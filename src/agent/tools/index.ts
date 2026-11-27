@@ -14,6 +14,8 @@
 import type { ToolCall, ToolMessage, ToolSpec } from '../openai';
 import type { Photo } from '../../vision/photos';
 import { describeBattery, type BatteryReading } from '../../device/battery';
+import { describeLight, type LightReading } from '../../device/light';
+import { adjustLevel, describeChange, describeScreen, levelFromPercent, type BrightnessChange } from '../../device/screen';
 import { BUSY, DECLINED, readbackLine, SENT, STARTED } from '../../hermes/errands';
 import { formatClock } from './clock';
 import { runMemorySearch } from './memory';
@@ -56,6 +58,20 @@ export interface BatteryHandles {
   read(): Promise<BatteryReading | null>;
 }
 
+/** What the screen tools need from brightness.ts and `useSleep` (ASC-46). */
+export interface ScreenHandles {
+  /** The level now, 0-1, or null when the phone will not say. */
+  read(): Promise<number | null>;
+  /** Set and hold a level; resolves with before → after. */
+  set(level: number): Promise<BrightnessChange>;
+}
+
+/** What room_light needs from `useLightMeter` (ASC-46). */
+export interface LightHandles {
+  /** One reading; `mayAsk` lets it raise the iOS camera permission dialog. */
+  measure(mayAsk: boolean): Promise<{ reading: LightReading } | { error: string }>;
+}
+
 export interface ToolConfig {
   /** Tavily key, or null when web search is not configured. */
   tavilyKey: string | null;
@@ -67,6 +83,10 @@ export interface ToolConfig {
   desk?: DeskHandles | null;
   /** Battery handles, or null on a build without expo-battery. No consent gate (ASC-45). */
   battery?: BatteryHandles | null;
+  /** Screen handles, or null on a build without expo-brightness. No consent gate (ASC-46). */
+  screen?: ScreenHandles | null;
+  /** Light meter, or null on a build with no camera. No consent gate: no photo is kept (ASC-46). */
+  light?: LightHandles | null;
 }
 
 /** Per-call context: the round's abort signal and its spoken-consent gate. */
@@ -208,8 +228,35 @@ async function runTellOtherHalf(
   return answer(call, id ? SENT : BUSY);
 }
 
-export function buildToolKit({ tavilyKey, vision, errands, desk = null, battery = null }: ToolConfig): ToolKit {
-  const specs: ToolSpec[] = toolSpecs(tavilyKey, vision !== null, errands !== null, desk !== null, battery !== null);
+/**
+ * Set the screen from a tool call: a level, or one step from where it is.
+ * A level wins when the model sends both.
+ */
+async function runSetBrightness(call: ToolCall, args: Record<string, unknown>, screen: ScreenHandles): Promise<ToolResult> {
+  let level = args.level === undefined ? null : levelFromPercent(args.level);
+  if (args.level !== undefined && level === null) return error(call, 'level must be a percent from 1 to 100.');
+  if (level === null) {
+    if (args.adjust !== 'brighter' && args.adjust !== 'dimmer') {
+      return error(call, 'set_screen_brightness needs a level or a direction (brighter or dimmer).');
+    }
+    const current = await screen.read();
+    if (current === null) return error(call, 'the phone did not report its screen brightness, so there is nothing to step from.');
+    level = adjustLevel(current, args.adjust);
+  }
+  const change = await screen.set(level);
+  return change.after === null ? error(call, 'the screen brightness could not be set.') : answer(call, describeChange(change));
+}
+
+export function buildToolKit({ tavilyKey, vision, errands, desk = null, battery = null, screen = null, light = null }: ToolConfig): ToolKit {
+  const specs: ToolSpec[] = toolSpecs(
+    tavilyKey,
+    vision !== null,
+    errands !== null,
+    desk !== null,
+    battery !== null,
+    screen !== null,
+    light !== null,
+  );
 
   return {
     specs,
@@ -271,6 +318,36 @@ export function buildToolKit({ tavilyKey, vision, errands, desk = null, battery 
             return reading ? answer(call, describeBattery(reading)) : error(call, 'the phone did not report its battery.');
           } catch (e) {
             return error(call, `reading the battery failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
+        case 'screen_brightness': {
+          if (!screen) return error(call, 'this build cannot read the screen brightness.');
+          try {
+            return answer(call, describeScreen(await screen.read()));
+          } catch (e) {
+            return error(call, `reading the screen failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
+        case 'set_screen_brightness': {
+          if (!screen) return error(call, 'this build cannot change the screen brightness.');
+          try {
+            return await runSetBrightness(call, args, screen);
+          } catch (e) {
+            return error(call, `setting the screen failed: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
+        case 'room_light': {
+          if (!light) return error(call, 'there is no camera on this device to measure light with.');
+          try {
+            // A spoken turn may raise the permission dialog: the mic is shut
+            // while a tool runs, so the modal can't eat an answer.
+            const r = await light.measure(true);
+            return 'error' in r ? error(call, r.error) : answer(call, describeLight(r.reading, Date.now()));
+          } catch (e) {
+            return error(call, `the light meter failed: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
 

@@ -128,6 +128,41 @@ export const DEVICE_BATTERY: ToolSpec = {
   parameters: { type: 'object', properties: {}, required: [] },
 };
 
+export const SCREEN_BRIGHTNESS: ToolSpec = {
+  name: 'screen_brightness',
+  description:
+    "Read how bright your own screen is right now, as a percent. Use it when Michael asks how bright your screen is. To change it, use set_screen_brightness, which reports the level before and after on its own, so there is no need to read it first.",
+  parameters: { type: 'object', properties: {}, required: [] },
+};
+
+export const SET_SCREEN_BRIGHTNESS: ToolSpec = {
+  name: 'set_screen_brightness',
+  description:
+    "Change how bright your screen is — the screen your face is on. Use it whenever Michael asks you to dim the screen, brighten it, turn it up or down, or set it to a level: \"dim the screen\", \"it's too bright\", \"turn your screen up\", \"set brightness to 30 percent\". You don't need to ask first. Give either a level or a direction. It holds until ten at night or six in the morning, when your night schedule next changes, and the screen still goes dark when you fall asleep. Say what you changed in a few words. Not for going to sleep or staying awake — those are go_to_sleep and wake_up.",
+  parameters: {
+    type: 'object',
+    properties: {
+      level: {
+        type: 'number',
+        description: 'The brightness to set, in percent from 1 to 100. Leave out when he only said brighter or dimmer.',
+      },
+      adjust: {
+        type: 'string',
+        enum: ['brighter', 'dimmer'],
+        description: 'One noticeable step brighter or dimmer than it is now, when he did not name a level.',
+      },
+    },
+    required: [],
+  },
+};
+
+export const ROOM_LIGHT: ToolSpec = {
+  name: 'room_light',
+  description:
+    "Measure how much light there is in the room at the desk: dark, dim, normally lit, bright or daylight, with a rough lux figure. It uses the front camera as a light meter only — no photo is kept and nothing in it is looked at, so you don't need to ask first. Use it when Michael asks whether it is dark, how bright the room is, or whether the lights are on, and when whether the room is dark changes what you should do. Each reading briefly turns on the camera, so don't take one you don't need.",
+  parameters: { type: 'object', properties: {}, required: [] },
+};
+
 /**
  * The specs offered for a session. Order is fixed and the list is built once —
  * specs sit inside OpenAI's cached prefix, so a list that moved between turns
@@ -147,6 +182,9 @@ export const DEVICE_BATTERY: ToolSpec = {
  *
  * `battery` is whether expo-battery loaded — false on a build from before it
  * was added, where the tool is absent rather than present and failing.
+ *
+ * `screen` is whether expo-brightness loaded, and `light` whether the camera
+ * did (ASC-46) — the same absent-not-failing rule.
  */
 export function toolSpecs(
   tavilyKey: string | null,
@@ -154,6 +192,8 @@ export function toolSpecs(
   otherHalf = false,
   desk = false,
   battery = false,
+  screen = false,
+  light = false,
 ): ToolSpec[] {
   return [
     CLOCK,
@@ -163,5 +203,7 @@ export function toolSpecs(
     ...(otherHalf ? [ASK_OTHER_HALF, TELL_OTHER_HALF] : []),
     ...(desk ? [GO_TO_SLEEP, WAKE_UP] : []),
     ...(battery ? [DEVICE_BATTERY] : []),
+    ...(screen ? [SCREEN_BRIGHTNESS, SET_SCREEN_BRIGHTNESS] : []),
+    ...(light ? [ROOM_LIGHT] : []),
   ];
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { asksForBattery, readDirective, wantsLook } from '../directives';
+import { asksForBattery, asksForLight, readBrightness, readDirective, wantsLook } from '../directives';
 import { speakableFromMrkdwn } from '../speakable';
 
 describe('readDirective', () => {
@@ -78,5 +78,47 @@ describe('[[battery]] request', () => {
   it('is never spoken', () => {
     expect(speakableFromMrkdwn('<@U1> [[battery]]')).toBe('');
     expect(speakableFromMrkdwn('Quick check. [[battery]]')).toBe('Quick check.');
+  });
+});
+
+describe('[[light]] request', () => {
+  it('finds it, case and spaces aside', () => {
+    expect(asksForLight('<@U1> [[light]]')).toBe(true);
+    expect(asksForLight('[[ Light ]]')).toBe(true);
+    expect(asksForLight('is the light on?')).toBe(false);
+  });
+
+  it('is never spoken', () => {
+    expect(speakableFromMrkdwn('<@U1> [[light]]')).toBe('');
+  });
+});
+
+describe('readBrightness', () => {
+  it('reads a bare token as a read, and a number as a set', () => {
+    expect(readBrightness('[[brightness]]')).toEqual({ kind: 'read' });
+    expect(readBrightness('Dimming it now. [[brightness 20]]')).toEqual({ kind: 'set', percent: 20 });
+    expect(readBrightness('[[ Brightness: 35% ]]')).toEqual({ kind: 'set', percent: 35 });
+    expect(readBrightness('[[brightness=0]]')).toEqual({ kind: 'set', percent: 0 });
+  });
+
+  it('flags a level that is not a percent rather than ignoring it', () => {
+    expect(readBrightness('[[brightness 150]]')).toEqual({ kind: 'invalid' });
+    expect(readBrightness('[[brightness dim]]')).toEqual({ kind: 'invalid' });
+  });
+
+  it('takes the last one, and nothing without a token', () => {
+    expect(readBrightness('[[brightness 80]] no wait [[brightness 10]]')).toEqual({ kind: 'set', percent: 10 });
+    expect(readBrightness('turn the brightness down')).toBeNull();
+  });
+
+  it('is never spoken, in any form', () => {
+    expect(speakableFromMrkdwn('Done. [[brightness 20]]')).toBe('Done.');
+    expect(speakableFromMrkdwn('[[ brightness: 35% ]] Dimmer now.')).toBe('Dimmer now.');
+    expect(speakableFromMrkdwn('<@U1> [[brightness]]')).toBe('');
+  });
+
+  it('does not disturb sleep and wake', () => {
+    expect(readDirective('[[brightness 5]] [[sleep]]')).toBe('sleep');
+    expect(readBrightness('[[sleep]]')).toBeNull();
   });
 });
