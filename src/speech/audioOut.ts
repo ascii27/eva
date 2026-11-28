@@ -9,6 +9,8 @@
 import { AudioContext, AudioManager } from 'react-native-audio-api';
 import { tone, type ToneSpec } from './earcon';
 import { drain, emptyJitter, offer, underrun, type JitterState } from './jitter';
+import { appendSegment, createLipSync, EMPTY_TIMELINE, type MouthTimeline } from '../face/lipsync';
+import { clearMouth, publishMouth } from './mouth';
 
 const KOKORO_SAMPLE_RATE = 24000;
 
@@ -124,6 +126,10 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   let jitter: JitterState = emptyJitter();
   let flowing = false;
   const openedAt = Date.now();
+  // The mouth follows the audio itself; see face/lipsync.ts.
+  const lipSync = createLipSync(KOKORO_SAMPLE_RATE);
+  const mouthOwner = {};
+  let mouth: MouthTimeline = EMPTY_TIMELINE;
 
   const setFlowing = (next: boolean) => {
     if (next === flowing || finished) return;
@@ -170,6 +176,7 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     if (finished) return;
     setFlowing(false);
     finished = true;
+    clearMouth(mouthOwner);
     if (watchdog) clearTimeout(watchdog);
     try {
       node.stop();
@@ -208,6 +215,12 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     chunkSeconds.push(buffer.duration);
     remainingSeconds += buffer.duration;
     node.enqueueBuffer(buffer);
+    try {
+      mouth = appendSegment(mouth, lipSync.analyze(chunk), buffer.duration * 1000, Date.now());
+      publishMouth(mouthOwner, mouth);
+    } catch {
+      // The mouth is decoration; a failure here must never cost the audio.
+    }
     if (!started) {
       started = true;
       // What the lead actually cost, so PREBUFFER_SECONDS can be tuned against

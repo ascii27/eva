@@ -39,6 +39,8 @@ import {
 import { eyeGeo, hexToRgba, isSleepyHour } from './geometry';
 import type { CornerRadii, FaceMode, MouthOutput } from './types';
 import { amp, isSmiling, pickViseme, SMILE, teethHeight, TONGUE, VIS, VisemeKey } from './visemes';
+import { LIPSYNC_FRAME_MS } from './lipsync';
+import { liveViseme } from '../speech/mouth';
 
 const NEVER = -9e9;
 
@@ -235,21 +237,37 @@ interface MouthProps {
 }
 
 function Mouth({ mode, eyeColor, frozen, voicing, k, cx, height }: MouthProps) {
-  // Visemes hard-swap on a 112ms clock while speaking; everything else is static.
+  // While speaking, the mouth follows the audio under the playhead (ASC-53),
+  // polled at twice the analysis rate so a frame is never shown late by more
+  // than half its length. With no audio timeline (the system voice) it falls
+  // back to the design's 112ms canned loop. Everything else is static.
   const [tick, setTick] = useState(0);
+  const [live, setLive] = useState<VisemeKey | undefined>(undefined);
   // Not voicing means the reply is still coming but nothing is audible — a
   // synthesis gap, or a tool running. Dropping out of the interval closes the
-  // mouth and, just as importantly, stops the 112ms re-render while she waits.
+  // mouth and, just as importantly, stops the re-render while she waits.
   const speaking = mode === 'speaking' && !frozen && voicing;
   useEffect(() => {
-    if (!speaking) return;
+    if (!speaking) {
+      setLive(undefined);
+      return;
+    }
     setTick(0);
-    const id = setInterval(() => setTick((n) => n + 1), VISEME_FRAME_MS);
+    const t0 = Date.now();
+    const poll = () => {
+      const now = Date.now();
+      // Same-value sets bail out, so a held shape costs no render.
+      const v = liveViseme(now);
+      setLive(v);
+      if (v === undefined) setTick(Math.floor((now - t0) / VISEME_FRAME_MS));
+    };
+    poll();
+    const id = setInterval(poll, LIPSYNC_FRAME_MS / 2);
     return () => clearInterval(id);
   }, [speaking]);
 
   const smiling = isSmiling(mode, frozen);
-  const key = pickViseme(mode, tick * VISEME_FRAME_MS, frozen, voicing);
+  const key = pickViseme(mode, tick * VISEME_FRAME_MS, frozen, voicing, live);
   const shape = smiling ? SMILE : VIS[key];
 
   const path = useMemo(
