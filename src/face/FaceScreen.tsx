@@ -57,7 +57,7 @@ import { fromPreset, nextPreset, nudge, personalityLabel, type Personality } fro
 import { personalityReply, readPersonalityCommand } from '../personality/command';
 import { FACE_RULES, personaWith, personalityPrompt } from '../personality/prompt';
 import { PERSONA } from '../agent/persona';
-import { EXPRESSIONS, newFaceTokens, readFaceTokens } from './expression';
+import { EXPRESSIONS } from './expression';
 import { useExpression } from './useExpression';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
@@ -609,38 +609,15 @@ export function FaceScreen() {
     };
 
   /**
-   * Eva's face tokens, acted on as the reply streams past (ASC-59). Each round
-   * starts from the resting face, so a reaction to the last answer doesn't
-   * carry into the next one. A transport that doesn't stream (Slack) arrives
-   * whole, and the face she ends on is the one she keeps.
+   * Each round starts from the resting face, so a reaction to the last answer
+   * doesn't carry into the next one. The faces Eva picks in the reply are
+   * played by useEcho's cue player, each when the speech reaches it (onFace).
    */
   const withFace =
     (ask: (text: string, opts?: AskOptions) => Promise<AskResult>) =>
     async (text: string, opts?: AskOptions): Promise<AskResult> => {
       face.rest();
-      let streamed = '';
-      let seen = 0;
-      const onDelta = opts?.onDelta;
-      // Only wrapped when the caller streams: whether onDelta exists is part of
-      // how useEcho and the transports decide the delivery path.
-      const wrapped: AskOptions | undefined = onDelta
-        ? {
-            ...opts,
-            onDelta: (delta: string) => {
-              streamed += delta;
-              const r = newFaceTokens(streamed, seen);
-              seen = r.seen;
-              for (const t of r.tokens) face.express(t);
-              onDelta(delta);
-            },
-          }
-        : opts;
-      const result = await ask(text, wrapped);
-      if (result.kind === 'reply' && seen === 0) {
-        const last = readFaceTokens(result.raw).pop();
-        if (last) face.express(last);
-      }
-      return result;
+      return ask(text, opts);
     };
 
   /**
@@ -710,6 +687,7 @@ export function FaceScreen() {
     conversation: convEnabled,
     asides: asidesEnabled,
     noiseFilter,
+    onFace: face.express,
   });
 
   noteToolRef.current = echo.noteToolActivity;
@@ -828,11 +806,7 @@ export function FaceScreen() {
     activeThread.current = d.item.threadTs;
     if (d.item.threadTs) holdExchange(d.item.threadTs);
     const { text } = d.item;
-    // Eva speaking first wears the face she asked for, all at once — the
-    // message arrived whole, so there is no moment within it to time it to.
     face.rest();
-    const tokens = readFaceTokens(text);
-    if (tokens.length) face.express(tokens[tokens.length - 1]);
     // Pending until the round below has finished: she says it, then sleeps.
     if (d.item.after) applyDirective(d.item.after, 'hermes');
     if (d.item.look) {
@@ -846,8 +820,21 @@ export function FaceScreen() {
       log('hermes · asked to look, but no API server is configured to send a photo to');
       if (!text) return;
     }
+    // A message with faces or pauses in it (ASC-59) is played through the
+    // same cue player as a streamed reply, so each lands where it was written.
+    const cued = d.item.cued;
+    if (cued) {
+      startRound(() =>
+        echoRef.current.announce(text, async (opts) => {
+          const t = Date.now();
+          opts.onDelta?.(cued);
+          return { kind: 'reply', raw: cued, speakable: text, postedAt: t, replyAt: t };
+        }),
+      );
+      return;
+    }
     startRound(() => echoRef.current.announce(text));
-  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound, applyDirective, face.rest, face.express]);
+  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound, applyDirective, face.rest]);
 
   const onWake = useCallback(
     (snippet: string) => {

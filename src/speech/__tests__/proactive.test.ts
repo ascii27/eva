@@ -414,3 +414,23 @@ describe('receive location requests (ASC-44)', () => {
     expect(r.locationRequest).toBe(false);
   });
 });
+
+describe('receive — faces and pauses (ASC-59)', () => {
+  it('keeps the raw message for the cue player, and speaks it without the tokens', () => {
+    const raw = `<@${BOT}> [[face concerned]] Your three o'clock was cancelled. [[pause 1s]] [[face happy]] Free afternoon!`;
+    const r = receive(msg({ ts: '700.1', text: raw }), NOW, BOT, {});
+    expect(r.item?.cued).toBe(raw);
+    expect(r.item?.text).toBe("Your three o'clock was cancelled. Free afternoon!");
+  });
+
+  it('a message that is only a face still gets played', () => {
+    const r = receive(msg({ ts: '700.2', text: `<@${BOT}> [[face amused]]` }), NOW, BOT, {});
+    expect(r.item?.text).toBe('');
+    expect(r.item?.cued).toContain('[[face amused]]');
+  });
+
+  it('carries nothing extra for a plain message', () => {
+    const r = receive(msg({ ts: '700.3', text: `<@${BOT}> the deck finished` }), NOW, BOT, {});
+    expect(r.item && 'cued' in r.item).toBe(false);
+  });
+});

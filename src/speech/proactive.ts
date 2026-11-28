@@ -12,6 +12,7 @@
 import type { MessageEvent } from '../slack/protocol';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { isToolEcho } from '../slack/sanitize';
+import { hasCues } from '../round/cues';
 import { asksForBattery, asksForLight, asksForLocation, readBrightness, readDirective, wantsLook, type BrightnessToken, type DeskDirective } from '../round/directives';
 
 /** isToolEcho's signature: a tool echo opens with an emoji-code label. */
@@ -51,6 +52,12 @@ export interface ProactiveItem {
    * gate then asks in its own words. Nothing is captured without a spoken yes.
    */
   look?: true;
+  /**
+   * The raw message, when it carries `[[face …]]` or `[[pause …]]` (ASC-59).
+   * `text` has those flattened away; this keeps them so the cue player can
+   * land each where it was written.
+   */
+  cued?: string;
 }
 
 /** Adopted thread root → last-activity epoch ms. */
@@ -158,13 +165,23 @@ export function receive(
   // Adoption is refreshed above either way — a suppressed message is still
   // activity, and letting the thread lapse mid-conversation would be worse.
   if (isLive(exchange, root, now)) return { adoptions: next, item: null, directive, batteryRequest, lightRequest, locationRequest, brightness };
-  const text = announceable(raw);
+  // Like `[[look]]` below: only the emoji-label signature disqualifies it, not
+  // being empty — a message that is only a face still has something to do.
+  const cued = hasCues(raw) && !TOOL_LABEL_RE.test(raw);
+  const text = announceable(raw) ?? (cued ? '' : null);
   // A bare `[[look]]` has nothing to say but is still a request: the gate asks
   // in its own words. That is why this is not `isToolEcho`, which counts an
   // empty message as noise — only the emoji-label signature disqualifies it.
   const look = wantsLook(raw) && !TOOL_LABEL_RE.test(raw);
   if (text === null && !look) return { adoptions: next, item: null, directive, batteryRequest, lightRequest, locationRequest, brightness };
-  const item: ProactiveItem = { ts: ev.ts, threadTs: root, text: text ?? '', at: now, ...(look ? { look: true as const } : {}) };
+  const item: ProactiveItem = {
+    ts: ev.ts,
+    threadTs: root,
+    text: text ?? '',
+    at: now,
+    ...(look ? { look: true as const } : {}),
+    ...(cued ? { cued: raw } : {}),
+  };
   return { adoptions: next, item, directive, batteryRequest, lightRequest, locationRequest, brightness };
 }
 

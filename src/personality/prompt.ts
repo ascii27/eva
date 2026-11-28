@@ -3,7 +3,7 @@
 //
 // Two pieces, deliberately separate:
 //
-// - FACE_RULES is fixed text: what `[[face …]]` is and how to use it. It rides
+// - FACE_RULES is fixed text: what `[[face …]]` and `[[pause …]]` are and how to use them. It rides
 //   in the local persona and in hermes' DESK_PREAMBLE, both of which must stay
 //   byte-identical turn to turn (the local one is the cached prefix).
 // - personalityPrompt() changes when the sliders do. On the local brains it is
@@ -17,7 +17,7 @@
 import { EXPRESSIONS } from '../face/expression';
 import { band, personalityLabel, type Personality, type TraitKey } from './traits';
 
-export const FACE_RULES = `Your face shows how you feel, and you choose it. Put a face token in your reply wherever the feeling starts — [[face happy]], [[face amused]], [[face thoughtful]], [[face curious]], [[face surprised]], [[face skeptical]], [[face puzzled]], [[face concerned]] or [[face neutral]] — and add "slightly" or "very" inside the brackets to soften or strengthen it: [[face amused slightly]]. It is never spoken; the face changes as that part of the reply is said, and you stay looking that way for a while after you finish. Use one or two per reply, and only when there is a real feeling behind it: concerned for bad news, amused at a joke, thoughtful while you weigh something, neutral when it is simply business. Don't smile by default; smile when something is actually good.`;
+export const FACE_RULES = `Your face shows how you feel, and you choose it. Put a face token in your reply wherever the feeling starts — [[face happy]], [[face amused]], [[face thoughtful]], [[face curious]], [[face surprised]], [[face skeptical]], [[face puzzled]], [[face concerned]] or [[face neutral]] — and add "slightly" or "very" inside the brackets to soften or strengthen it: [[face amused slightly]]. It is never spoken; the face changes when your voice reaches it, and you stay looking that way for a while after you finish. To hold a face long enough to be seen, follow it with a pause — [[pause 1s]], up to four seconds — which stops your voice for that long and then carries on. Normally use one or two faces per reply, and only when there is a real feeling behind it: concerned for bad news, amused at a joke, thoughtful while you weigh something, neutral when it is simply business. When he asks to see your faces, show as many as he asks for, each with a pause after it. Don't smile by default; smile when something is actually good.`;
 
 /** What each lean sounds like, for the two ends of a slider. */
 const LEANS: Record<TraitKey, { low: string; high: string }> = {
