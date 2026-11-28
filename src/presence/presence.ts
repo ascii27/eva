@@ -1,25 +1,39 @@
-// Whether someone is at the desk (ASC-47). Pure policy, no React and no native
-// modules: usePresence owns the camera and the clock.
+// Whether someone is at the desk (ASC-47, reworked for battery in ASC-55).
+// Pure policy, no React and no native modules: usePresence owns the camera
+// and the clock.
 //
-// The only input is a face count from Apple Vision, run on the device by the
-// EvaPresence native module — no image ever reaches JS, let alone the network.
-// The count is raw and twitchy: a head turned to a second monitor is zero
-// faces, someone walking behind the chair is two. Everything here is about
-// turning that into the three things the face acts on:
+// The camera is not a stream. Every POLL_INTERVAL_MS the EvaPresence native
+// module turns the front camera on for a few seconds, and hands back one
+// sample: a held face count from Apple Vision and a motion score from frame
+// differences — then turns the camera off again. No image ever reaches JS,
+// let alone the network.
 //
-//   here   — someone has been in front of her for a moment (not a glimpse)
-//   busy   — more than one person, for more than a moment
-//   away   — nobody, for long enough that she should sleep
+// Samples are sparse and the raw signals are twitchy: a head turned to a
+// second monitor is zero faces, someone walking behind the chair is two.
+// Everything here is about turning them into the things the face acts on:
+//
+//   stirred — motion or a face in this sample: wake the screen, nothing more
+//   here    — a face was seen (only a face: motion alone never greets)
+//   busy    — more than one person
+//   away    — no face and no motion for long enough that she should sleep
 //
 // Who it is is deliberately not a question this file can answer.
 
-/** A face must be held this long to count as someone arriving — not a passer-by. */
-export const ARRIVE_AFTER_MS = 2_000;
-/** No face this long and they've gone. Long, because looking away is zero faces. */
-export const GONE_AFTER_MS = 30_000;
-/** Two or more faces held this long and the room is busy. */
-export const BUSY_AFTER_MS = 5_000;
-/** The room stays busy until it has been down to one person this long. */
+/** How often the camera wakes for a look. Between looks it is off. */
+export const POLL_INTERVAL_MS = 15_000;
+/**
+ * Share of the frame that has to change inside one look to count as motion.
+ * Native reports the share (0-1); the threshold lives here so it can be tuned
+ * by OTA against the `[presence]` log instead of by rebuild.
+ */
+export const MOTION_THRESHOLD = 0.02;
+/**
+ * No face and no motion this long and they've gone — three empty looks.
+ * Motion counts, because someone at the desk looking at another monitor is
+ * zero faces but rarely perfectly still.
+ */
+export const GONE_AFTER_MS = 45_000;
+/** The room stays busy until no look has shown two faces for this long. */
 export const BUSY_CLEAR_MS = 60_000;
 /** Nobody for this long and she goes to sleep, at any hour (Michael, Nov 27). */
 export const AWAY_SLEEP_MS = 15 * 60_000;
@@ -28,22 +42,31 @@ export const GREET_AFTER_AWAY_MS = 10 * 60_000;
 /** And never twice inside this window, however often someone comes and goes. */
 export const GREET_COOLDOWN_MS = 30 * 60_000;
 
-export interface PresenceState {
-  /** Latest raw count from the detector. */
+/**
+ * One look. `faces` is already held: native counts a face only if it is in
+ * most of the frames of the look, so a glimpse of a passer-by is zero — the
+ * job ARRIVE_AFTER_MS did when the camera streamed.
+ */
+export interface Sample {
   faces: number;
-  /** Debounced: someone is at the desk. */
+  /** Share of the frame that changed during the look, 0-1. */
+  motion: number;
+}
+
+export interface PresenceState {
+  /** Count from the latest look. */
+  faces: number;
+  /** Someone is at the desk. */
   here: boolean;
-  /** Debounced: two or more people. */
+  /** Two or more people. */
   busy: boolean;
-  /** When the current unbroken run of ≥1 faces began, or null. */
-  seenSince: number | null;
-  /** Last time any face was seen, or null since watching started. */
+  /** Last look with a face in it, or null since watching started. */
   lastSeen: number | null;
+  /** Last look with a face or motion in it — or watching starting. */
+  lastStir: number;
   /** When `here` last went false — or watching started, which is all we know. */
   goneSince: number;
-  /** When the current unbroken run of ≥2 faces began, or null. */
-  manySince: number | null;
-  /** Last time two or more faces were seen. */
+  /** Last look with two or more faces. */
   lastMany: number | null;
 }
 
@@ -51,7 +74,8 @@ export type PresenceEvent =
   | { kind: 'arrived'; awayMs: number }
   | { kind: 'left' }
   | { kind: 'busy' }
-  | { kind: 'quiet' };
+  | { kind: 'quiet' }
+  | { kind: 'stirred' };
 
 /**
  * Watching just started (or restarted after a pause). Nobody is assumed here,
@@ -63,59 +87,67 @@ export function initialPresence(now: number): PresenceState {
     faces: 0,
     here: false,
     busy: false,
-    seenSince: null,
     lastSeen: null,
+    lastStir: now,
     goneSince: now,
-    manySince: null,
     lastMany: null,
   };
 }
 
+/** Whether a look saw anything move. */
+export const moved = (sample: Sample): boolean => sample.motion >= MOTION_THRESHOLD;
+
 /**
- * Advance to `now`. `faces` is a new count from the detector; omit it on a
- * clock tick, since the native side only reports changes and the last count
- * still stands.
+ * Advance to `now`, with the look just taken; omit it on a clock tick, and
+ * the last count stands.
  */
 export function step(
   s: PresenceState,
   now: number,
-  faces?: number,
+  sample?: Sample,
 ): { state: PresenceState; events: PresenceEvent[] } {
-  const n = faces ?? s.faces;
   const events: PresenceEvent[] = [];
+  const faces = sample ? sample.faces : s.faces;
+  let { here, busy, lastSeen, lastStir, goneSince, lastMany } = s;
 
-  const seenSince = n > 0 ? (s.faces > 0 && s.seenSince !== null ? s.seenSince : now) : null;
-  // The detector only reports changes, so a count that just dropped was still
-  // true until this moment: the face was seen right up to now.
-  const lastSeen = n > 0 || s.faces > 0 ? now : s.lastSeen;
-  const manySince = n >= 2 ? (s.faces >= 2 && s.manySince !== null ? s.manySince : now) : null;
-  const lastMany = n >= 2 || s.faces >= 2 ? now : s.lastMany;
+  if (sample) {
+    if (faces > 0) lastSeen = now;
+    if (faces >= 2) lastMany = now;
+    if (faces > 0 || moved(sample)) {
+      lastStir = now;
+      events.push({ kind: 'stirred' });
+    }
+  }
 
-  let { here, busy, goneSince } = s;
-  if (!here && seenSince !== null && now - seenSince >= ARRIVE_AFTER_MS) {
+  if (!here && sample && faces > 0) {
+    // A face in one look is enough: native already insisted it was held, and
+    // waiting for a second look would put a greeting 15s after sitting down.
     here = true;
-    events.push({ kind: 'arrived', awayMs: Math.max(0, seenSince - s.goneSince) });
-  } else if (here && n === 0 && lastSeen !== null && now - lastSeen >= GONE_AFTER_MS) {
+    events.push({ kind: 'arrived', awayMs: Math.max(0, now - goneSince) });
+  } else if (here && now - lastStir >= GONE_AFTER_MS) {
     here = false;
-    // They left when they were last seen, not when we gave up waiting.
-    goneSince = lastSeen;
+    // They left when they were last seen or heard moving, not when we gave up.
+    goneSince = lastStir;
     events.push({ kind: 'left' });
   }
 
-  if (!busy && manySince !== null && now - manySince >= BUSY_AFTER_MS) {
+  if (!busy && sample && faces >= 2) {
     busy = true;
     events.push({ kind: 'busy' });
-  } else if (busy && n < 2 && (lastMany === null || now - lastMany >= BUSY_CLEAR_MS)) {
+  } else if (busy && faces < 2 && (lastMany === null || now - lastMany >= BUSY_CLEAR_MS)) {
     busy = false;
     events.push({ kind: 'quiet' });
   }
 
-  return { state: { faces: n, here, busy, seenSince, lastSeen, goneSince, manySince, lastMany }, events };
+  return { state: { faces, here, busy, lastSeen, lastStir, goneSince, lastMany }, events };
 }
 
-/** Nobody has been at the desk for AWAY_SLEEP_MS: time to sleep. */
+/**
+ * Nobody, and nothing moving, for AWAY_SLEEP_MS: time to sleep. Motion counts
+ * here although it never greets — someone walking in should wake the screen.
+ */
 export function isAway(s: PresenceState, now: number): boolean {
-  return !s.here && now - s.goneSince >= AWAY_SLEEP_MS;
+  return !s.here && now - s.lastStir >= AWAY_SLEEP_MS;
 }
 
 /**

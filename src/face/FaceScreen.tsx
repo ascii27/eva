@@ -819,6 +819,7 @@ export function FaceScreen() {
   // proactive speech is off. It steps aside while camera_look's viewfinder
   // (or the light meter) needs the front camera.
   const pokeRef = useRef<() => void>(() => {});
+  const stirRef = useRef<() => void>(() => {});
   const lastGreetAt = useRef<number | null>(null);
   const presence = usePresence({
     enabled: presenceEnabled,
@@ -826,6 +827,8 @@ export function FaceScreen() {
     // camera to themselves; presence steps aside for either.
     paused: vision.state.previewing || lightMeter.metering,
     onIssue: log,
+    // Motion or a face on a look wakes the screen (ASC-55); only a face greets.
+    onStir: () => stirRef.current(),
     onArrive: (awayMs, busy) => {
       pokeRef.current();
       const now = new Date();
@@ -842,8 +845,10 @@ export function FaceScreen() {
     busy: mode !== 'idle' || echoBusy || devVisible,
     override: sleepOverride,
     away: presence.away,
+    dayDim: presence.watching,
   });
   pokeRef.current = sleep.poke;
+  stirRef.current = sleep.stir;
   sleepRef.current = sleep;
   const cycleSleep = useCallback(() => {
     setSleepOverride((o) => (o === 'auto' ? 'dim' : o === 'dim' ? 'asleep' : 'auto'));

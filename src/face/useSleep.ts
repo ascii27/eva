@@ -12,6 +12,10 @@
 // until the schedule's next edge. How that shares the screen with the night
 // phases is screen.ts's targetLevel; this hook only remembers it and keeps the
 // clock that lets it lapse.
+//
+// Presence (ASC-55) feeds it twice: `away` sleeps her at any hour, and `stir`
+// — motion or a face on one of the camera's 15s looks — wakes the screen.
+// While presence watches, quiet dims her by day as well as by night.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { applySleepBrightness, setScreenBrightness } from './brightness';
@@ -28,11 +32,14 @@ export function useSleep({
   busy,
   override,
   away = false,
+  dayDim = false,
 }: {
   busy: boolean;
   override: SleepOverride;
   /** Presence (ASC-47): nobody at the desk long enough to sleep, at any hour. */
   away?: boolean;
+  /** Presence is watching (ASC-55): quiet dims the screen by day too. */
+  dayDim?: boolean;
 }) {
   const lastActive = useRef(Date.now());
   const [now, setNow] = useState(() => Date.now());
@@ -68,6 +75,16 @@ export function useSleep({
     setRequest((r) => (r?.kind === 'asleep' ? null : r));
   }, []);
 
+  /**
+   * Presence saw motion or a face (ASC-55): brighten, restart the quiet clock.
+   * Unlike a touch it does not end a requested sleep — someone told her to
+   * sleep while sitting right there, and the next look would see them.
+   */
+  const stir = useCallback(() => {
+    lastActive.current = Date.now();
+    setNow(Date.now());
+  }, []);
+
   /** Fall asleep as soon as nothing is under way. Safe to call mid-round. */
   const sleep = useCallback(() => {
     setPendingSleep(true);
@@ -96,19 +113,22 @@ export function useSleep({
   const date = new Date(now);
   const night = isSleepyHour(date.getHours());
   const phase: SleepPhase =
-    override === 'auto' ? requestedPhase(date, busy, lastActive.current, request, away) : busy ? 'awake' : override;
+    override === 'auto' ? requestedPhase(date, busy, lastActive.current, request, away, dayDim) : busy ? 'awake' : override;
   // Told to sleep by day is still asleep, screen and all; the backlight goes
   // back to the daytime level once she is woken and the request is gone.
   const toldAsleep = request?.kind === 'asleep';
   // Asleep because nobody is there dims the screen by day too, the same way.
   const awayAsleep = away && phase === 'asleep';
+  // Dimmed by day after a quiet spell (ASC-55): the schedule has the screen,
+  // exactly as it does at night, and gives the daytime level back on waking.
+  const dayDimmed = !night && override === 'auto' && phase === 'dim';
 
   // Lapsed requests drop out of the deps too, so the schedule takes over at
   // the edge on the next tick without anything else having to happen.
   const held = manualActive(manual, now) ? manual : null;
   useEffect(() => {
-    void applySleepBrightness(phase, night || override !== 'auto' || toldAsleep || awayAsleep, held);
-  }, [phase, night, override, toldAsleep, awayAsleep, held]);
+    void applySleepBrightness(phase, night || override !== 'auto' || toldAsleep || awayAsleep || dayDimmed, held);
+  }, [phase, night, override, toldAsleep, awayAsleep, dayDimmed, held]);
 
   /** For the overlay: what she was told, if anything is still in force. */
   const told =
@@ -120,7 +140,9 @@ export function useSleep({
           ? 'told to stay up'
           : awayAsleep
             ? 'nobody here'
-            : null;
+            : dayDimmed
+              ? 'quiet, dimmed'
+              : null;
 
-  return { phase, poke, sleep, wake, told, setBrightness, held };
+  return { phase, poke, stir, sleep, wake, told, setBrightness, held };
 }
