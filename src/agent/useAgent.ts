@@ -37,9 +37,10 @@ import { archiveSession, clearAll, loadSession, recentMemories, saveSession } fr
 import { buildToolKit, type BatteryHandles, type DeskHandles, type ErrandHandles, type LightHandles, type LocationHandles, type ScreenHandles, type ToolKit, type VisionHandles } from './tools';
 
 /**
- * A local round should feel immediate; anything this slow has gone wrong rather
- * than gone slowly. Well under the Slack path's 90s, which was sized for a
- * human-speed agent doing real work.
+ * A local round should feel immediate; this long without a word or a tool
+ * result has gone wrong rather than gone slowly. Well under the Slack path's
+ * 90s, which was sized for a human-speed agent doing real work. An idle clock,
+ * re-armed on every delta (ASC-67): an answer still arriving is never cut off.
  */
 export const ASK_TIMEOUT_MS = 30_000;
 
@@ -293,7 +294,15 @@ export function useAgent({
 
       const controller = new AbortController();
       inFlight.current = controller;
+      // An idle clock, not a budget (ASC-67). A flat 30s from posting could
+      // land while the answer was still streaming — a tool lap on a crowded
+      // network gets there — and abort it mid-sentence. Re-armed on every
+      // sign of life, it still catches a dead network just as fast.
       let timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
+      const alive = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
+      };
       let usage: ChatUsage | null = null;
       // Text handed to the speaker so far. On a mid-stream failure this is
       // what Eva actually said, so it is what goes into history.
@@ -316,7 +325,7 @@ export function useAgent({
         try {
           return await fn();
         } finally {
-          timer = setTimeout(() => controller.abort(), ASK_TIMEOUT_MS);
+          alive();
         }
       };
 
@@ -357,6 +366,7 @@ export function useAgent({
             signal: controller.signal,
             maxTokens: MAX_REPLY_TOKENS,
             onDelta: (delta) => {
+              alive();
               streamed += delta;
               opts?.onDelta?.(delta);
             },
@@ -387,6 +397,7 @@ export function useAgent({
           // Tell the speaker the reply is about to pause. Everything spoken so
           // far was the preamble; what comes back after this is the answer.
           opts?.onToolStart?.(res.toolCalls.map((c) => c.name));
+          alive();
           messages.push(res.message);
           for (const call of res.toolCalls) {
             const startedAt = Date.now();
@@ -401,6 +412,7 @@ export function useAgent({
                 `[agent] tool ${call.name}(${call.arguments}) → ${secs}s, ${answered.message.content.length} chars: ${answered.message.content.slice(0, 90)}`,
               );
             }
+            alive();
             messages.push(answered.message);
             // An image cannot ride on a tool message, so it follows as a user
             // turn. Kept out of `session` until the round resolves — a round
@@ -463,6 +475,7 @@ export function useAgent({
           // conversation stays coherent, and let the spoken part stand.
           session.current = appendTurn(session.current ?? asked, { role: 'assistant', content: streamed }, Date.now());
           await saveSession(session.current);
+          if (controller.signal.aborted) return { kind: 'timeout', postedAt };
           return { kind: 'error', message: 'agent · stream failed mid-reply' };
         }
         if (controller.signal.aborted) return { kind: 'timeout', postedAt };

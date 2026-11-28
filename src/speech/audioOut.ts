@@ -66,6 +66,13 @@ export interface UtteranceCallbacks {
    * through the whole of every tool call.
    */
   onFlowing?: (flowing: boolean) => void;
+  /**
+   * The watchdog gave up on playback and is about to report drained anyway.
+   * Indistinguishable from a real drain to everything above, so it is said
+   * separately: a reply that stops mid-sentence and settles five seconds later
+   * is this (ASC-67).
+   */
+  onStalled?: () => void;
 }
 
 export interface UtteranceSink {
@@ -166,6 +173,11 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     watchdog = setTimeout(
       () => {
         if (__DEV__) console.log('[audioOut] watchdog: playback stalled, forcing done');
+        try {
+          cb.onStalled?.();
+        } catch {
+          // Diagnostics only; the forced drain below is what settles the round.
+        }
         finish(true);
       },
       seconds * 1000,

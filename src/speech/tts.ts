@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import { getTtsStatus, initKokoro, speakStreamWithKokoro, speakWithKokoro, stopKokoro } from './kokoro';
 import type { ToneSpec } from './earcon';
+import { reportCut, type CutReason } from './cuts';
 
 // v2: v1 wrongly persisted auto-picks; bumping the key discards those.
 const VOICE_KEY = 'eva.voiceId.v2';
@@ -64,6 +65,8 @@ interface Utterance {
   text: string;
   cb: SpeakCallbacks;
   settled: boolean;
+  /** When it first became audible; unset until then. */
+  startedAt?: number;
 }
 
 let seq = 0;
@@ -83,6 +86,29 @@ function settleUtterance(u: Utterance, fire: () => void): void {
   fire();
 }
 
+function markStarted(u: Utterance): void {
+  u.startedAt ??= Date.now();
+}
+
+/**
+ * An utterance that is audible and about to end early says so (ASC-67). One
+ * that never started, or already finished, is not a cut.
+ */
+function reportIfAudible(u: Utterance, reason: CutReason): void {
+  if (u.settled || u.startedAt === undefined) return;
+  reportCut({ reason, text: u.text, playedMs: Date.now() - u.startedAt });
+}
+
+/** audioOut's watchdog forced the end: nothing about it looks different to the caller. */
+function reportStall(u: Utterance, audioStarted: boolean): void {
+  if (u.settled) return;
+  reportCut({
+    reason: 'playback stalled',
+    text: u.text,
+    playedMs: audioStarted && u.startedAt !== undefined ? Date.now() - u.startedAt : undefined,
+  });
+}
+
 function speakSystem(u: Utterance): Promise<void> {
   return resolveVoice()
     .then((voice) => {
@@ -92,6 +118,7 @@ function speakSystem(u: Utterance): Promise<void> {
         language: 'en-US',
         onStart: () => {
           if (__DEV__) console.log('[tts] speaking (system):', u.text);
+          markStarted(u);
           if (isCurrent(u)) u.cb.onStart?.();
         },
         onBoundary: u.cb.onBoundary ? (ev: { charIndex: number }) => u.cb.onBoundary!(ev.charIndex) : undefined,
@@ -116,8 +143,10 @@ export async function speak(text: string, cb: SpeakCallbacks = {}): Promise<void
     if (__DEV__) console.log('[tts] speaking (kokoro):', text);
     speakWithKokoro(text, {
       onStart: () => {
+        markStarted(u);
         if (isCurrent(u)) cb.onStart?.();
       },
+      onStalled: (audioStarted) => reportStall(u, audioStarted),
       onDone: () => settleUtterance(u, () => cb.onDone?.()),
       onError: (e, audioStarted) => {
         if (u.settled) return;
@@ -201,8 +230,10 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
   let ended = false;
   const stream = speakStreamWithKokoro({
     onStart: () => {
+      markStarted(u);
       if (isCurrent(u)) cb.onStart?.();
     },
+    onStalled: (audioStarted) => reportStall(u, audioStarted),
     onFlowing: (on) => {
       if (isCurrent(u)) cb.onFlowing?.(on);
     },
@@ -262,9 +293,15 @@ export function playEarcon(spec: ToneSpec): void {
   }
 }
 
-export function stopSpeaking(): void {
+/**
+ * Silence whatever is playing. `reason` is only diagnostics: an utterance that
+ * was audible when this landed is reported as cut short (see cuts.ts), and the
+ * reason is what the transcript says about it.
+ */
+export function stopSpeaking(reason: CutReason = 'superseded'): void {
   const u = active;
   active = null;
+  if (u) reportIfAudible(u, reason);
   stopKokoro();
   Speech.stop();
   // The system engine reports its own stop via onStopped; settling here first

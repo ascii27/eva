@@ -36,6 +36,7 @@ import {
 } from '../speech/proactive';
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
+import { appendSpeechCut, clearSpeechCuts, describeCut, getSpeechCuts, onSpeechCut } from '../speech/cuts';
 import {
   clearNearMisses,
   clearWakeEvents,
@@ -750,6 +751,18 @@ export function FaceScreen() {
   const [echoBusy, setEchoBusy] = useState(false);
   const [wakeEvents, setWakeEvents] = useState<WakeEvent[]>([]);
   const [nearMisses, setNearMisses] = useState<WakeEvent[]>([]);
+  // Every reply that ended before she finished it, and why (ASC-67). In the
+  // transcript as it happens, and kept on the device so a busy evening's worth
+  // survives the transcript's 20 lines.
+  const [speechCuts, setSpeechCuts] = useState<WakeEvent[]>([]);
+  useEffect(() => {
+    onSpeechCut((c) => {
+      const line = describeCut(c);
+      log(`speech · ${line}`);
+      void appendSpeechCut(`${brainRef.current} · ${line}`);
+    });
+    return () => onSpeechCut(null);
+  }, [log]);
 
   useEffect(() => {
     AsyncStorage.getItem(WAKE_ENABLED_KEY).then((v) => {
@@ -1006,6 +1019,7 @@ export function FaceScreen() {
     if (devVisible) {
       void getWakeEvents().then(setWakeEvents);
       void getNearMisses().then(setNearMisses);
+      void getSpeechCuts().then(setSpeechCuts);
     }
   }, [devVisible]);
 
@@ -1126,6 +1140,10 @@ export function FaceScreen() {
           nearMisses={nearMisses}
           onClearNearMisses={() => {
             void clearNearMisses().then(() => setNearMisses([]));
+          }}
+          speechCuts={speechCuts}
+          onClearSpeechCuts={() => {
+            void clearSpeechCuts().then(() => setSpeechCuts([]));
           }}
           brain={brain}
           onToggleBrain={toggleBrain}

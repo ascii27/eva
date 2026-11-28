@@ -12,6 +12,7 @@ import { endsConversation } from '../round/directives';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { playEarcon, speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
+import { reportCut } from './cuts';
 import { LIVE } from './earcon';
 import { CONSENT_QUESTION, CONSENT_RETRY, readConsent, type Consent } from '../vision/consent';
 
@@ -267,7 +268,7 @@ export function useEcho({
       if (blocker) return { ok: false, blocker };
       // Give the TTS audio session time to fully deactivate — starting the
       // recognizer mid-teardown surfaces as an "interrupted" error on iOS.
-      stopSpeaking();
+      stopSpeaking('mic opening');
       // "Go ahead." Played inside the settle window rather than after it: the
       // recognizer is on-device and would happily transcribe our own cue.
       // Only for a round someone woke — a follow-up reopens the mic every turn,
@@ -547,7 +548,7 @@ export function useEcho({
         if (asideTimer.current) clearInterval(asideTimer.current);
         asideTimer.current = null;
         asideState.current = null;
-        stopSpeaking();
+        stopSpeaking('reply over aside');
         speech.current = speakStream({
           // Sound has actually started, or resumed after a gap: the mouth may
           // move again. Set here as well as in onFlowing because the system
@@ -799,10 +800,18 @@ export function useEcho({
       function finishStreamed(result: AskResult) {
         if (round !== epoch.current) return;
         if (speech.current) {
+          // On a failure the pending tail is a half-sentence the stream died
+          // in the middle of — spoken, it is exactly the "she stopped
+          // mid-sentence" of ASC-67. Ending on the last whole sentence is
+          // less wrong than trailing off, and the transcript still says why.
           const tail = flushPending(sentences.current);
-          if (tail) {
+          sentences.current = emptySentences();
+          if (tail && result.kind === 'reply') {
             spoken.current = spoken.current ? `${spoken.current} ${tail}` : tail;
             speech.current.push(tail);
+          }
+          if (result.kind !== 'reply' && spoken.current) {
+            reportCut({ reason: result.kind === 'timeout' ? 'reply timed out' : 'reply failed', text: spoken.current });
           }
           // A failure after audio started is a transcript line, never a spoken
           // apology over the top of a half-delivered answer — but an open
@@ -867,7 +876,7 @@ export function useEcho({
             deliver(result.message ?? OFFLINE_LINE, 'confused');
             break;
           case 'error':
-            stopSpeaking(); // a lingering or queued aside must not talk over the confused face
+            stopSpeaking('error'); // a lingering or queued aside must not talk over the confused face
             onIssue?.(result.message); // transports prefix their own source
             settle('confused', CONFUSED_BEAT_MS);
             break;
@@ -1008,7 +1017,7 @@ export function useEcho({
       voiceRound.current = false;
       clearTimer();
       abortListening();
-      stopSpeaking();
+      stopSpeaking('unmount');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1114,7 +1123,7 @@ export function useEcho({
     voiceRound.current = false;
     clearTimer();
     abortListening();
-    stopSpeaking();
+    stopSpeaking('cancelled');
   }, [clearRoundSpeech, clearTimer, closeConsent]);
 
   return { listen, say, ask: askDirect, announce, cancel, noteToolActivity, look };

@@ -29,6 +29,8 @@ export interface KokoroSpeakHandlers {
   onError: (error: unknown, audioStarted: boolean) => void;
   /** Whether sound is coming out right now; see audioOut's onFlowing. */
   onFlowing?: (flowing: boolean) => void;
+  /** The playback watchdog is about to force onDone; see audioOut's onStalled. */
+  onStalled?: (audioStarted: boolean) => void;
 }
 
 export type TtsStatusListener = (status: TtsEngineState) => void;
@@ -244,6 +246,10 @@ async function runStream(
       onFlowing: (on) => {
         if (s.stopped) return;
         handlers.onFlowing?.(on);
+      },
+      onStalled: () => {
+        if (s.stopped) return;
+        handlers.onStalled?.(s.audioStarted);
       },
     });
     prepare();

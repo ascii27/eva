@@ -69,6 +69,7 @@ jest.mock('../kokoro', () => ({
 }));
 
 import { speak, speakStream, stopSpeaking } from '../tts';
+import { onSpeechCut, type SpeechCut } from '../cuts';
 
 beforeEach(() => {
   stopSpeaking(); // clear any active utterance left by a prior test
@@ -256,5 +257,57 @@ describe('speakStream', () => {
     mockKokoro.handlers?.onError(new Error('mid-audio'), true);
     expect(onError).toHaveBeenCalledTimes(1);
     expect(mockSpeech.speak).not.toHaveBeenCalled();
+  });
+});
+
+describe('speech cuts (ASC-67)', () => {
+  const cuts: SpeechCut[] = [];
+  beforeEach(() => {
+    cuts.length = 0;
+    onSpeechCut((c) => cuts.push(c));
+  });
+
+  it('reports an audible utterance stopped early, with the reason given', async () => {
+    await speak('the turkey needs another hour', {});
+    mockSpeech.current!.onStart();
+    stopSpeaking('mic opening');
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0]).toMatchObject({ reason: 'mic opening', text: 'the turkey needs another hour' });
+    expect(cuts[0].playedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('says nothing about an utterance that never became audible', async () => {
+    await speak('hello', {});
+    stopSpeaking('mic opening');
+    expect(cuts).toHaveLength(0);
+  });
+
+  it('says nothing about an utterance that already finished', async () => {
+    await speak('hello', {});
+    mockSpeech.current!.onStart();
+    mockSpeech.current!.onDone();
+    stopSpeaking();
+    expect(cuts).toHaveLength(0);
+  });
+
+  it('a newer utterance cutting one off is "superseded"', async () => {
+    await speak('one', {});
+    mockSpeech.current!.onStart();
+    await speak('two', {});
+    expect(cuts.map((c) => c.reason)).toEqual(['superseded']);
+  });
+
+  it('reports a watchdog-forced end on a Kokoro stream, which otherwise looks like a drain', () => {
+    mockKokoro.state = 'ready';
+    const cb = { onDone: jest.fn() };
+    const s = speakStream(cb);
+    s.push('first sentence.');
+    const h = mockKokoro.handlers as unknown as { onStart(): void; onStalled(started: boolean): void; onDone(): void };
+    h.onStart();
+    h.onStalled(true);
+    h.onDone();
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0]).toMatchObject({ reason: 'playback stalled', text: 'first sentence.' });
+    expect(cb.onDone).toHaveBeenCalledTimes(1);
   });
 });

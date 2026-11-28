@@ -66,6 +66,9 @@ interface DevControlsProps {
   /** What she heard when she didn't wake. */
   nearMisses: WakeEvent[];
   onClearNearMisses: () => void;
+  /** Replies that ended before she finished them, and why (ASC-67). */
+  speechCuts: WakeEvent[];
+  onClearSpeechCuts: () => void;
   slackStatus: SlackStatus;
   onSlackPair: () => void;
   onSlackReconnect: () => void;
@@ -400,6 +403,17 @@ export function DevControls(props: DevControlsProps) {
           </View>
           {props.nearMisses.slice(-WAKE_LOG_SHOWN).map((e, i) => (
             <Text key={`${e.ts}-${i}`} style={styles.wakeLine} numberOfLines={1}>
+              {hhmm(e.ts)} · {e.snippet}
+            </Text>
+          ))}
+          <View style={styles.headerRow}>
+            <Text style={styles.sectionLabel}>SPEECH CUTS · {props.speechCuts.length}</Text>
+            <Pressable onPress={props.onClearSpeechCuts} hitSlop={12}>
+              {({ pressed }) => <Text style={[styles.close, pressed && { color: eyeColor }]}>CLEAR</Text>}
+            </Pressable>
+          </View>
+          {props.speechCuts.slice(-WAKE_LOG_SHOWN).map((e, i) => (
+            <Text key={`${e.ts}-${i}`} style={styles.wakeLine} numberOfLines={2}>
               {hhmm(e.ts)} · {e.snippet}
             </Text>
           ))}
