@@ -31,7 +31,8 @@ describe('pauseMs', () => {
     ['', PAUSE_DEFAULT_MS],
     ['1s', 1000],
     ['1.5 seconds', 1500],
-    ['2', 2000],
+    ['2', PAUSE_MAX_MS],
+    ['0.5', 500],
     ['800', 800],
     ['800ms', 800],
     ['250 milliseconds', 250],
@@ -70,7 +71,7 @@ describe('cutting cues out of a stream', () => {
   });
 
   it('cuts an unknown face out without acting on it', () => {
-    expect(shape(stream(['a [[face grumpy]] b']))).toEqual(['a  b']);
+    expect(shape(stream(['a [[face flabbergasted]] b']))).toEqual(['a  b']);
   });
 
   it('a stream that ends mid-token releases it', () => {

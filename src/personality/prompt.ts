@@ -17,7 +17,7 @@
 import { EXPRESSIONS } from '../face/expression';
 import { band, personalityLabel, type Personality, type TraitKey } from './traits';
 
-export const FACE_RULES = `Your face shows how you feel, and you choose it. Put a face token in your reply wherever the feeling starts — [[face happy]], [[face amused]], [[face thoughtful]], [[face curious]], [[face surprised]], [[face skeptical]], [[face puzzled]], [[face concerned]] or [[face neutral]] — and add "slightly" or "very" inside the brackets to soften or strengthen it: [[face amused slightly]]. It is never spoken; the face changes when your voice reaches it, and you stay looking that way for a while after you finish. To hold a face long enough to be seen, follow it with a pause — [[pause 1s]], up to four seconds — which stops your voice for that long and then carries on. Normally use one or two faces per reply, and only when there is a real feeling behind it: concerned for bad news, amused at a joke, thoughtful while you weigh something, neutral when it is simply business. When he asks to see your faces, show as many as he asks for, each with a pause after it. Don't smile by default; smile when something is actually good.`;
+export const FACE_RULES = `Your face shows how you feel, and you choose it. Put a face token in your reply wherever the feeling starts, like [[face amused]]. The faces: happy, amused, excited, adoring, proud, mischievous, wink, shy, thoughtful, curious, surprised, skeptical, puzzled, sideeye, concerned, sad, annoyed, angry, determined, bored, sleepy and neutral. Add "slightly" or "very" inside the brackets to soften or strengthen one: [[face amused slightly]]. It is never spoken; the face changes when your voice reaches it, and you stay looking that way for a while after you finish. To hold a face long enough to be seen, follow it with a pause — [[pause]] is a short beat, [[pause 1.5s]] longer, two seconds at most — which stops your voice for that long and then carries on. Normally use one or two faces per reply, and only when there is a real feeling behind it: concerned for bad news, amused at a joke, thoughtful while you weigh something, neutral when it is simply business. When he asks to see your faces, show as many as he asks for, each with a pause after it. Don't smile by default; smile when something is actually good.`;
 
 /** What each lean sounds like, for the two ends of a slider. */
 const LEANS: Record<TraitKey, { low: string; high: string }> = {
@@ -53,7 +53,8 @@ function faceLeanings(p: Personality): string[] {
   const out: string[] = [];
   if (band(t.humor) === 'high') out.push('amused');
   if (band(t.warmth) === 'high' && band(t.sass) !== 'high') out.push('happy');
-  if (band(t.sass) === 'high') out.push('skeptical');
+  if (band(t.sass) === 'high') out.push('skeptical', 'sideeye', 'mischievous');
+  if (band(t.energy) === 'high' && band(t.warmth) !== 'low') out.push('excited');
   if (band(t.curiosity) === 'high') out.push('curious');
   if (band(t.humor) === 'low' || band(t.energy) === 'low') out.push('thoughtful');
   return out.filter((e) => (EXPRESSIONS as string[]).includes(e));

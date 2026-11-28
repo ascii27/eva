@@ -15,7 +15,7 @@ import {
   restingExpression,
   wear,
 } from '../expression';
-import { eyeGeo, EYE_CORNERS_PLEASED } from '../geometry';
+import { eyeGeo, EYE_CORNERS_LID, EYE_CORNERS_PLEASED } from '../geometry';
 import { isSmiling, pickViseme } from '../visemes';
 
 const NEVER = -9e9;
@@ -35,7 +35,9 @@ describe('face tokens', () => {
     expect(parseExpression('smile')).toBe('happy');
     expect(parseExpression('worried')).toBe('concerned');
     expect(parseExpression('confused')).toBe('puzzled');
-    expect(readFaceTokens('[[face grumpy]]')).toEqual([]);
+    expect(parseExpression('side-eye')).toBe('sideeye');
+    expect(parseExpression('tired')).toBe('sleepy');
+    expect(readFaceTokens('[[face flabbergasted]]')).toEqual([]);
   });
 
   it('reads a strength word or number', () => {
@@ -115,6 +117,8 @@ describe('the mouth', () => {
     expect(isSmiling('resting', null, { name: 'concerned', intensity: 1 })).toBe(false);
     expect(isSmiling('resting', null, { name: 'happy', intensity: 0.8 })).toBe(true);
     expect(isSmiling('idle', null, { name: 'amused', intensity: 0.6 })).toBe(true);
+    expect(isSmiling('idle', null, { name: 'mischievous', intensity: 0.8 })).toBe(true);
+    expect(isSmiling('idle', null, { name: 'sad', intensity: 1 })).toBe(false);
   });
 
   it('the pleased mode still smiles, for the overlay', () => {
@@ -167,6 +171,44 @@ describe('eyes', () => {
     expect(p.sh).toBeGreaterThan(0.52);
     expect(p.sh).toBeLessThan(1);
     expect(p.corners).not.toBe(EYE_CORNERS_PLEASED);
+  });
+
+  it('every expression has a pose that stays on screen', () => {
+    for (const e of EXPRESSIONS) {
+      for (const side of [-1, 1]) {
+        const g = eyeGeo(side, 1234, 'idle', NEVER, NEVER, 0, e, 1);
+        expect(g.sw).toBeGreaterThan(0.5);
+        expect(g.sw).toBeLessThan(1.5);
+        expect(g.sh).toBeGreaterThan(0.05);
+        expect(g.sh).toBeLessThan(1.6);
+        expect(Math.abs(g.x)).toBeLessThan(45);
+        expect(Math.abs(g.y)).toBeLessThan(30);
+        expect(Math.abs(g.r)).toBeLessThanOrEqual(20);
+      }
+    }
+  });
+
+  it('sad and angry slant the eyes in opposite directions, mirrored left to right', () => {
+    const sadL = expressionPose('sad', -1).r;
+    const sadR = expressionPose('sad', 1).r;
+    const angryR = expressionPose('angry', 1).r;
+    expect(sadL).toBe(-sadR);
+    expect(Math.sign(sadR)).toBe(-Math.sign(angryR));
+  });
+
+  it('bored wears the lid, happy the crescent; a faint one neither', () => {
+    expect(eyeGeo(1, 0, 'idle', NEVER, NEVER, 0, 'bored', 1).corners).toBe(EYE_CORNERS_LID);
+    expect(eyeGeo(1, 0, 'idle', NEVER, NEVER, 0, 'excited', 1).corners).toBe(EYE_CORNERS_PLEASED);
+    expect(eyeGeo(1, 0, 'idle', NEVER, NEVER, 0, 'bored', 0.3).corners).not.toBe(EYE_CORNERS_LID);
+  });
+
+  it('a wink shuts one eye only', () => {
+    expect(eyeGeo(-1, 0, 'idle', NEVER, NEVER, 0, 'wink', 1).sh).toBeLessThan(0.2);
+    expect(eyeGeo(1, 0, 'idle', NEVER, NEVER, 0, 'wink', 1).sh).toBeGreaterThan(0.9);
+  });
+
+  it('asleep unwinds any slant', () => {
+    expect(eyeGeo(1, 0, 'idle', NEVER, NEVER, 1, 'angry', 1).r).toBeCloseTo(0);
   });
 
   it('skeptical is lopsided', () => {

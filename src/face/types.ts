@@ -34,5 +34,7 @@ export interface EyeGeo {
   x: number;
   y: number;
   g: number;
+  /** Rotation in degrees, clockwise (ASC-59 expressions; 0 for every design mode). */
+  r: number;
   corners: CornerRadii;
 }

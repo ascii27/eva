@@ -6,12 +6,15 @@
 // mode: the wake watcher and the follow-up window key off modes, and a new
 // mode per feeling would have to teach both of them about each one.
 //
-// Every pose below is the static part of a pose the design already has —
-// pleased, thinking, listening, alert, confused — so this invents almost no
-// animation values (CLAUDE.md: change the design first, then port). The one
-// exception is `concerned`, which the design has nothing like; it is assembled
-// from those same poses' numbers (thinking's narrowing, pleased's drop,
-// confused's glow) and should get a proper pass in Eva Face.dc.html.
+// The first nine poses are the static part of a pose the design already has —
+// pleased, thinking, listening, alert, confused — so they invent almost no
+// animation values (CLAUDE.md: change the design first, then port); only
+// `concerned` is assembled from those poses' numbers. The second set (Michael
+// asked for many more, Nov 28) needs two things the design never had: eyes
+// that *rotate* (slanted in for angry and determined, out for sad) and a lid
+// shape — flat top, round bottom, the crescent upside down — for bored, sleepy
+// and side-eye. Those values are invented here and should be folded into
+// Eva Face.dc.html in a design pass.
 //
 // Eva asks for one with a token in her reply, `[[face amused]]`, exactly as
 // hermes asks for `[[sleep]]`: stripped before speaking (directives.ts's
@@ -29,7 +32,21 @@ export type Expression =
   | 'surprised'
   | 'skeptical'
   | 'puzzled'
-  | 'concerned';
+  | 'concerned'
+  // The second set (ASC-59 follow-up): invented, not yet in the design.
+  | 'excited'
+  | 'adoring'
+  | 'proud'
+  | 'mischievous'
+  | 'wink'
+  | 'shy'
+  | 'sad'
+  | 'angry'
+  | 'annoyed'
+  | 'determined'
+  | 'bored'
+  | 'sleepy'
+  | 'sideeye';
 
 export const EXPRESSIONS: Expression[] = [
   'neutral',
@@ -41,6 +58,19 @@ export const EXPRESSIONS: Expression[] = [
   'skeptical',
   'puzzled',
   'concerned',
+  'excited',
+  'adoring',
+  'proud',
+  'mischievous',
+  'wink',
+  'shy',
+  'sad',
+  'angry',
+  'annoyed',
+  'determined',
+  'bored',
+  'sleepy',
+  'sideeye',
 ];
 
 export interface ExpressionState {
@@ -79,13 +109,37 @@ const ALIASES: Record<string, Expression> = {
   sassy: 'skeptical',
   unimpressed: 'skeptical',
   doubtful: 'skeptical',
-  smirk: 'skeptical',
+  smirk: 'mischievous',
   confused: 'puzzled',
   unsure: 'puzzled',
   worried: 'concerned',
-  sad: 'concerned',
   sympathetic: 'concerned',
-  sorry: 'concerned',
+  sorry: 'sad',
+  unhappy: 'sad',
+  disappointed: 'sad',
+  thrilled: 'excited',
+  eager: 'excited',
+  love: 'adoring',
+  loving: 'adoring',
+  fond: 'adoring',
+  smug: 'proud',
+  pleased_with_myself: 'proud',
+  cheeky: 'mischievous',
+  sly: 'mischievous',
+  winking: 'wink',
+  bashful: 'shy',
+  embarrassed: 'shy',
+  mad: 'angry',
+  cross: 'angry',
+  irritated: 'annoyed',
+  grumpy: 'annoyed',
+  focused: 'determined',
+  resolute: 'determined',
+  meh: 'bored',
+  tired: 'sleepy',
+  drowsy: 'sleepy',
+  'side-eye': 'sideeye',
+  suspicious: 'sideeye',
   calm: 'neutral',
   rest: 'neutral',
   none: 'neutral',
@@ -102,18 +156,31 @@ export const BASE_INTENSITY: Record<Expression, number> = {
   skeptical: 0.7,
   puzzled: 0.7,
   concerned: 0.7,
+  excited: 0.9,
+  adoring: 0.8,
+  proud: 0.7,
+  mischievous: 0.75,
+  wink: 1,
+  shy: 0.7,
+  sad: 0.75,
+  angry: 0.8,
+  annoyed: 0.7,
+  determined: 0.7,
+  bored: 0.7,
+  sleepy: 0.75,
+  sideeye: 0.8,
 };
 
 export function parseExpression(word: string): Expression | null {
   const w = word.toLowerCase().trim();
   if ((EXPRESSIONS as string[]).includes(w)) return w as Expression;
-  return ALIASES[w] ?? null;
+  return ALIASES[w] ?? ALIASES[w.replace(/[\s-]+/g, '_')] ?? null;
 }
 
 // `[[face amused]]`; also `[[face: amused]]` and `[[face=amused]]`, since the
 // other tokens tolerate both. An optional trailing word ("a little", "very")
 // or number sets the strength.
-export const FACE_TOKEN_RE = /\[\[\s*face\s*[:=]?\s*([a-z-]+)(?:\s+([^\]]*?))?\s*\]\]/gi;
+export const FACE_TOKEN_RE = /\[\[\s*face\s*[:=]?\s*([a-z_-]+)(?:\s+([^\]]*?))?\s*\]\]/gi;
 
 /** A strength word or number from a token, as a multiplier on the base intensity. */
 function strength(arg: string | undefined): number {
@@ -206,37 +273,76 @@ export function expressionWeight(mode: FaceMode): number {
   return mode === 'idle' || mode === 'resting' || mode === 'speaking' ? 1 : 0;
 }
 
-/** A pose as multipliers (sw, sh, g) and offsets (x, y) on the mode's own. */
+/** Which corner shape an eye wears. */
+export type EyeShape = 'base' | 'crescent' | 'lid';
+
+/** A pose as multipliers (sw, sh, g) and offsets (x, y, r) on the mode's own. */
 export interface Pose {
   sw: number;
   sh: number;
   x: number;
   y: number;
   g: number;
-  /** Wear the design's pleased eye corners (the smiling crescent). */
-  crescent: boolean;
+  /** Rotation of this eye, degrees clockwise. Positive on the right eye and
+   *  negative on the left slants the outer corners down (sad). */
+  r: number;
+  /** crescent: the design's pleased eye (round top, flat bottom).
+   *  lid: the crescent upside down — flat top, round bottom, half-lidded. */
+  shape: EyeShape;
+}
+
+function pose(sw: number, sh: number, x: number, y: number, g: number, r = 0, shape: EyeShape = 'base'): Pose {
+  'worklet';
+  return { sw, sh, x, y, g, r, shape };
 }
 
 export function expressionPose(name: string, side: number): Pose {
   'worklet';
+  // --- From the design's own poses.
   // pleased
-  if (name === 'happy' || name === 'amused') return { sw: 1, sh: 0.52, x: 0, y: 8, g: 1.2, crescent: true };
+  if (name === 'happy' || name === 'amused') return pose(1, 0.52, 0, 8, 1.2, 0, 'crescent');
   // thinking, without its pulse: narrowed, glancing up and away
-  if (name === 'thoughtful') return { sw: 0.96, sh: 0.4, x: -22, y: -18, g: 0.92, crescent: false };
+  if (name === 'thoughtful') return pose(0.96, 0.4, -22, -18, 0.92);
   // listening, without its sway
-  if (name === 'curious') return { sw: 1.1, sh: 1.22, x: 0, y: -6, g: 1.35, crescent: false };
+  if (name === 'curious') return pose(1.1, 1.22, 0, -6, 1.35);
   // alert, without its tremor
-  if (name === 'surprised') return { sw: 1.24, sh: 1.36, x: 0, y: 0, g: 2, crescent: false };
+  if (name === 'surprised') return pose(1.24, 1.36, 0, 0, 2);
   // confused: one eye narrowed, the other raised. Skeptical is the eyes alone;
   // puzzled adds confused's head tilt and mouth (Face.tsx, visemes.ts).
   if (name === 'skeptical' || name === 'puzzled') {
-    return side < 0
-      ? { sw: 0.9, sh: 0.5, x: 0, y: 14, g: 0.9, crescent: false }
-      : { sw: 1, sh: 1.14, x: 0, y: -6, g: 0.9, crescent: false };
+    return side < 0 ? pose(0.9, 0.5, 0, 14, 0.9) : pose(1, 1.14, 0, -6, 0.9);
   }
-  // Not in the design: thinking's narrowing, pleased's drop, confused's glow.
-  if (name === 'concerned') return { sw: 0.96, sh: 0.4, x: 0, y: 8, g: 0.9, crescent: false };
-  return { sw: 1, sh: 1, x: 0, y: 0, g: 1, crescent: false };
+  // thinking's narrowing, pleased's drop, confused's glow
+  if (name === 'concerned') return pose(0.96, 0.4, 0, 8, 0.9);
+
+  // --- Invented (ASC-59 follow-up); needs a design pass.
+  // a bigger, brighter pleased
+  if (name === 'excited') return pose(1.12, 0.62, 0, 2, 1.8, 0, 'crescent');
+  // pleased, softly glowing and a touch lower
+  if (name === 'adoring') return pose(1.04, 0.46, 0, 10, 1.7, 0, 'crescent');
+  // pleased, chin up
+  if (name === 'proud') return pose(1, 0.5, 0, -8, 1.3, 0, 'crescent');
+  // pleased, slanted in like determined: up to something
+  if (name === 'mischievous') return pose(1, 0.48, 0, 6, 1.3, -10 * side, 'crescent');
+  // left eye shut in a crescent, right eye open
+  if (name === 'wink') return side < 0 ? pose(1.04, 0.12, 0, 10, 1.1, 0, 'crescent') : pose(1, 1, 0, 0, 1.15);
+  // pleased, glancing down and away
+  if (name === 'shy') return pose(0.94, 0.5, 20, 16, 0.95, 0, 'crescent');
+  // drooping, outer corners down, dim
+  if (name === 'sad') return pose(0.96, 0.7, 0, 12, 0.8, 14 * side);
+  // narrowed, inner corners down, hot
+  if (name === 'angry') return pose(1.04, 0.58, 0, 4, 1.5, -16 * side);
+  // half-lidded with a slight inward slant
+  if (name === 'annoyed') return pose(1, 0.55, 0, 6, 1, -7 * side, 'lid');
+  // narrowed and slanted in, steady and bright
+  if (name === 'determined') return pose(1.06, 0.62, 0, 0, 1.4, -9 * side);
+  // heavy-lidded, dim
+  if (name === 'bored') return pose(1.02, 0.45, 0, 8, 0.75, 0, 'lid');
+  // nearly shut under the lid, drooping
+  if (name === 'sleepy') return pose(1, 0.3, 0, 12, 0.7, 6 * side, 'lid');
+  // half-lidded, looking hard to one side
+  if (name === 'sideeye') return pose(0.96, 0.48, 30, 2, 1, 0, 'lid');
+  return pose(1, 1, 0, 0, 1);
 }
 
 /** Whether the expression tilts the head, as confused does. */

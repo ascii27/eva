@@ -15,6 +15,7 @@ import {
   WAKE_UP_MS,
   BLINK_RAND_GAP,
   CONFUSED_TILT_DEG,
+  WAITING_TILT_DEG,
   EYE_GAP,
   EYE_H,
   EYE_W,
@@ -136,11 +137,13 @@ export function Face({
   useFrameCallback((frame) => {
     const t = frame.timeSinceFirstFrame;
     clock.value = t;
-    if ((modeSV.value === 'idle' || modeSV.value === 'resting') && sleepK.value === 0) {
-      if (t > nextBlink.value) {
-        blinkT.value = t;
-        nextBlink.value = t + BLINK_MIN_GAP + Math.random() * BLINK_RAND_GAP;
-      }
+    const quiet = modeSV.value === 'idle' || modeSV.value === 'resting';
+    // Waiting for him blinks too — a stare reads as frozen, not attentive.
+    if ((quiet || modeSV.value === 'listening') && sleepK.value === 0 && t > nextBlink.value) {
+      blinkT.value = t;
+      nextBlink.value = t + BLINK_MIN_GAP + Math.random() * BLINK_RAND_GAP;
+    }
+    if (quiet && sleepK.value === 0) {
       if (t > nextYawn.value) {
         yawnT.value = t;
         nextYawn.value = t + YAWN_MIN_GAP + Math.random() * YAWN_RAND_GAP;
@@ -178,7 +181,7 @@ export function Face({
       ? CONFUSED_TILT_DEG * expression.intensity
       : 0;
   useEffect(() => {
-    tilt.value = withTiming(mode === 'confused' ? CONFUSED_TILT_DEG : puzzledTilt, {
+    tilt.value = withTiming(mode === 'confused' ? CONFUSED_TILT_DEG : mode === 'listening' ? WAITING_TILT_DEG : puzzledTilt, {
       duration: 500,
       easing: Easing.inOut(Easing.ease),
     });
@@ -234,6 +237,7 @@ function Eye({ side, mode, eyeColor, k, cx, cy, clock, blinkT, yawnT, sleepK, ex
     return [
       { translateX: cx + ((side * EYE_GAP) / 2 + p.x) * k },
       { translateY: cy + p.y * k },
+      { rotate: (p.r * Math.PI) / 180 },
       { scaleX: p.sw },
       { scaleY: p.sh },
     ];

@@ -59,6 +59,8 @@ import { FACE_RULES, personaWith, personalityPrompt } from '../personality/promp
 import { PERSONA } from '../agent/persona';
 import { EXPRESSIONS } from './expression';
 import { useExpression } from './useExpression';
+import { QuestionMark } from './QuestionMark';
+import { endsWithQuestion } from './question';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
@@ -160,6 +162,19 @@ export function FaceScreen() {
   // request time. And what the face is wearing over its mode — picked by Eva
   // in her replies with `[[face …]]`, otherwise the personality's resting face.
   const personality = usePersonality();
+
+  // A "?" floats up when she finishes speaking on a question (ASC-59): the
+  // moment she stops talking is when it becomes his turn.
+  const [questionNonce, setQuestionNonce] = useState(0);
+  const lastSaidRef = useRef<string | null>(null);
+  lastSaidRef.current = lastSaid;
+  const prevMode = useRef<FaceMode>(mode);
+  useEffect(() => {
+    if (prevMode.current === 'speaking' && mode !== 'speaking' && endsWithQuestion(lastSaidRef.current)) {
+      setQuestionNonce((n) => n + 1);
+    }
+    prevMode.current = mode;
+  }, [mode]);
   const face = useExpression(mode, personality.personality.traits, (e) =>
     log(`face · ${e.name}${e.intensity ? ` ${Math.round(e.intensity * 100)}%` : ''}`),
   );
@@ -1026,6 +1041,7 @@ export function FaceScreen() {
         asleep={sleep.phase === 'asleep'}
         expression={face.expression}
       />
+      <QuestionMark nonce={questionNonce} eyeColor={eyeColor} k={k} width={faceW} height={height} />
       {colOn && fontsLoaded && (
         <SideColumn
           mode={mode}

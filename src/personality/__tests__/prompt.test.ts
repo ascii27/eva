@@ -36,9 +36,9 @@ describe('personalityPrompt', () => {
 });
 
 describe('FACE_RULES', () => {
-  it('every example token in the rules parses, and none of them is spoken', () => {
-    const tokens = readFaceTokens(FACE_RULES);
-    expect(tokens.length).toBeGreaterThanOrEqual(EXPRESSIONS.length);
+  it('names every face, its example tokens parse, and none of them is spoken', () => {
+    for (const e of EXPRESSIONS) expect(FACE_RULES).toMatch(new RegExp(`\\b${e}\\b`));
+    expect(readFaceTokens(FACE_RULES).length).toBeGreaterThan(0);
     expect(speakableFromMrkdwn(FACE_RULES)).not.toMatch(/\[\[/);
   });
 });

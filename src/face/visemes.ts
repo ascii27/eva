@@ -105,6 +105,9 @@ export function pickViseme(
  */
 export const EXPRESSION_MOUTH_AT = 0.5;
 
+/** The expressions whose mouth is the smile arc. */
+const SMILES = new Set<string>(['happy', 'amused', 'excited', 'adoring', 'proud', 'mischievous', 'wink', 'shy']);
+
 function wearsMouth(mode: FaceMode, e: ExpressionState): boolean {
   return (mode === 'idle' || mode === 'resting') && e.intensity >= EXPRESSION_MOUTH_AT;
 }
@@ -124,7 +127,7 @@ export function isSmiling(
   if (frozen) return false;
   if (mode === 'pleased') return true;
   if (!expression || expression.intensity < EXPRESSION_MOUTH_AT) return false;
-  if (expression.name !== 'happy' && expression.name !== 'amused') return false;
+  if (!SMILES.has(expression.name)) return false;
   // Talking, the lip sync owns the mouth — except where it would be shut: the
   // gaps between words and the pauses inside a reply. There a smiling Eva
   // smiles, which is what makes the expression readable while she speaks;

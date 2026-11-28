@@ -17,10 +17,13 @@ export type CueItem =
   | { kind: 'face'; token: FaceToken }
   | { kind: 'pause'; ms: number };
 
-/** A pause with no length given. Long enough to see a face, short enough not to read as a hang. */
-export const PAUSE_DEFAULT_MS = 1000;
+/**
+ * A pause with no length given. Long enough to see a face, short enough not to
+ * read as a hang — a full second felt too long in live testing (Nov 28).
+ */
+export const PAUSE_DEFAULT_MS = 650;
 /** The longest pause honoured. Longer reads as a broken appliance, not as timing. */
-export const PAUSE_MAX_MS = 4000;
+export const PAUSE_MAX_MS = 2000;
 
 const CUE_RE = /\[\[\s*(face|pause)\b[^\]]*\]\]/gi;
 const PAUSE_ARG_RE = /^\[\[\s*pause\s*[:=]?\s*([^\]]*?)\s*\]\]$/i;
