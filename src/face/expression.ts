@@ -77,6 +77,10 @@ export interface ExpressionState {
   name: Expression;
   /** 0 … 1: how far the face is pulled toward the pose. */
   intensity: number;
+  /** Worn by the eyes only; the mouth stays neutral whatever the strength.
+   *  Set on the resting face (ASC-64): a smile held while nothing is
+   *  happening read as a clown's. */
+  eyesOnly?: boolean;
 }
 
 export const NEUTRAL: ExpressionState = { name: 'neutral', intensity: 0 };
@@ -237,18 +241,19 @@ export function wear(token: FaceToken, t: Traits): ExpressionState {
 }
 
 /**
- * The face she settles back to when nothing in particular is going on — and,
- * since the smile was removed (ASC-59), the face she ends a reply on when she
- * didn't pick one. Most personalities rest neutral; a sunny one rests on a
- * soft smile, a sassy one on a faintly raised brow. Ordered so the strongest
- * lean wins.
+ * The face she settles back to when nothing in particular is going on — and
+ * the face she ends a reply on when she didn't pick one. Only the eyes rest
+ * (ASC-64): a happy, sassy or jokey personality rests with happy eyes, a
+ * serious one with plain robot eyes, and every personality rests with a
+ * neutral mouth. A smile is something she does — an explicit `[[face happy]]`
+ * — not something she holds. 0.55 because the crescent eye only takes over
+ * once an expression is more than half worn (geometry.ts).
  */
+export const RESTING_HAPPY: ExpressionState = { name: 'happy', intensity: 0.55, eyesOnly: true };
+
 export function restingExpression(t: Traits): ExpressionState {
   const cheer = (t.warmth + t.humor) / 2;
-  if (cheer >= 0.78) return { name: 'happy', intensity: 0.55 };
-  if (t.sass >= 0.75) return { name: 'skeptical', intensity: 0.35 };
-  if (t.humor >= 0.75) return { name: 'amused', intensity: 0.35 };
-  if (t.curiosity >= 0.75) return { name: 'curious', intensity: 0.3 };
+  if (cheer >= 0.78 || t.sass >= 0.75 || t.humor >= 0.75) return RESTING_HAPPY;
   return NEUTRAL;
 }
 

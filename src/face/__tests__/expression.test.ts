@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { speakableFromMrkdwn } from '../../round/speakable';
 import { readDirective } from '../../round/directives';
-import { fromPreset, TRAIT_KEYS, type Traits } from '../../personality/traits';
+import { fromPreset, PRESETS, TRAIT_KEYS, type Traits } from '../../personality/traits';
 import {
   BASE_INTENSITY,
   EXPRESSIONS,
@@ -96,17 +96,30 @@ describe('restingExpression — no default smile', () => {
     expect(restingExpression(fromPreset('zen').traits)).toEqual(NEUTRAL);
   });
 
-  it('a sunny one rests on a smile, a sassy one on a raised brow', () => {
-    expect(restingExpression(fromPreset('sunny').traits).name).toBe('happy');
-    expect(restingExpression(fromPreset('sassy').traits).name).toBe('skeptical');
-    expect(restingExpression(fromPreset('dry').traits).name).toBe('amused');
+  it('a happy, sassy or jokey one rests with happy eyes (ASC-64)', () => {
+    for (const id of ['sunny', 'sassy', 'dry'] as const) {
+      const rest = restingExpression(fromPreset(id).traits);
+      expect(rest.name).toBe('happy');
+      // Strong enough for the crescent eye, which needs more than half.
+      expect(rest.intensity).toBeGreaterThanOrEqual(0.5);
+    }
   });
 
-  it('only the sunny rest is strong enough to show on the mouth', () => {
-    const sunny = restingExpression(fromPreset('sunny').traits);
-    const dry = restingExpression(fromPreset('dry').traits);
-    expect(isSmiling('resting', null, sunny)).toBe(true);
-    expect(isSmiling('resting', null, dry)).toBe(false);
+  it('no personality rests with a smile, in any quiet mode or speaking gap (ASC-64)', () => {
+    for (const p of PRESETS) {
+      const rest = restingExpression(p.traits);
+      for (const mode of ['idle', 'resting'] as const) {
+        expect(isSmiling(mode, null, rest)).toBe(false);
+        expect(pickViseme(mode, 0, null, true, undefined, rest)).toBe('sil');
+      }
+      expect(isSmiling('speaking', null, rest, 'sil')).toBe(false);
+    }
+  });
+
+  it('an explicit happy face still smiles', () => {
+    const t = fromPreset('sunny').traits;
+    expect(isSmiling('resting', null, wear({ name: 'happy', strength: 1 }, t))).toBe(true);
+    expect(isSmiling('idle', null, wear({ name: 'amused', strength: 1 }, t))).toBe(true);
   });
 });
 
