@@ -12,7 +12,7 @@ import { endsConversation } from '../round/directives';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { playEarcon, speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
-import { reportCut } from './cuts';
+import { reportCut, reportReply } from './cuts';
 import { LIVE } from './earcon';
 import { CONSENT_QUESTION, CONSENT_RETRY, readConsent, type Consent } from '../vision/consent';
 
@@ -830,6 +830,7 @@ export function useEcho({
             speech.current.push(line);
             spoken.current = line;
           }
+          traceReply(result);
           speech.current.end();
           speech.current = null;
           onSaid?.(result.kind === 'reply' ? result.speakable : spoken.current);
@@ -842,10 +843,24 @@ export function useEcho({
           clearRoundSpeech();
           return void finishWhole(result);
         }
+        traceReply(result);
         const said = result.kind === 'reply' ? result.speakable : spoken.current;
         if (said) onSaid?.(said);
         if (result.kind === 'error') onIssue?.(result.message);
         finishSpoken(round, result.kind === 'reply' ? 'resting' : 'confused');
+      }
+
+      /**
+       * What the brain delivered against what reached the speaker (ASC-67).
+       * Only the streamed path can lose text between the two; a whole reply is
+       * handed over in one piece.
+       */
+      function traceReply(result: AskResult) {
+        reportReply({
+          kind: result.kind,
+          received: result.kind === 'reply' ? result.speakable : '',
+          pushed: spoken.current,
+        });
       }
 
       /** A reply that arrived whole, with no cues: spoken in one utterance, as ever. */

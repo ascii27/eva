@@ -36,7 +36,7 @@ import {
 } from '../speech/proactive';
 import { useEcho } from '../speech/useEcho';
 import { useWakeWord } from '../speech/useWakeWord';
-import { appendSpeechCut, clearSpeechCuts, describeCut, getSpeechCuts, onSpeechCut } from '../speech/cuts';
+import { appendSpeechLog, clearSpeechLog, getSpeechLog, onSpeechEvent, readEvent } from '../speech/cuts';
 import {
   clearNearMisses,
   clearWakeEvents,
@@ -751,17 +751,19 @@ export function FaceScreen() {
   const [echoBusy, setEchoBusy] = useState(false);
   const [wakeEvents, setWakeEvents] = useState<WakeEvent[]>([]);
   const [nearMisses, setNearMisses] = useState<WakeEvent[]>([]);
-  // Every reply that ended before she finished it, and why (ASC-67). In the
-  // transcript as it happens, and kept on the device so a busy evening's worth
-  // survives the transcript's 20 lines.
-  const [speechCuts, setSpeechCuts] = useState<WakeEvent[]>([]);
+  // Every reply traced end to end, and every early stop (ASC-67): what the
+  // brain sent, what reached the speaker, what was synthesized and played, and
+  // how it ended. All of it goes in the on-device log the overlay shows, so a
+  // whole evening survives the transcript's 20 lines; only a suspect one is
+  // also a transcript line.
+  const [speechLog, setSpeechLog] = useState<WakeEvent[]>([]);
   useEffect(() => {
-    onSpeechCut((c) => {
-      const line = describeCut(c);
-      log(`speech · ${line}`);
-      void appendSpeechCut(`${brainRef.current} · ${line}`);
+    onSpeechEvent((e) => {
+      const { line, suspect } = readEvent(e);
+      if (suspect) log(`speech · ${suspect} · ${line}`);
+      void appendSpeechLog(`${brainRef.current} · ${suspect ? `⚠ ${suspect} · ` : ''}${line}`);
     });
-    return () => onSpeechCut(null);
+    return () => onSpeechEvent(null);
   }, [log]);
 
   useEffect(() => {
@@ -1019,7 +1021,7 @@ export function FaceScreen() {
     if (devVisible) {
       void getWakeEvents().then(setWakeEvents);
       void getNearMisses().then(setNearMisses);
-      void getSpeechCuts().then(setSpeechCuts);
+      void getSpeechLog().then(setSpeechLog);
     }
   }, [devVisible]);
 
@@ -1141,9 +1143,9 @@ export function FaceScreen() {
           onClearNearMisses={() => {
             void clearNearMisses().then(() => setNearMisses([]));
           }}
-          speechCuts={speechCuts}
-          onClearSpeechCuts={() => {
-            void clearSpeechCuts().then(() => setSpeechCuts([]));
+          speechLog={speechLog}
+          onClearSpeechLog={() => {
+            void clearSpeechLog().then(() => setSpeechLog([]));
           }}
           brain={brain}
           onToggleBrain={toggleBrain}

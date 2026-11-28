@@ -69,7 +69,7 @@ jest.mock('../kokoro', () => ({
 }));
 
 import { speak, speakStream, stopSpeaking } from '../tts';
-import { onSpeechCut, type SpeechCut } from '../cuts';
+import { onSpeechEvent, type SpeechCut, type UtteranceTrace } from '../cuts';
 
 beforeEach(() => {
   stopSpeaking(); // clear any active utterance left by a prior test
@@ -262,9 +262,14 @@ describe('speakStream', () => {
 
 describe('speech cuts (ASC-67)', () => {
   const cuts: SpeechCut[] = [];
+  const traces: UtteranceTrace[] = [];
   beforeEach(() => {
     cuts.length = 0;
-    onSpeechCut((c) => cuts.push(c));
+    traces.length = 0;
+    onSpeechEvent((e) => {
+      if (e.kind === 'cut') cuts.push(e.cut);
+      if (e.kind === 'utterance') traces.push(e.trace);
+    });
   });
 
   it('reports an audible utterance stopped early, with the reason given', async () => {
@@ -309,5 +314,27 @@ describe('speech cuts (ASC-67)', () => {
     expect(cuts).toHaveLength(1);
     expect(cuts[0]).toMatchObject({ reason: 'playback stalled', text: 'first sentence.' });
     expect(cb.onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('traces every Kokoro utterance when playback ends, with how it ended', () => {
+    mockKokoro.state = 'ready';
+    const s = speakStream({});
+    s.push('one.');
+    s.push('two.');
+    const h = mockKokoro.handlers as unknown as { onEnded(stats: object): void };
+    const stats = { how: 'drained', synthesizedS: 1, playedS: 1, chunks: 2, underruns: 0 };
+    h.onEnded(stats);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({ text: 'one. two.', end: 'drained', stats, micOpen: false });
+  });
+
+  it('a stopped utterance is traced with the reason it was stopped', () => {
+    mockKokoro.state = 'ready';
+    speakStream({}).push('hello there.');
+    const h = mockKokoro.handlers as unknown as { onStart(): void; onEnded(stats: object): void };
+    h.onStart();
+    stopSpeaking('mic opening');
+    h.onEnded({ how: 'stopped', synthesizedS: 1, playedS: 0.4, chunks: 1, underruns: 0 });
+    expect(traces[0].end).toBe('mic opening');
   });
 });

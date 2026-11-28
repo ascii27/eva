@@ -2,7 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Speech from 'expo-speech';
 import { getTtsStatus, initKokoro, speakStreamWithKokoro, speakWithKokoro, stopKokoro } from './kokoro';
 import type { ToneSpec } from './earcon';
-import { reportCut, type CutReason } from './cuts';
+import { AppState } from 'react-native';
+import { reportCut, reportUtterance, type CutReason } from './cuts';
+import { isMicOpen } from './stt';
+import type { PlaybackStats } from './audioOut';
 
 // v2: v1 wrongly persisted auto-picks; bumping the key discards those.
 const VOICE_KEY = 'eva.voiceId.v2';
@@ -67,6 +70,8 @@ interface Utterance {
   settled: boolean;
   /** When it first became audible; unset until then. */
   startedAt?: number;
+  /** Why stopSpeaking ended it, if it did; the trace's end reason. */
+  cutReason?: CutReason;
 }
 
 let seq = 0;
@@ -109,6 +114,26 @@ function reportStall(u: Utterance, audioStarted: boolean): void {
   });
 }
 
+/**
+ * Kokoro's playback is over, however it ended: one trace line per utterance
+ * (ASC-67). The system voice plays inside iOS and has no numbers to give.
+ */
+function traceUtterance(u: Utterance, stats: PlaybackStats): void {
+  let appState = 'unknown';
+  try {
+    appState = AppState.currentState ?? 'unknown';
+  } catch {
+    // Diagnostics only.
+  }
+  reportUtterance({
+    text: u.text,
+    end: u.cutReason ?? stats.how,
+    stats,
+    micOpen: isMicOpen(),
+    appState,
+  });
+}
+
 function speakSystem(u: Utterance): Promise<void> {
   return resolveVoice()
     .then((voice) => {
@@ -147,6 +172,7 @@ export async function speak(text: string, cb: SpeakCallbacks = {}): Promise<void
         if (isCurrent(u)) cb.onStart?.();
       },
       onStalled: (audioStarted) => reportStall(u, audioStarted),
+      onEnded: (stats) => traceUtterance(u, stats),
       onDone: () => settleUtterance(u, () => cb.onDone?.()),
       onError: (e, audioStarted) => {
         if (u.settled) return;
@@ -234,6 +260,7 @@ export function speakStream(cb: SpeakCallbacks = {}): SpeechStream {
       if (isCurrent(u)) cb.onStart?.();
     },
     onStalled: (audioStarted) => reportStall(u, audioStarted),
+    onEnded: (stats) => traceUtterance(u, stats),
     onFlowing: (on) => {
       if (isCurrent(u)) cb.onFlowing?.(on);
     },
@@ -301,7 +328,10 @@ export function playEarcon(spec: ToneSpec): void {
 export function stopSpeaking(reason: CutReason = 'superseded'): void {
   const u = active;
   active = null;
-  if (u) reportIfAudible(u, reason);
+  if (u) {
+    reportIfAudible(u, reason);
+    u.cutReason ??= reason;
+  }
   stopKokoro();
   Speech.stop();
   // The system engine reports its own stop via onStopped; settling here first
