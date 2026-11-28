@@ -107,6 +107,12 @@ interface DevControlsProps {
   presenceEnabled: boolean;
   presenceLabel: string;
   onTogglePresence: () => void;
+  /** Personality (ASC-59): cycles the presets; voice nudges show as "custom". */
+  personalityLabel: string;
+  onCyclePersonality: () => void;
+  /** What the face is wearing now; the button tries each expression in turn. */
+  expressionLabel: string;
+  onCycleExpression: () => void;
   updateLabel: string;
   /** Fetch and reload into a new update now; says so when there is none. */
   onCheckUpdate: () => void;
@@ -297,6 +303,10 @@ export function DevControls(props: DevControlsProps) {
               active={props.presenceEnabled}
               onPress={props.onTogglePresence}
             />
+          </View>
+          <View style={styles.row}>
+            <Btn eyeColor={eyeColor} label="Personality" sub={props.personalityLabel} onPress={props.onCyclePersonality} />
+            <Btn eyeColor={eyeColor} label="Expression" sub={props.expressionLabel} onPress={props.onCycleExpression} />
           </View>
           {props.errandsInFlight !== null && (
             <Text style={styles.note}>

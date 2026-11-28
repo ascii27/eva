@@ -1,5 +1,10 @@
 export type FaceMode =
   | 'idle'
+  // The beat after a reply (ASC-59): what used to be a fixed 'pleased' smile.
+  // Drawn as idle wearing whatever expression the reply ended on; it is a
+  // separate mode only because it must not count as idle — the wake watcher
+  // and the realtime release both key off idle exactly.
+  | 'resting'
   | 'listening'
   | 'thinking'
   | 'speaking'

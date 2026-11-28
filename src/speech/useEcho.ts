@@ -11,7 +11,10 @@ import { CONSENT_QUESTION, CONSENT_RETRY, readConsent, type Consent } from '../v
 
 const THINK_BEAT_MS = 300;
 const ALERT_BEAT_MS = 600;
-const PLEASED_BEAT_MS = 600;
+// The beat after a reply, before the follow-up mic or idle. It used to be a
+// fixed 'pleased' smile; it is now 'resting', which wears whatever expression
+// the reply ended on (ASC-59) — a smile only when that is what she picked.
+const RESTING_BEAT_MS = 600;
 const CONFUSED_BEAT_MS = 1200;
 const LOW_CONFIDENCE = 0.35;
 
@@ -281,16 +284,16 @@ export function useEcho({
    * mic, or settle the face. Shared by the whole-utterance and streaming paths.
    */
   const finishSpoken = useCallback(
-    (round: number, via: 'pleased' | 'confused') => {
+    (round: number, via: 'resting' | 'confused') => {
       if (round !== epoch.current) return;
-      if (via === 'pleased' && voiceRound.current && handlers.current.conversation) {
-        // Follow-up window: pleased beat doubles as the "your turn" cue,
+      if (via === 'resting' && voiceRound.current && handlers.current.conversation) {
+        // Follow-up window: the resting beat doubles as the "your turn" cue,
         // then re-open the mic instead of settling to idle.
         convWindow.current = decideNext('reply-delivered', Date.now(), convWindow.current).window;
-        setMode('pleased');
-        after(PLEASED_BEAT_MS, () => void openMic());
+        setMode('resting');
+        after(RESTING_BEAT_MS, () => void openMic());
       } else {
-        settle(via, via === 'pleased' ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+        settle(via, via === 'resting' ? RESTING_BEAT_MS : CONFUSED_BEAT_MS);
       }
     },
     [after, openMic, setMode, settle],
@@ -303,7 +306,7 @@ export function useEcho({
    * the guard a cancelled utterance would settle a *newer* round's face mode.
    */
   const deliver = useCallback(
-    (text: string, via: 'pleased' | 'confused', onStarted?: () => void) => {
+    (text: string, via: 'resting' | 'confused', onStarted?: () => void) => {
       const round = epoch.current;
       const live = () => round === epoch.current;
       onSaid?.(text);
@@ -332,7 +335,7 @@ export function useEcho({
   const sayBack = useCallback(
     (text: string) => {
       setMode('thinking');
-      after(THINK_BEAT_MS, () => deliver(text, 'pleased'));
+      after(THINK_BEAT_MS, () => deliver(text, 'resting'));
     },
     [after, deliver, setMode],
   );
@@ -536,7 +539,7 @@ export function useEcho({
               redirect();
               return;
             }
-            finishSpoken(round, 'pleased');
+            finishSpoken(round, 'resting');
           },
           onError: () => {
             const redirect = drain.current;
@@ -645,7 +648,7 @@ export function useEcho({
         switch (result.kind) {
           case 'reply': {
             const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
-            deliver(speakable, 'pleased', () =>
+            deliver(speakable, 'resting', () =>
               handlers.current.onLatency?.(
                 formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
               ),
@@ -804,7 +807,7 @@ export function useEcho({
 
   /**
    * Eva speaking first: an alert beat to signal she's initiating rather than
-   * answering, then the line itself. Delivered as a `pleased` round so the
+   * answering, then the line itself. Delivered as a `resting` round so the
    * follow-up mic opens after it — being addressed by Eva shouldn't force you
    * to say "Hey Eva" to answer her.
    */
@@ -829,7 +832,7 @@ export function useEcho({
           void askEva(text, (_text, opts) => run(opts ?? {}));
           return;
         }
-        deliver(text, 'pleased');
+        deliver(text, 'resting');
       });
     },
     [after, askEva, clearRoundSpeech, clearTimer, deliver, setMode],
@@ -868,7 +871,7 @@ export function useEcho({
       if (round !== epoch.current) return;
       if (allowed) await onAllowed();
       if (round !== epoch.current) return;
-      settle(allowed ? 'pleased' : 'confused', allowed ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+      settle(allowed ? 'resting' : 'confused', allowed ? RESTING_BEAT_MS : CONFUSED_BEAT_MS);
     },
     [askForConsent, clearRoundSpeech, clearTimer, closeConsent, setMode, settle],
   );

@@ -18,6 +18,7 @@ export const SAID: Record<FaceMode, string> = {
   alert: 'The 2pm moved to 1:30.',
   confused: "I didn't catch that.",
   pleased: 'Done — filed and linked.',
+  resting: 'Done — filed and linked.',
 };
 
 export interface TranscriptEntry {

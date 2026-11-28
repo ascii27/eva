@@ -10,6 +10,7 @@ import {
   SLEEPY_START_HOUR,
   YAWN_MS,
 } from './constants';
+import { expressionPose, expressionWeight } from './expression';
 import type { CornerRadii, EyeGeo, FaceMode } from './types';
 
 /**
@@ -105,6 +106,10 @@ export function yawnFactor(
  * asleep pose (ASC-33): eyes held at the yawn's nearly-shut hold, centred,
  * with idle's slow glow pulse as breathing. It is a blend rather than a mode
  * so the face stays 'idle' — the wake watcher only listens while it is.
+ *
+ * `exprName`/`exprK` lay an expression over the mode the same way (ASC-59,
+ * expression.ts): multipliers on the mode's own scale and glow, so speaking's
+ * pulse survives inside a smile, and offsets on its position.
  */
 export function eyeGeo(
   side: number,
@@ -113,6 +118,8 @@ export function eyeGeo(
   blinkT: number,
   yawnT: number,
   sleepK = 0,
+  exprName = 'neutral',
+  exprK = 0,
 ): EyeGeo {
   'worklet';
   let sw = 1;
@@ -122,7 +129,7 @@ export function eyeGeo(
   let g = 1;
   let corners_ = EYE_CORNERS_BASE;
 
-  if (mode === 'idle') {
+  if (mode === 'idle' || mode === 'resting') {
     x = Math.sin(t / 3700) * 10;
     y = Math.sin(t / 2600) * 5;
     g = 0.9 + 0.08 * Math.sin(t / 2000);
@@ -164,6 +171,19 @@ export function eyeGeo(
     y = 8;
     corners_ = EYE_CORNERS_PLEASED;
     g = 1.2;
+  }
+
+  const w = exprK * expressionWeight(mode);
+  if (w > 0) {
+    const p = expressionPose(exprName, side);
+    sw *= 1 + (p.sw - 1) * w;
+    sh *= 1 + (p.sh - 1) * w;
+    g *= 1 + (p.g - 1) * w;
+    x += p.x * w;
+    y += p.y * w;
+    // Corners are a shape, not a number to ease: the crescent comes in once
+    // the expression is more than half worn.
+    if (p.crescent && w >= 0.5) corners_ = EYE_CORNERS_PLEASED;
   }
 
   sh *= blinkFactor(t, blinkT);

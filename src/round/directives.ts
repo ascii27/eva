@@ -3,7 +3,8 @@
 // hermes has no tools on the device: when it answers a turn (the hermes and
 // Slack brains) or speaks first (a proactive Slack message), the only thing it
 // can hand down is text. So the face's few commands ride inside that text as
-// tokens — `[[sleep]]`, `[[wake]]`, `[[look]]`, `[[battery]]`, `[[light]]`, `[[brightness N]]`, `[[location]]` — which speakableFromMrkdwn
+// tokens — `[[sleep]]`, `[[wake]]`, `[[look]]`, `[[battery]]`, `[[light]]`, `[[brightness N]]`, `[[location]]`,
+// `[[face amused]]` (ASC-59; every brain, see face/expression.ts) — which speakableFromMrkdwn
 // strips before anything reaches the speaker. The local brains use real tools
 // instead (go_to_sleep / wake_up / camera_look); this is the same capability
 // for the half that can't.
@@ -14,7 +15,7 @@
 export type DeskDirective = 'sleep' | 'wake';
 
 /** Every token the device acts on — and therefore strips from speech. */
-export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery|light|location|brightness(?:\s*[:=]?\s*[^\]]*)?)\s*\]\]/gi;
+export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery|light|location|brightness(?:\s*[:=]?\s*[^\]]*)?|face\b[^\]]*)\s*\]\]/gi;
 
 /**
  * The sleep/wake directive a message carries, or null. When one message

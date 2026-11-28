@@ -105,6 +105,12 @@ export interface UseAgentOptions {
   location?: LocationHandles | null;
   /** Photo bytes by id, for the request. Null from it means aged out. */
   resolvePhoto?: PhotoResolver;
+  /**
+   * The persona as it stands — PERSONA plus the face rules and the current
+   * personality (ASC-59). Read per request; it only changes when the
+   * personality does, so the cached prefix stays byte-identical between.
+   */
+  persona?: () => string;
 }
 
 export function useAgent({
@@ -118,7 +124,10 @@ export function useAgent({
   light = null,
   location = null,
   resolvePhoto,
+  persona,
 }: UseAgentOptions = {}) {
+  const personaRef = useRef(persona);
+  personaRef.current = persona;
   const [status, setStatus] = useState<AgentStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<AgentConfig | null>(null);
@@ -313,7 +322,7 @@ export function useAgent({
 
       try {
         const messages: RequestMessage[] = buildRequest(
-          PERSONA,
+          personaRef.current?.() ?? PERSONA,
           memories.current,
           asked,
           callbacks.current.resolvePhoto,

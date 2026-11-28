@@ -6,6 +6,7 @@ import {
   useDerivedValue,
   useFrameCallback,
   useSharedValue,
+  withSequence,
   withTiming,
 } from 'react-native-reanimated';
 import {
@@ -36,6 +37,7 @@ import {
   YAWN_MIN_GAP,
   YAWN_RAND_GAP,
 } from './constants';
+import { EXPRESSION_IN_MS, EXPRESSION_OUT_MS, NEUTRAL, tilts, type ExpressionState } from './expression';
 import { eyeGeo, hexToRgba, isSleepyHour } from './geometry';
 import type { CornerRadii, FaceMode, MouthOutput } from './types';
 import { amp, isSmiling, pickViseme, SMILE, teethHeight, TONGUE, VIS, VisemeKey } from './visemes';
@@ -60,6 +62,8 @@ interface FaceProps {
   yawnNonce?: number;
   /** Night and quiet for a while (useSleep): drift into the asleep pose. */
   asleep?: boolean;
+  /** What she is wearing over the mode (ASC-59); neutral when absent. */
+  expression?: ExpressionState;
 }
 
 function makeCenteredRRect(w: number, h: number, c: CornerRadii, k: number): SkPath {
@@ -84,6 +88,7 @@ export function Face({
   blinkNonce = 0,
   yawnNonce = 0,
   asleep = false,
+  expression = NEUTRAL,
 }: FaceProps) {
   const clock = useSharedValue(0);
   const modeSV = useSharedValue<FaceMode>(mode);
@@ -105,12 +110,33 @@ export function Face({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asleep]);
 
+  // The expression, as the eyes see it. A change of intensity eases; a change
+  // of expression fades the old one out, swaps, and fades the new one in, so
+  // the eyes never jump straight from one pose to another.
+  const exprName = useSharedValue<string>(expression.name);
+  const exprK = useSharedValue(expression.intensity);
+  useEffect(() => {
+    const next = expression.name;
+    const target = expression.intensity;
+    if (exprName.value === next) {
+      exprK.value = withTiming(target, { duration: EXPRESSION_IN_MS, easing: Easing.inOut(Easing.ease) });
+      return;
+    }
+    exprK.value = withSequence(
+      withTiming(0, { duration: EXPRESSION_OUT_MS, easing: Easing.in(Easing.ease) }, (done) => {
+        if (done) exprName.value = next;
+      }),
+      withTiming(target, { duration: EXPRESSION_IN_MS, easing: Easing.out(Easing.ease) }),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expression.name, expression.intensity]);
+
   // The clock plus the idle blink/yawn scheduler, all on the UI thread. Asleep,
   // she neither blinks nor yawns.
   useFrameCallback((frame) => {
     const t = frame.timeSinceFirstFrame;
     clock.value = t;
-    if (modeSV.value === 'idle' && sleepK.value === 0) {
+    if ((modeSV.value === 'idle' || modeSV.value === 'resting') && sleepK.value === 0) {
       if (t > nextBlink.value) {
         blinkT.value = t;
         nextBlink.value = t + BLINK_MIN_GAP + Math.random() * BLINK_RAND_GAP;
@@ -144,15 +170,20 @@ export function Face({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yawnNonce]);
 
-  // Confused tilts the whole face 5°, eased over 0.5s.
+  // Confused tilts the whole face 5°, eased over 0.5s — and so does a puzzled
+  // expression, by however much of it she is wearing.
   const tilt = useSharedValue(0);
+  const puzzledTilt =
+    tilts(expression.name) && (mode === 'idle' || mode === 'resting' || mode === 'speaking')
+      ? CONFUSED_TILT_DEG * expression.intensity
+      : 0;
   useEffect(() => {
-    tilt.value = withTiming(mode === 'confused' ? CONFUSED_TILT_DEG : 0, {
+    tilt.value = withTiming(mode === 'confused' ? CONFUSED_TILT_DEG : puzzledTilt, {
       duration: 500,
       easing: Easing.inOut(Easing.ease),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
+  }, [mode, puzzledTilt]);
   const cx = width / 2;
   const cy = height / 2;
   const tiltTransform = useDerivedValue(() => [{ rotate: (tilt.value * Math.PI) / 180 }]);
@@ -160,10 +191,10 @@ export function Face({
   return (
     <Canvas style={{ width, height }}>
       <Group origin={{ x: cx, y: cy }} transform={tiltTransform}>
-        <Eye side={-1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} sleepK={sleepK} />
-        <Eye side={1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} sleepK={sleepK} />
+        <Eye side={-1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} sleepK={sleepK} expression={expression} exprName={exprName} exprK={exprK} />
+        <Eye side={1} mode={mode} eyeColor={eyeColor} k={k} cx={cx} cy={cy} clock={clock} blinkT={blinkT} yawnT={yawnT} sleepK={sleepK} expression={expression} exprName={exprName} exprK={exprK} />
         {output === 'mouth' && (
-          <Mouth mode={mode} eyeColor={eyeColor} frozen={frozen} voicing={voicing} k={k} cx={cx} height={height} />
+          <Mouth mode={mode} eyeColor={eyeColor} frozen={frozen} voicing={voicing} k={k} cx={cx} height={height} expression={expression} />
         )}
         {output === 'wave' && (
           <Waveform mode={mode} eyeColor={eyeColor} voicing={voicing} k={k} cx={cx} height={height} clock={clock} />
@@ -186,16 +217,20 @@ interface EyeProps {
   blinkT: SV<number>;
   yawnT: SV<number>;
   sleepK: SV<number>;
+  /** The target expression, for the corner shape (a React-level swap). */
+  expression: ExpressionState;
+  exprName: SV<string>;
+  exprK: SV<number>;
 }
 
-function Eye({ side, mode, eyeColor, k, cx, cy, clock, blinkT, yawnT, sleepK }: EyeProps) {
+function Eye({ side, mode, eyeColor, k, cx, cy, clock, blinkT, yawnT, sleepK, expression, exprName, exprK }: EyeProps) {
   const path = useMemo(() => {
-    const corners = eyeGeo(side, 0, mode, NEVER, NEVER).corners;
+    const corners = eyeGeo(side, 0, mode, NEVER, NEVER, 0, expression.name, expression.intensity).corners;
     return makeCenteredRRect(EYE_W, EYE_H, corners, k);
-  }, [side, mode, k]);
+  }, [side, mode, k, expression.name, expression.intensity]);
 
   const transform = useDerivedValue(() => {
-    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value);
+    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value, exprName.value, exprK.value);
     return [
       { translateX: cx + ((side * EYE_GAP) / 2 + p.x) * k },
       { translateY: cy + p.y * k },
@@ -205,11 +240,11 @@ function Eye({ side, mode, eyeColor, k, cx, cy, clock, blinkT, yawnT, sleepK }: 
   }, [side, mode, k, cx, cy]);
 
   const innerBlur = useDerivedValue(() => {
-    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value);
+    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value, exprName.value, exprK.value);
     return Math.max(0.1, (GLOW_INNER.blur * p.g * k) / 2);
   }, [side, mode, k]);
   const outerBlur = useDerivedValue(() => {
-    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value);
+    const p = eyeGeo(side, clock.value, mode, blinkT.value, yawnT.value, sleepK.value, exprName.value, exprK.value);
     return Math.max(0.1, (GLOW_OUTER.blur * p.g * k) / 2);
   }, [side, mode, k]);
 
@@ -234,9 +269,10 @@ interface MouthProps {
   k: number;
   cx: number;
   height: number;
+  expression: ExpressionState;
 }
 
-function Mouth({ mode, eyeColor, frozen, voicing, k, cx, height }: MouthProps) {
+function Mouth({ mode, eyeColor, frozen, voicing, k, cx, height, expression }: MouthProps) {
   // While speaking, the mouth follows the audio under the playhead (ASC-53),
   // polled at twice the analysis rate so a frame is never shown late by more
   // than half its length. With no audio timeline (the system voice) it falls
@@ -266,8 +302,8 @@ function Mouth({ mode, eyeColor, frozen, voicing, k, cx, height }: MouthProps) {
     return () => clearInterval(id);
   }, [speaking]);
 
-  const smiling = isSmiling(mode, frozen);
-  const key = pickViseme(mode, tick * VISEME_FRAME_MS, frozen, voicing, live);
+  const smiling = isSmiling(mode, frozen, expression);
+  const key = pickViseme(mode, tick * VISEME_FRAME_MS, frozen, voicing, live, expression);
   const shape = smiling ? SMILE : VIS[key];
 
   const path = useMemo(
@@ -329,7 +365,7 @@ function Waveform({ mode, eyeColor, voicing, k, cx, height, clock }: WaveformPro
   const rowW = (WAVE_BARS * WAVE_BAR_W + (WAVE_BARS - 1) * WAVE_BAR_GAP) * k;
   const cyRow = height - (WAVE_BOTTOM + WAVE_ROW_H / 2) * k;
   const x0 = cx - rowW / 2;
-  const opacity = mode === 'idle' ? 0.35 : 0.85;
+  const opacity = mode === 'idle' || mode === 'resting' ? 0.35 : 0.85;
   const bars = Array.from({ length: WAVE_BARS }, (_, i) => (
     <WaveBar
       key={i}
