@@ -70,15 +70,23 @@ export const SEQ: VisemeKey[] = [
  * mode because the mode cannot tell: she stays in 'speaking' across the gaps
  * inside a reply — synthesis falling behind, a tool running — and a mouth that
  * keeps miming through those reads as a glitch rather than as thinking.
+ *
+ * `live` is the viseme read from the audio under the playhead (lipsync.ts),
+ * when there is one. Without it — the system voice, whose audio is invisible
+ * to us — speaking falls back to walking SEQ.
  */
 export function pickViseme(
   mode: FaceMode,
   t: number,
   frozen: VisemeKey | null,
   voicing = true,
+  live?: VisemeKey,
 ): VisemeKey {
   if (frozen) return frozen;
-  if (mode === 'speaking') return voicing ? SEQ[Math.floor(t / VISEME_FRAME_MS) % SEQ.length] : 'sil';
+  if (mode === 'speaking') {
+    if (!voicing) return 'sil';
+    return live ?? SEQ[Math.floor(t / VISEME_FRAME_MS) % SEQ.length];
+  }
   if (mode === 'alert') return 'OH';
   if (mode === 'confused') return 'K';
   return 'sil';

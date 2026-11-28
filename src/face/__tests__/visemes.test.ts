@@ -127,3 +127,23 @@ describe('voicing', () => {
     expect(amp(3, 12, 1234, 'speaking', true)).not.toBeCloseTo(0.05);
   });
 });
+
+describe('live viseme (ASC-53)', () => {
+  it('speaking follows the audio when it is available', () => {
+    expect(pickViseme('speaking', 0, null, true, 'OO')).toBe('OO');
+    expect(pickViseme('speaking', 0, null, true, 'sil')).toBe('sil');
+  });
+
+  it('falls back to the canned loop without it (the system voice)', () => {
+    expect(pickViseme('speaking', 0, null, true, undefined)).toBe(SEQ[0]);
+  });
+
+  it('silence and a frozen shape still win over the audio', () => {
+    expect(pickViseme('speaking', 0, null, false, 'AA')).toBe('sil');
+    expect(pickViseme('speaking', 0, 'TH', true, 'AA')).toBe('TH');
+  });
+
+  it('only speaking reads it', () => {
+    expect(pickViseme('idle', 0, null, true, 'AA')).toBe('sil');
+  });
+});

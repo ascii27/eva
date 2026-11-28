@@ -972,8 +972,8 @@ export function FaceScreen() {
       {vision.state.previewing && fontsLoaded && <CameraBadge eyeColor={eyeColor} k={k} right={colW} />}
       {lightMeter.metering && <LightMeter onReady={lightMeter.onReady} />}
 
-      {/* The camera is running, so the face says so (ASC-47). */}
-      {presence.watching && fontsLoaded && <PresenceBadge eyeColor={eyeColor} k={k} right={colW} />}
+      {/* The camera is running, so the face says so (ASC-47) — a dot, not a label (ASC-53). */}
+      {presence.watching && <PresenceBadge k={k} right={colW} />}
 
       <Pressable style={styles.hotspot} onPress={onHotspotTap} />
 
