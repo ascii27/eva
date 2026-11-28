@@ -41,6 +41,12 @@ pins a view, `?theme=day|evening` pins a theme, `?eva=new` replays Eva's new-mes
 `?sound=announce|alarm` plays one on every tap, `?debug=1` shows Silk's real viewport size and
 keep-alive status (and exposes `wb.nextPhoto()` and `wb.chime('announce'|'alarm')` in the console).
 
+**Mic test (ASC-52):** `/mic.html` on the enrolled board asks Silk for the
+microphone, shows a level meter and tries speech recognition. Every step is
+logged on the VM: `ssh eva-board.exe.xyz journalctl -u wallboard | grep mictest`.
+Verdicts (`web/mictest.js`): works, granted-silent (check the Echo's mic-off
+button), blocked-silk, blocked-device.
+
 ## Why hermes pushes and the board never pulls
 
 On the desk, polling hermes for a context bundle was measured at ~325k tokens and

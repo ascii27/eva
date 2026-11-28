@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mic test · Eva Wallboard</title>
+  <!-- ASC-52: a throwaway diagnostic, not part of the board's design. Big
+       buttons for a kitchen screen; every step is reported to the server log
+       ([mictest] in `journalctl -u wallboard`) so nobody has to read it off. -->
+  <style>
+    body { margin: 0; padding: 40px 56px; background: #d6c7ae; color: #1d1712; font: 26px/1.4 system-ui, sans-serif; }
+    h1 { margin: 0 0 8px; font-size: 44px; }
+    #verdict { margin: 16px 0 24px; padding: 20px 28px; border-radius: 20px; background: #fffaf1; border: 1px solid #c9b89c; font-weight: 600; font-size: 32px; }
+    .row { display: flex; gap: 20px; flex-wrap: wrap; margin: 12px 0; }
+    button { font: inherit; font-weight: 600; padding: 22px 36px; border-radius: 40px; border: 0; background: #0b6760; color: #fff; }
+    button.alt { background: #fffaf1; color: #1d1712; border: 2px solid #c9b89c; }
+    button[disabled] { opacity: .4; }
+    #meter { height: 48px; border-radius: 24px; background: #fffaf1; border: 1px solid #c9b89c; overflow: hidden; margin: 16px 0; }
+    #bar { height: 100%; width: 0; background: #0b6760; transition: width 80ms linear; }
+    #heard { font-size: 30px; min-height: 42px; }
+    pre { background: #fffaf1; border: 1px solid #c9b89c; border-radius: 16px; padding: 16px 20px; font-size: 18px; white-space: pre-wrap; max-height: 340px; overflow: auto; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>Can the board hear the kitchen?</h1>
+  <p>Tap <b>Start</b>. If a permission box appears, tap Allow, then talk for a few seconds.</p>
+  <div id="verdict">Not started.</div>
+
+  <div class="row">
+    <button id="start">Start mic test</button>
+    <button id="speech" class="alt">Try speech recognition</button>
+    <button id="back" class="alt">Back to the board</button>
+  </div>
+
+  <div id="ask" class="row" hidden>
+    <span style="align-self:center">Did a permission box appear?</span>
+    <button class="alt" data-prompt="yes">Yes</button>
+    <button class="alt" data-prompt="no">No</button>
+  </div>
+
+  <div id="meter"><div id="bar"></div></div>
+  <div id="heard"></div>
+  <pre id="log"></pre>
+
+  <script type="module" src="/mic.js"></script>
+</body>
+</html>

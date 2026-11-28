@@ -409,6 +409,14 @@ async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> 
     return json(res, 200, { ok: true });
   }
 
+  // ASC-52's mic probe (web/mic.html) reports each step here; read them with
+  // `journalctl -u wallboard | grep mictest`. Logged only, never stored.
+  if (pathname === '/api/mictest' && method === 'POST') {
+    const line = JSON.stringify(await body(req));
+    console.log(`[mictest] ${line.slice(0, 4000)}`);
+    return json(res, 200, { ok: true });
+  }
+
   if (pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' });
   if (method !== 'GET') return json(res, 405, { error: 'method not allowed' });
   return serveStatic(res, pathname);
