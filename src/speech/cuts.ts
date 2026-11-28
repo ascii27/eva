@@ -18,6 +18,7 @@
 
 import { appendLog, clearLog, readLog, type WakeEvent } from './wakeLog';
 import type { PlaybackStats } from './audioOut';
+import { CHARS_PER_SECOND } from './drain';
 
 export type CutReason =
   /** A newer utterance or round took the speaker (wake, announce, a new reply). */
@@ -83,12 +84,6 @@ export function describeCut(c: SpeechCut): string {
 // transcript line. They are matched to each other, and to hermes' own session
 // history, by time.
 
-/**
- * Kokoro at speed 1.0 speaks roughly this many characters of English a
- * second. Only used to flag audio far shorter than its text, with a factor of
- * two of slack, so it needs to be right in magnitude, not in detail.
- */
-export const CHARS_PER_SECOND = 15;
 /** Audio below this share of what the text should take reads as dropped text. */
 export const SHORT_AUDIO_RATIO = 0.5;
 /** Seconds of synthesized audio that may go unplayed before it reads as lost. */
