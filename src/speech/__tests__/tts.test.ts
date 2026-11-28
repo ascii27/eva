@@ -69,6 +69,7 @@ jest.mock('../kokoro', () => ({
 }));
 
 import { speak, speakStream, stopSpeaking } from '../tts';
+import { onSpeechEvent, type SpeechCut, type UtteranceTrace } from '../cuts';
 
 beforeEach(() => {
   stopSpeaking(); // clear any active utterance left by a prior test
@@ -256,5 +257,84 @@ describe('speakStream', () => {
     mockKokoro.handlers?.onError(new Error('mid-audio'), true);
     expect(onError).toHaveBeenCalledTimes(1);
     expect(mockSpeech.speak).not.toHaveBeenCalled();
+  });
+});
+
+describe('speech cuts (ASC-67)', () => {
+  const cuts: SpeechCut[] = [];
+  const traces: UtteranceTrace[] = [];
+  beforeEach(() => {
+    cuts.length = 0;
+    traces.length = 0;
+    onSpeechEvent((e) => {
+      if (e.kind === 'cut') cuts.push(e.cut);
+      if (e.kind === 'utterance') traces.push(e.trace);
+    });
+  });
+
+  it('reports an audible utterance stopped early, with the reason given', async () => {
+    await speak('the turkey needs another hour', {});
+    mockSpeech.current!.onStart();
+    stopSpeaking('mic opening');
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0]).toMatchObject({ reason: 'mic opening', text: 'the turkey needs another hour' });
+    expect(cuts[0].playedMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('says nothing about an utterance that never became audible', async () => {
+    await speak('hello', {});
+    stopSpeaking('mic opening');
+    expect(cuts).toHaveLength(0);
+  });
+
+  it('says nothing about an utterance that already finished', async () => {
+    await speak('hello', {});
+    mockSpeech.current!.onStart();
+    mockSpeech.current!.onDone();
+    stopSpeaking();
+    expect(cuts).toHaveLength(0);
+  });
+
+  it('a newer utterance cutting one off is "superseded"', async () => {
+    await speak('one', {});
+    mockSpeech.current!.onStart();
+    await speak('two', {});
+    expect(cuts.map((c) => c.reason)).toEqual(['superseded']);
+  });
+
+  it('reports a watchdog-forced end on a Kokoro stream, which otherwise looks like a drain', () => {
+    mockKokoro.state = 'ready';
+    const cb = { onDone: jest.fn() };
+    const s = speakStream(cb);
+    s.push('first sentence.');
+    const h = mockKokoro.handlers as unknown as { onStart(): void; onStalled(started: boolean): void; onDone(): void };
+    h.onStart();
+    h.onStalled(true);
+    h.onDone();
+    expect(cuts).toHaveLength(1);
+    expect(cuts[0]).toMatchObject({ reason: 'playback stalled', text: 'first sentence.' });
+    expect(cb.onDone).toHaveBeenCalledTimes(1);
+  });
+
+  it('traces every Kokoro utterance when playback ends, with how it ended', () => {
+    mockKokoro.state = 'ready';
+    const s = speakStream({});
+    s.push('one.');
+    s.push('two.');
+    const h = mockKokoro.handlers as unknown as { onEnded(stats: object): void };
+    const stats = { how: 'drained', synthesizedS: 1, playedS: 1, chunks: 2, underruns: 0 };
+    h.onEnded(stats);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]).toMatchObject({ text: 'one. two.', end: 'drained', stats, micOpen: false });
+  });
+
+  it('a stopped utterance is traced with the reason it was stopped', () => {
+    mockKokoro.state = 'ready';
+    speakStream({}).push('hello there.');
+    const h = mockKokoro.handlers as unknown as { onStart(): void; onEnded(stats: object): void };
+    h.onStart();
+    stopSpeaking('mic opening');
+    h.onEnded({ how: 'stopped', synthesizedS: 1, playedS: 0.4, chunks: 1, underruns: 0 });
+    expect(traces[0].end).toBe('mic opening');
   });
 });

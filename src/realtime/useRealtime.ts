@@ -64,7 +64,7 @@ import {
 } from './protocol';
 import { RealtimeSocket, type RealtimeStatus } from './socket';
 
-/** Same budget as the chat brain: slower than this has gone wrong, not slow. */
+/** Same idle clock as the chat brain: this long without a sign of life has gone wrong, not slow. */
 export const ASK_TIMEOUT_MS = 30_000;
 
 /**
@@ -473,6 +473,16 @@ export function useRealtime({
         timer = null;
       };
       armClock();
+      /**
+       * Every sign of life restarts the clock (ASC-67): it is an idle timeout,
+       * so an answer still streaming in is never cancelled mid-sentence.
+       * Not while a gate holds it stopped.
+       */
+      const alive = () => {
+        if (!timer) return;
+        clearClock();
+        armClock();
+      };
 
       /**
        * Run a gate with the round's clock stopped, and the socket's watchdog
@@ -509,6 +519,7 @@ export function useRealtime({
             gen,
             finished,
             onDelta: (delta) => {
+              alive();
               text += delta;
               streamed += delta;
               opts?.onDelta?.(delta);
@@ -560,6 +571,7 @@ export function useRealtime({
 
           if (step === 0) recall.current.tool += 1;
           opts?.onToolStart?.(out.calls.map((c) => c.call.name));
+          alive();
           for (const { call } of out.calls) {
             const startedAt = Date.now();
             const answered = await tools.current.run(call, {
@@ -572,6 +584,7 @@ export function useRealtime({
                 `[realtime] tool ${call.name}(${call.arguments}) → ${secs}s, ${answered.message.content.length} chars`,
               );
             }
+            alive();
             sock.send(functionOutput(call.id, answered.message.content));
             if (answered.photo) {
               photo = answered.photo;

@@ -66,6 +66,30 @@ export interface UtteranceCallbacks {
    * through the whole of every tool call.
    */
   onFlowing?: (flowing: boolean) => void;
+  /**
+   * The watchdog gave up on playback and is about to report drained anyway.
+   * Indistinguishable from a real drain to everything above, so it is said
+   * separately: a reply that stops mid-sentence and settles five seconds later
+   * is this (ASC-67).
+   */
+  onStalled?: () => void;
+  /**
+   * The utterance is over, however it ended — fires after every other callback,
+   * including after stop(). The per-reply trace (ASC-67) compares these numbers
+   * with the text that went in: audio synthesized but never played, or far
+   * less audio than the text should take, both locate a loss.
+   */
+  onEnded?: (stats: PlaybackStats) => void;
+}
+
+export interface PlaybackStats {
+  how: 'drained' | 'stalled' | 'stopped';
+  /** Seconds of audio the synthesizer handed us (played, queued or held). */
+  synthesizedS: number;
+  /** Seconds the player reported as finished playing. */
+  playedS: number;
+  chunks: number;
+  underruns: number;
 }
 
 export interface UtteranceSink {
@@ -126,6 +150,11 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   let jitter: JitterState = emptyJitter();
   let flowing = false;
   const openedAt = Date.now();
+  // For the per-reply trace; see onEnded.
+  let synthesizedS = 0;
+  let playedS = 0;
+  let chunks = 0;
+  let underruns = 0;
   // The mouth follows the audio itself; see face/lipsync.ts.
   const lipSync = createLipSync(KOKORO_SAMPLE_RATE);
   const mouthOwner = {};
@@ -166,13 +195,18 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
     watchdog = setTimeout(
       () => {
         if (__DEV__) console.log('[audioOut] watchdog: playback stalled, forcing done');
-        finish(true);
+        try {
+          cb.onStalled?.();
+        } catch {
+          // Diagnostics only; the forced drain below is what settles the round.
+        }
+        finish(true, 'stalled');
       },
       seconds * 1000,
     );
   };
 
-  const finish = (drained: boolean) => {
+  const finish = (drained: boolean, how: PlaybackStats['how'] = drained ? 'drained' : 'stopped') => {
     if (finished) return;
     setFlowing(false);
     finished = true;
@@ -186,11 +220,18 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
       // best-effort teardown of a node that may never have started
     }
     if (drained) cb.onDrained();
+    try {
+      cb.onEnded?.({ how, synthesizedS, playedS, chunks, underruns });
+    } catch {
+      // Diagnostics only.
+    }
   };
 
   node.onBufferEnded = () => {
     pending -= 1;
-    remainingSeconds -= chunkSeconds.shift() ?? 0;
+    const played = chunkSeconds.shift() ?? 0;
+    remainingSeconds -= played;
+    playedS += played;
     if (inputDone && pending <= 0) {
       finish(true);
       return;
@@ -201,6 +242,7 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
       // the next single chunk would only starve again a moment later.
       if (__DEV__) console.log('[audioOut] underrun — rebuilding the lead');
       jitter = underrun(jitter);
+      underruns += 1;
       setFlowing(false);
     }
     rearmWatchdog();
@@ -242,6 +284,8 @@ export function beginUtterance(cb: UtteranceCallbacks): UtteranceSink {
   return {
     enqueue: (chunk) => {
       if (finished || chunk.length === 0) return;
+      synthesizedS += chunk.length / KOKORO_SAMPLE_RATE;
+      chunks += 1;
       const r = offer(jitter, chunk, chunk.length / KOKORO_SAMPLE_RATE);
       jitter = r.state;
       for (const ready of r.flush) schedule(ready);

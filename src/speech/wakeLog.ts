@@ -22,7 +22,7 @@ export const MAX_EVENTS = 300;
  */
 export const NEAR_MISS_KEY = 'eva.wakeNearMiss.v1';
 
-async function readLog(key: string): Promise<WakeEvent[]> {
+export async function readLog(key: string): Promise<WakeEvent[]> {
   try {
     const raw = await AsyncStorage.getItem(key);
     if (!raw) return [];
@@ -33,7 +33,7 @@ async function readLog(key: string): Promise<WakeEvent[]> {
   }
 }
 
-async function appendLog(key: string, snippet: string): Promise<WakeEvent[]> {
+export async function appendLog(key: string, snippet: string): Promise<WakeEvent[]> {
   const events = await readLog(key);
   events.push({ ts: Date.now(), snippet });
   const capped = events.slice(-MAX_EVENTS);
@@ -45,7 +45,7 @@ async function appendLog(key: string, snippet: string): Promise<WakeEvent[]> {
   return capped;
 }
 
-async function clearLog(key: string): Promise<void> {
+export async function clearLog(key: string): Promise<void> {
   try {
     await AsyncStorage.removeItem(key);
   } catch {

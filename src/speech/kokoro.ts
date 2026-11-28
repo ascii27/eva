@@ -11,7 +11,7 @@
 // Expo resource fetcher and are cached in the app's documents directory.
 
 import type { TextToSpeechModule } from 'react-native-executorch';
-import type { UtteranceSink } from './audioOut';
+import type { PlaybackStats, UtteranceSink } from './audioOut';
 
 export type TtsEngineState =
   | { state: 'unavailable' }
@@ -29,6 +29,10 @@ export interface KokoroSpeakHandlers {
   onError: (error: unknown, audioStarted: boolean) => void;
   /** Whether sound is coming out right now; see audioOut's onFlowing. */
   onFlowing?: (flowing: boolean) => void;
+  /** The playback watchdog is about to force onDone; see audioOut's onStalled. */
+  onStalled?: (audioStarted: boolean) => void;
+  /** How playback ended, with its numbers — fires even after a stop. */
+  onEnded?: (stats: PlaybackStats) => void;
 }
 
 export type TtsStatusListener = (status: TtsEngineState) => void;
@@ -245,6 +249,12 @@ async function runStream(
         if (s.stopped) return;
         handlers.onFlowing?.(on);
       },
+      onStalled: () => {
+        if (s.stopped) return;
+        handlers.onStalled?.(s.audioStarted);
+      },
+      // Not gated on s.stopped: a stopped stream's numbers are the interesting ones.
+      onEnded: (stats) => handlers.onEnded?.(stats),
     });
     prepare();
     // Kokoro::stream() assigns stopOnEmptyBuffer_ from this parameter as it

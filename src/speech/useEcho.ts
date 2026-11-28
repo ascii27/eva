@@ -12,6 +12,8 @@ import { endsConversation } from '../round/directives';
 import { speakableFromMrkdwn } from '../round/speakable';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { playEarcon, speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
+import { reportCut, reportReply } from './cuts';
+import { drainBoundMs } from './drain';
 import { LIVE } from './earcon';
 import { CONSENT_QUESTION, CONSENT_RETRY, readConsent, type Consent } from '../vision/consent';
 
@@ -32,13 +34,6 @@ const LOW_CONFIDENCE = 0.35;
  */
 const CONSENT_TIMEOUT_MS = 15_000;
 
-/**
- * Longest the gate waits for a preamble to finish playing before opening the
- * mic anyway. Generous — MAX_REPLY_TOKENS bounds a preamble to a sentence, so
- * reaching this means the speech engine stopped reporting rather than that Eva
- * is still talking.
- */
-const DRAIN_TIMEOUT_MS = 10_000;
 
 // Generic fallbacks. Each transport may supply its own copy on the result —
 // the Slack path's "her reply will show up in the transcript" only makes sense
@@ -152,13 +147,23 @@ export function useEcho({
   /** Text actually handed to the speaker, for onSaid on a failed stream. */
   const spoken = useRef('');
   /**
-   * One-shot redirect for the open stream's drain. Set by the consent gate,
-   * which ends the stream mid-round to free the audio session for the mic:
-   * without it, `end()` would drain into finishSpoken and settle a round that
-   * is still waiting on an answer — and open the follow-up mic on top of the
-   * consent one.
+   * One-shot redirect for an ended stream's drain. Set by the consent gate,
+   * which ends the stream mid-round to free the audio session for the mic, and
+   * by the cue player at each boundary: without it, `end()` would drain into
+   * finishSpoken and settle a round that is still going.
+   *
+   * Keyed to the stream it is waiting on (ASC-67). It used to be a bare
+   * callback any stream's drain would fire, and the waiter cleared it when its
+   * bound ran out — so a long segment still playing past the bound found it
+   * gone, drained into finishSpoken, and the follow-up mic that opened killed
+   * whatever came after the cue: the end of the reply.
    */
-  const drain = useRef<(() => void) | null>(null);
+  const drain = useRef<{ stream: SpeechStream; release: () => void } | null>(null);
+  /**
+   * Streams ended mid-round by the gate or the cue player. Their drain is never
+   * the round's end, even when it arrives after their waiter gave up.
+   */
+  const detached = useRef(new WeakSet<SpeechStream>());
   /**
    * Non-null while Eva is waiting to be told yes or no. The mount-once STT
    * listeners check it *before* the normal routing, because otherwise "yeah go
@@ -196,7 +201,7 @@ export function useEcho({
     // The woken gate re-checks the epoch and bails.
     const redirect = drain.current;
     drain.current = null;
-    redirect?.();
+    redirect?.release();
     sentences.current = emptySentences();
     spoken.current = '';
   }, []);
@@ -267,7 +272,7 @@ export function useEcho({
       if (blocker) return { ok: false, blocker };
       // Give the TTS audio session time to fully deactivate — starting the
       // recognizer mid-teardown surfaces as an "interrupted" error on iOS.
-      stopSpeaking();
+      stopSpeaking('mic opening');
       // "Go ahead." Played inside the settle window rather than after it: the
       // recognizer is on-device and would happily transcribe our own cue.
       // Only for a round someone woke — a follow-up reopens the mic every turn,
@@ -458,23 +463,25 @@ export function useEcho({
           speech.current.push(tail);
         }
         sentences.current = emptySentences();
-        if (spoken.current) onSaid?.(spoken.current);
+        const said = spoken.current;
+        if (said) onSaid?.(said);
         spoken.current = '';
         const open = speech.current;
         speech.current = null;
+        detached.current.add(open);
         await new Promise<void>((resolve) => {
           let settled = false;
           const once = () => {
             if (settled) return;
             settled = true;
             clearTimeout(bound);
-            drain.current = null;
+            if (drain.current?.release === once) drain.current = null;
             resolve();
           };
           // A speech engine that never reports done would otherwise park the
           // gate here for good, holding a tool call open behind it.
-          const bound = setTimeout(once, DRAIN_TIMEOUT_MS);
-          drain.current = once;
+          const bound = setTimeout(once, drainBoundMs(said.length));
+          drain.current = { stream: open, release: once };
           open.hold(false);
           open.end();
         });
@@ -544,11 +551,31 @@ export function useEcho({
         firstDeltaAt ??= Date.now();
         // An aside must not talk over the reply, and its settling onDone must
         // not flip the mode back to thinking mid-answer.
+        const aside = asideTimer.current !== null;
         if (asideTimer.current) clearInterval(asideTimer.current);
         asideTimer.current = null;
         asideState.current = null;
-        stopSpeaking();
-        speech.current = speakStream({
+        // Anything still audible here is an aside — or an earlier segment of
+        // this reply that outlived its drain bound, which the log should name.
+        stopSpeaking(aside ? 'reply over aside' : 'superseded');
+        // Assigned below; the callbacks only ever run after speakStream returns.
+        let self: SpeechStream | null = null;
+        /**
+         * This stream finished. If something is waiting on exactly this
+         * stream, it gets the drain; if the stream was detached mid-round, its
+         * drain is not the round's end; otherwise the reply is over.
+         */
+        const ended = (via: 'resting' | 'confused') => {
+          const waiter = drain.current;
+          if (waiter && self && waiter.stream === self) {
+            drain.current = null;
+            waiter.release();
+            return;
+          }
+          if (self && detached.current.has(self)) return;
+          finishSpoken(round, via);
+        };
+        self = speakStream({
           // Sound has actually started, or resumed after a gap: the mouth may
           // move again. Set here as well as in onFlowing because the system
           // voice never reports flow at all, and a mouth that never opens
@@ -569,28 +596,13 @@ export function useEcho({
           onBoundary: () => {
             if (round === epoch.current) onPulse?.();
           },
-          // The consent gate ends this stream itself and needs to know when
-          // the audio has actually stopped — settling the round here instead
-          // would strand the tool call waiting behind it.
-          onDone: () => {
-            const redirect = drain.current;
-            if (redirect) {
-              drain.current = null;
-              redirect();
-              return;
-            }
-            finishSpoken(round, 'resting');
-          },
-          onError: () => {
-            const redirect = drain.current;
-            if (redirect) {
-              drain.current = null;
-              redirect();
-              return;
-            }
-            finishSpoken(round, 'confused');
-          },
+          // The consent gate and the cue player end this stream themselves
+          // and need to know when the audio has actually stopped — settling
+          // the round here instead would end a reply that is still going.
+          onDone: () => ended('resting'),
+          onError: () => ended('confused'),
         });
+        speech.current = self;
       };
 
       /** Text of the reply, into the open stream (opening one if need be). */
@@ -643,17 +655,20 @@ export function useEcho({
           }
           sentences.current = emptySentences();
           speech.current = null;
+          detached.current.add(open);
           let settled = false;
           const once = () => {
             if (settled) return;
             settled = true;
             clearTimeout(bound);
-            if (drain.current === once) drain.current = null;
+            if (drain.current?.release === once) drain.current = null;
             resolve();
           };
           // A speech engine that never reports done must not park the reply.
-          const bound = setTimeout(once, DRAIN_TIMEOUT_MS);
-          drain.current = once;
+          // Scaled to the text, not flat: at end() most of a long segment has
+          // yet to play, because its text arrived far ahead of its audio.
+          const bound = setTimeout(once, drainBoundMs(spoken.current.length));
+          drain.current = { stream: open, release: once };
           open.hold(false);
           open.end();
         });
@@ -799,10 +814,18 @@ export function useEcho({
       function finishStreamed(result: AskResult) {
         if (round !== epoch.current) return;
         if (speech.current) {
+          // On a failure the pending tail is a half-sentence the stream died
+          // in the middle of — spoken, it is exactly the "she stopped
+          // mid-sentence" of ASC-67. Ending on the last whole sentence is
+          // less wrong than trailing off, and the transcript still says why.
           const tail = flushPending(sentences.current);
-          if (tail) {
+          sentences.current = emptySentences();
+          if (tail && result.kind === 'reply') {
             spoken.current = spoken.current ? `${spoken.current} ${tail}` : tail;
             speech.current.push(tail);
+          }
+          if (result.kind !== 'reply' && spoken.current) {
+            reportCut({ reason: result.kind === 'timeout' ? 'reply timed out' : 'reply failed', text: spoken.current });
           }
           // A failure after audio started is a transcript line, never a spoken
           // apology over the top of a half-delivered answer — but an open
@@ -821,6 +844,7 @@ export function useEcho({
             speech.current.push(line);
             spoken.current = line;
           }
+          traceReply(result);
           speech.current.end();
           speech.current = null;
           onSaid?.(result.kind === 'reply' ? result.speakable : spoken.current);
@@ -833,10 +857,24 @@ export function useEcho({
           clearRoundSpeech();
           return void finishWhole(result);
         }
+        traceReply(result);
         const said = result.kind === 'reply' ? result.speakable : spoken.current;
         if (said) onSaid?.(said);
         if (result.kind === 'error') onIssue?.(result.message);
         finishSpoken(round, result.kind === 'reply' ? 'resting' : 'confused');
+      }
+
+      /**
+       * What the brain delivered against what reached the speaker (ASC-67).
+       * Only the streamed path can lose text between the two; a whole reply is
+       * handed over in one piece.
+       */
+      function traceReply(result: AskResult) {
+        reportReply({
+          kind: result.kind,
+          received: result.kind === 'reply' ? result.speakable : '',
+          pushed: spoken.current,
+        });
       }
 
       /** A reply that arrived whole, with no cues: spoken in one utterance, as ever. */
@@ -867,7 +905,7 @@ export function useEcho({
             deliver(result.message ?? OFFLINE_LINE, 'confused');
             break;
           case 'error':
-            stopSpeaking(); // a lingering or queued aside must not talk over the confused face
+            stopSpeaking('error'); // a lingering or queued aside must not talk over the confused face
             onIssue?.(result.message); // transports prefix their own source
             settle('confused', CONFUSED_BEAT_MS);
             break;
@@ -1008,7 +1046,7 @@ export function useEcho({
       voiceRound.current = false;
       clearTimer();
       abortListening();
-      stopSpeaking();
+      stopSpeaking('unmount');
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1114,7 +1152,7 @@ export function useEcho({
     voiceRound.current = false;
     clearTimer();
     abortListening();
-    stopSpeaking();
+    stopSpeaking('cancelled');
   }, [clearRoundSpeech, clearTimer, closeConsent]);
 
   return { listen, say, ask: askDirect, announce, cancel, noteToolActivity, look };

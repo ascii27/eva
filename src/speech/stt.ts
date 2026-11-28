@@ -31,6 +31,14 @@ type SttModule = typeof import('expo-speech-recognition');
 
 let mod: SttModule | null | undefined;
 
+/**
+ * Whether a recognizer session is running, as far as JS knows: set on start,
+ * cleared on end or abort. Read by the speech trace (ASC-67) — the mic should
+ * never be open while she speaks, and a trace that says it was is a lead.
+ */
+let micOpen = false;
+export const isMicOpen = (): boolean => micOpen;
+
 function getStt(): SttModule | null {
   if (mod === undefined) {
     // Probe with the non-throwing API first: expo-speech-recognition calls
@@ -88,6 +96,7 @@ export function addListeners(ev: SttEvents): () => void {
       ev.onError(e.error, e.message);
     }),
     m.addListener('end', () => {
+      micOpen = false;
       if (__DEV__) console.log('[stt] end');
       ev.onEnd();
     }),
@@ -115,7 +124,9 @@ export interface ListenOptions {
 export function startListening(profile: ListenProfile = 'command', opts: ListenOptions = {}): void {
   if (__DEV__) console.log(`[stt] start (${profile}${opts.noiseFilter ? ', noise filter' : ''})`);
   const wake = profile === 'wake';
-  getStt()?.ExpoSpeechRecognitionModule.start({
+  const stt = getStt();
+  if (stt) micOpen = true;
+  stt?.ExpoSpeechRecognitionModule.start({
     lang: 'en-US',
     interimResults: true,
     requiresOnDeviceRecognition: true,
@@ -142,5 +153,6 @@ export function startListening(profile: ListenProfile = 'command', opts: ListenO
 }
 
 export function abortListening(): void {
+  micOpen = false;
   getStt()?.ExpoSpeechRecognitionModule.abort();
 }
