@@ -1,5 +1,6 @@
 import { VISEME_FRAME_MS } from './constants';
 import { corners, uniformCorners } from './geometry';
+import type { ExpressionState } from './expression';
 import type { CornerRadii, FaceMode } from './types';
 
 export interface Viseme {
@@ -81,6 +82,7 @@ export function pickViseme(
   frozen: VisemeKey | null,
   voicing = true,
   live?: VisemeKey,
+  expression?: ExpressionState,
 ): VisemeKey {
   if (frozen) return frozen;
   if (mode === 'speaking') {
@@ -89,12 +91,49 @@ export function pickViseme(
   }
   if (mode === 'alert') return 'OH';
   if (mode === 'confused') return 'K';
+  if (expression && wearsMouth(mode, expression)) {
+    if (expression.name === 'surprised') return 'OH';
+    if (expression.name === 'puzzled') return 'K';
+  }
   return 'sil';
 }
 
-/** Whether the smile arc replaces the viseme shape. */
-export function isSmiling(mode: FaceMode, frozen: VisemeKey | null): boolean {
-  return mode === 'pleased' && !frozen;
+/**
+ * An expression only reshapes a still mouth, and only once it is more than
+ * half worn — a faint one shows in the eyes alone, which is what keeps a
+ * resting "amused" from reading as a grin (ASC-59).
+ */
+export const EXPRESSION_MOUTH_AT = 0.5;
+
+/** The expressions whose mouth is the smile arc. */
+const SMILES = new Set<string>(['happy', 'amused', 'excited', 'adoring', 'proud', 'mischievous', 'wink', 'shy']);
+
+function wearsMouth(mode: FaceMode, e: ExpressionState): boolean {
+  return (mode === 'idle' || mode === 'resting') && e.intensity >= EXPRESSION_MOUTH_AT;
+}
+
+/**
+ * Whether the smile arc replaces the viseme shape. `key` is the viseme the
+ * mouth would otherwise show, which matters only while speaking. The 'pleased' mode always
+ * smiles (the overlay can still pick it); otherwise only an expression that is
+ * actually a smile does. There is no longer a smile by default (ASC-59).
+ */
+export function isSmiling(
+  mode: FaceMode,
+  frozen: VisemeKey | null,
+  expression?: ExpressionState,
+  key?: VisemeKey,
+): boolean {
+  if (frozen) return false;
+  if (mode === 'pleased') return true;
+  if (!expression || expression.intensity < EXPRESSION_MOUTH_AT) return false;
+  if (!SMILES.has(expression.name)) return false;
+  // Talking, the lip sync owns the mouth — except where it would be shut: the
+  // gaps between words and the pauses inside a reply. There a smiling Eva
+  // smiles, which is what makes the expression readable while she speaks;
+  // the eyes alone, under speaking's pulse, were too subtle to notice.
+  if (mode === 'speaking') return key === 'sil';
+  return wearsMouth(mode, expression);
 }
 
 /** Black cut-out strip along the top edge (teeth). */
@@ -126,5 +165,6 @@ export function amp(i: number, n: number, t: number, mode: FaceMode, voicing = t
   if (mode === 'alert') return 0.55 * mid + 0.1;
   if (mode === 'confused') return 0.06 + 0.18 * Math.abs(Math.sin(i * 2.3 + t / 300));
   if (mode === 'pleased') return 0.1 + 0.3 * mid;
+  // 'resting' falls through with idle: a quiet face, whatever it is wearing.
   return 0.04;
 }

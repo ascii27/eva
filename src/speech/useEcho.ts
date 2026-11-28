@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { FaceMode } from '../face/types';
 import { type AskOptions, type AskResult, formatLatency } from '../round/ask';
 import { emptySentences, flushPending, pushText, type SentenceState } from '../round/sentences';
+import { emptyCues, flushCues, hasCues, pushCues, type CueItem } from '../round/cues';
+import type { FaceToken } from '../face/expression';
 import { beginAside, decideAside, noteTool, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
@@ -11,7 +13,10 @@ import { CONSENT_QUESTION, CONSENT_RETRY, readConsent, type Consent } from '../v
 
 const THINK_BEAT_MS = 300;
 const ALERT_BEAT_MS = 600;
-const PLEASED_BEAT_MS = 600;
+// The beat after a reply, before the follow-up mic or idle. It used to be a
+// fixed 'pleased' smile; it is now 'resting', which wears whatever expression
+// the reply ended on (ASC-59) — a smile only when that is what she picked.
+const RESTING_BEAT_MS = 600;
 const CONFUSED_BEAT_MS = 1200;
 const LOW_CONFIDENCE = 0.35;
 
@@ -79,6 +84,11 @@ export interface EchoHandlers {
   asides?: boolean;
   /** Apple's noise suppression on command listens; see stt.ListenOptions. */
   noiseFilter?: boolean;
+  /**
+   * Eva's `[[face …]]`, at the moment the speech reaches it (ASC-59): after
+   * everything written before it has finished playing. See askEva's cue player.
+   */
+  onFace?: (token: FaceToken) => void;
 }
 
 /**
@@ -97,6 +107,7 @@ export function useEcho({
   conversation,
   asides,
   noiseFilter = false,
+  onFace,
 }: EchoHandlers) {
   // Read inside startMic, which must not be re-created when the toggle flips.
   const noiseFilterRef = useRef(noiseFilter);
@@ -142,8 +153,8 @@ export function useEcho({
    */
   const consent = useRef<{ finish: (answer: Consent) => void } | null>(null);
   // Live handler refs for the mount-once native event subscription.
-  const handlers = useRef({ ask, onLatency, conversation, asides, onVoicing });
-  handlers.current = { ask, onLatency, conversation, asides, onVoicing };
+  const handlers = useRef({ ask, onLatency, conversation, asides, onVoicing, onFace });
+  handlers.current = { ask, onLatency, conversation, asides, onVoicing, onFace };
 
   const clearTimer = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -281,16 +292,16 @@ export function useEcho({
    * mic, or settle the face. Shared by the whole-utterance and streaming paths.
    */
   const finishSpoken = useCallback(
-    (round: number, via: 'pleased' | 'confused') => {
+    (round: number, via: 'resting' | 'confused') => {
       if (round !== epoch.current) return;
-      if (via === 'pleased' && voiceRound.current && handlers.current.conversation) {
-        // Follow-up window: pleased beat doubles as the "your turn" cue,
+      if (via === 'resting' && voiceRound.current && handlers.current.conversation) {
+        // Follow-up window: the resting beat doubles as the "your turn" cue,
         // then re-open the mic instead of settling to idle.
         convWindow.current = decideNext('reply-delivered', Date.now(), convWindow.current).window;
-        setMode('pleased');
-        after(PLEASED_BEAT_MS, () => void openMic());
+        setMode('resting');
+        after(RESTING_BEAT_MS, () => void openMic());
       } else {
-        settle(via, via === 'pleased' ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+        settle(via, via === 'resting' ? RESTING_BEAT_MS : CONFUSED_BEAT_MS);
       }
     },
     [after, openMic, setMode, settle],
@@ -303,7 +314,7 @@ export function useEcho({
    * the guard a cancelled utterance would settle a *newer* round's face mode.
    */
   const deliver = useCallback(
-    (text: string, via: 'pleased' | 'confused', onStarted?: () => void) => {
+    (text: string, via: 'resting' | 'confused', onStarted?: () => void) => {
       const round = epoch.current;
       const live = () => round === epoch.current;
       onSaid?.(text);
@@ -332,7 +343,7 @@ export function useEcho({
   const sayBack = useCallback(
     (text: string) => {
       setMode('thinking');
-      after(THINK_BEAT_MS, () => deliver(text, 'pleased'));
+      after(THINK_BEAT_MS, () => deliver(text, 'resting'));
     },
     [after, deliver, setMode],
   );
@@ -482,6 +493,9 @@ export function useEcho({
       setMode('thinking'); // held by the real round trip, not a cosmetic beat
       const postedAt = Date.now();
       let firstDeltaAt: number | undefined;
+      // A reply with cues in it is spoken over several streams (see the cue
+      // player below); only the first one's start is the round's latency.
+      let latencyLogged = false;
 
       if (handlers.current.asides) {
         asideState.current = beginAside(postedAt);
@@ -500,7 +514,7 @@ export function useEcho({
       /** First delta of the round: stop narrating and start speaking for real. */
       const openSpeech = () => {
         if (speech.current) return;
-        firstDeltaAt = Date.now();
+        firstDeltaAt ??= Date.now();
         // An aside must not talk over the reply, and its settling onDone must
         // not flip the mode back to thinking mid-answer.
         if (asideTimer.current) clearInterval(asideTimer.current);
@@ -519,6 +533,8 @@ export function useEcho({
             if (round !== epoch.current) return;
             handlers.current.onVoicing?.(true);
             setMode('speaking');
+            if (latencyLogged) return;
+            latencyLogged = true;
             handlers.current.onLatency?.(
               formatLatency({ ...marks, postedAt, replyAt: firstDeltaAt, spokeAt: Date.now() }),
             );
@@ -536,7 +552,7 @@ export function useEcho({
               redirect();
               return;
             }
-            finishSpoken(round, 'pleased');
+            finishSpoken(round, 'resting');
           },
           onError: () => {
             const redirect = drain.current;
@@ -550,17 +566,121 @@ export function useEcho({
         });
       };
 
-      const onDelta = (delta: string) => {
-        if (round !== epoch.current) return;
+      /** Text of the reply, into the open stream (opening one if need be). */
+      const sayText = (text: string) => {
+        // Whitespace between two cues is not a reason to open a stream.
+        if (!speech.current && !text.trim()) return;
         openSpeech();
         // The answer is arriving: whatever gap a tool opened is over.
         speech.current?.hold(false);
-        const r = pushText(sentences.current, delta);
+        const r = pushText(sentences.current, text);
         sentences.current = r.state;
         for (const sentence of r.sentences) {
           spoken.current = spoken.current ? `${spoken.current} ${sentence}` : sentence;
           speech.current?.push(sentence);
         }
+      };
+
+      // -- The cue player (ASC-59). ------------------------------------------
+      //
+      // `[[face …]]` and `[[pause …]]` arrive in the text stream, which runs
+      // far ahead of the audio — a whole reply's text is usually in before its
+      // first word plays. Acted on as they arrived, every face in a reply
+      // landed at once before she spoke and only the last one was ever seen.
+      //
+      // So a cue that follows spoken text is a boundary: the stream so far is
+      // ended and *drained* (exactly as the consent gate does it, through the
+      // same one-shot `drain` redirect so the drain doesn't settle the round),
+      // then the face changes or the pause holds, and the text after it opens
+      // a fresh stream. The price is a stream start — a beat — at each
+      // boundary. A cue before any text costs nothing: there is nothing to wait for.
+      let cues = emptyCues();
+      const queue: CueItem[] = [];
+      /** The loop below is working through the queue (possibly mid-await). */
+      let playing = false;
+      /** Anything at all arrived: the round is being spoken through the player. */
+      let engaged = false;
+      /** How the round ends, once the queue has been played out. */
+      let wrapUp: (() => void) | null = null;
+
+      /** End the open stream and wait for its audio to finish playing. */
+      const endSegment = () =>
+        new Promise<void>((resolve) => {
+          const open = speech.current;
+          if (!open) return resolve();
+          const tail = flushPending(sentences.current);
+          if (tail) {
+            spoken.current = spoken.current ? `${spoken.current} ${tail}` : tail;
+            open.push(tail);
+          }
+          sentences.current = emptySentences();
+          speech.current = null;
+          let settled = false;
+          const once = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(bound);
+            if (drain.current === once) drain.current = null;
+            resolve();
+          };
+          // A speech engine that never reports done must not park the reply.
+          const bound = setTimeout(once, DRAIN_TIMEOUT_MS);
+          drain.current = once;
+          open.hold(false);
+          open.end();
+        });
+
+      const play = async () => {
+        if (playing) return;
+        playing = true;
+        while (queue.length) {
+          if (round !== epoch.current) return;
+          const item = queue.shift()!;
+          if (item.kind === 'text') {
+            sayText(item.text);
+            continue;
+          }
+          // Asides must not talk over a reply that opens on a cue.
+          if (asideTimer.current) clearInterval(asideTimer.current);
+          asideTimer.current = null;
+          asideState.current = null;
+          if (speech.current) await endSegment();
+          if (round !== epoch.current) return;
+          if (item.kind === 'face') {
+            handlers.current.onFace?.(item.token);
+            continue;
+          }
+          // A pause: she is mid-reply, mouth still, wearing whatever face is on.
+          setMode('speaking');
+          handlers.current.onVoicing?.(false);
+          await new Promise((r) => setTimeout(r, item.ms));
+          if (round !== epoch.current) return;
+        }
+        playing = false;
+        const w = wrapUp;
+        wrapUp = null;
+        w?.();
+      };
+
+      const onDelta = (delta: string) => {
+        if (round !== epoch.current) return;
+        engaged = true;
+        const r = pushCues(cues, delta);
+        cues = r.state;
+        queue.push(...r.items);
+        void play();
+      };
+
+      /**
+       * The ask is over: release any held text and, once everything queued has
+       * been played, end the round with `done`. If a pause or a drain is still
+       * running, `done` waits for it.
+       */
+      const finishPlayer = (done: () => void) => {
+        queue.push(...flushCues(cues));
+        cues = emptyCues();
+        wrapUp = done;
+        void play();
       };
 
       /**
@@ -608,8 +728,43 @@ export function useEcho({
           convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
         }
 
+        // A reply that arrived whole (Slack) but carries cues is played through
+        // the cue player too, as one delta, so its faces and pauses land where
+        // they were written rather than all before the first word.
+        if (!engaged && result.kind === 'reply' && hasCues(result.raw)) onDelta(result.raw);
+
         // Streaming path: the reply is already playing. Flush the tail, close
         // the stream, and let its drain callback settle the round.
+        if (engaged) {
+          finishPlayer(() => finishStreamed(result));
+          return;
+        }
+        return void finishWhole(result);
+      } catch {
+        // A stream already playing owes this round a settle, and end() is what
+        // makes its drain callback fire — on the system voice it is the only
+        // thing that speaks at all. A rejecting handler must not strand it.
+        if (round === epoch.current && engaged) {
+          finishPlayer(() => {
+            if (speech.current) {
+              speech.current.end();
+              speech.current = null;
+            } else finishSpoken(round, 'confused');
+          });
+        }
+      } finally {
+        // Safety net: an ask handler that rejects instead of resolving would
+        // otherwise leak the interval and narrate fillers forever. The round
+        // guard preserves the invariant that a superseded round never clears a
+        // newer round's state. An open stream is left alone — its drain callback
+        // still owes this round a settle — and so is a cue player still
+        // working through a pause or a drain, which settles it when it's done.
+        if (round === epoch.current && !speech.current && !playing && !wrapUp) clearRoundSpeech();
+      }
+
+      /** End of a spoken (streamed) reply, once the cue player has played it all. */
+      function finishStreamed(result: AskResult) {
+        if (round !== epoch.current) return;
         if (speech.current) {
           const tail = flushPending(sentences.current);
           if (tail) {
@@ -639,13 +794,26 @@ export function useEcho({
           if (result.kind === 'error') onIssue?.(result.message);
           return;
         }
+        // No stream is open: the reply ended on a cue, after its last words had
+        // already played out — or it was nothing but cues.
+        if (result.kind !== 'reply' && !spoken.current) {
+          clearRoundSpeech();
+          return void finishWhole(result);
+        }
+        onSaid?.(result.kind === 'reply' ? result.speakable : spoken.current);
+        if (result.kind === 'error') onIssue?.(result.message);
+        finishSpoken(round, result.kind === 'reply' ? 'resting' : 'confused');
+      }
 
+      /** A reply that arrived whole, with no cues: spoken in one utterance, as ever. */
+      function finishWhole(result: AskResult) {
+        if (round !== epoch.current) return;
         // Nothing streamed (Slack, or a transport that resolved without deltas).
         clearRoundSpeech();
         switch (result.kind) {
           case 'reply': {
             const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
-            deliver(speakable, 'pleased', () =>
+            deliver(speakable, 'resting', () =>
               handlers.current.onLatency?.(
                 formatLatency({ ...marks, postedAt: result.postedAt, replyAt: result.replyAt, spokeAt: Date.now() }),
               ),
@@ -665,21 +833,6 @@ export function useEcho({
             settle('confused', CONFUSED_BEAT_MS);
             break;
         }
-      } catch {
-        // A stream already playing owes this round a settle, and end() is what
-        // makes its drain callback fire — on the system voice it is the only
-        // thing that speaks at all. A rejecting handler must not strand it.
-        if (round === epoch.current && speech.current) {
-          speech.current.end();
-          speech.current = null;
-        }
-      } finally {
-        // Safety net: an ask handler that rejects instead of resolving would
-        // otherwise leak the interval and narrate fillers forever. The round
-        // guard preserves the invariant that a superseded round never clears a
-        // newer round's state. An open stream is left alone — its drain callback
-        // still owes this round a settle.
-        if (round === epoch.current && !speech.current) clearRoundSpeech();
       }
     },
     [
@@ -804,7 +957,7 @@ export function useEcho({
 
   /**
    * Eva speaking first: an alert beat to signal she's initiating rather than
-   * answering, then the line itself. Delivered as a `pleased` round so the
+   * answering, then the line itself. Delivered as a `resting` round so the
    * follow-up mic opens after it — being addressed by Eva shouldn't force you
    * to say "Hey Eva" to answer her.
    */
@@ -829,7 +982,7 @@ export function useEcho({
           void askEva(text, (_text, opts) => run(opts ?? {}));
           return;
         }
-        deliver(text, 'pleased');
+        deliver(text, 'resting');
       });
     },
     [after, askEva, clearRoundSpeech, clearTimer, deliver, setMode],
@@ -868,7 +1021,7 @@ export function useEcho({
       if (round !== epoch.current) return;
       if (allowed) await onAllowed();
       if (round !== epoch.current) return;
-      settle(allowed ? 'pleased' : 'confused', allowed ? PLEASED_BEAT_MS : CONFUSED_BEAT_MS);
+      settle(allowed ? 'resting' : 'confused', allowed ? RESTING_BEAT_MS : CONFUSED_BEAT_MS);
     },
     [askForConsent, clearRoundSpeech, clearTimer, closeConsent, setMode, settle],
   );

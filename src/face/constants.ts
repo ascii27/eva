@@ -44,6 +44,11 @@ export const MOUTH_ROW_H = 96;
 export const VISEME_FRAME_MS = 112;
 
 export const CONFUSED_TILT_DEG = 5;
+// Waiting for him to speak (ASC-59 follow-up). Not in the design file: the
+// design's listening pose read as just another state, so 'listening' now
+// tilts the head the other way from confused — expectant, not lost — breathes
+// its glow and glances slowly, and blinks like idle does.
+export const WAITING_TILT_DEG = -3;
 export const SIDE_COLUMN_W = 250;
 
 // Asleep (ASC-33). Not in the design file yet: built only from the yawn above,

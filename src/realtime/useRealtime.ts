@@ -132,6 +132,8 @@ export interface UseRealtimeOptions {
   /** Town-level location for where_am_i, or null without expo-location. */
   location?: LocationHandles | null;
   resolvePhoto?: PhotoResolver;
+  /** The persona as it stands (ASC-59); see useAgent's. */
+  persona?: () => string;
 }
 
 export function useRealtime({
@@ -145,7 +147,12 @@ export function useRealtime({
   light = null,
   location = null,
   resolvePhoto,
+  persona,
 }: UseRealtimeOptions = {}) {
+  const personaRef = useRef(persona);
+  personaRef.current = persona;
+  /** The persona the open socket was seeded with, to notice it going stale. */
+  const seededPersona = useRef<string | null>(null);
   const [status, setStatus] = useState<RealtimeBrainStatus>('unconfigured');
   const [connection, setConnection] = useState<RealtimeStatus>('closed');
   const [model, setModel] = useState<string | null>(null);
@@ -279,7 +286,9 @@ export function useRealtime({
     if (sock.state !== 'open') return; // closed while we were reading
     const now = Date.now();
     const current = session.current ?? newSession(now);
-    const request = buildRequest(PERSONA, memories.current, current, callbacks.current.resolvePhoto);
+    const instructions = personaRef.current?.() ?? PERSONA;
+    seededPersona.current = instructions;
+    const request = buildRequest(instructions, memories.current, current, callbacks.current.resolvePhoto);
     const s = seed(request);
     sock.send(sessionUpdate({ instructions: s.instructions, specs: tools.current.specs }));
     for (const item of s.items) sock.send(item);
@@ -326,6 +335,7 @@ export function useRealtime({
     socket.current.close();
     seeded.current?.resolve(false);
     seeded.current = null;
+    seededPersona.current = null;
   }, []);
 
   // Bring-up, in the shape useAgent uses: credentials, then the live session,
@@ -404,6 +414,22 @@ export function useRealtime({
 
       const gen = ++askGen.current;
       await cancelInFlight();
+
+      // A personality change (ASC-59) is a change to the session's
+      // instructions. Session is truth and the socket a cache, so the socket is
+      // dropped and re-dialled with the new persona rather than reconciled.
+      // Only a socket already seeded can be stale: one still dialling (a wake
+      // dials before the question arrives) reads the persona when it seeds.
+      const seededWith = seededPersona.current;
+      if (
+        socket.current &&
+        socket.current.state !== 'closed' &&
+        seededWith !== null &&
+        seededWith !== (personaRef.current?.() ?? PERSONA)
+      ) {
+        if (__DEV__) console.log('[realtime] personality changed — redialling');
+        disconnect();
+      }
 
       // Dialled before the turn is recorded, so the seed is the conversation as
       // it stood before this question — otherwise the socket would be given the
@@ -600,7 +626,7 @@ export function useRealtime({
         if (collector.current?.gen === gen) collector.current = null;
       }
     },
-    [cancelInFlight, compact, connect],
+    [cancelInFlight, compact, connect, disconnect],
   );
 
   /**

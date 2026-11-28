@@ -52,6 +52,15 @@ import { PresenceBadge } from '../presence/PresenceBadge';
 import { greetingFor } from '../presence/presence';
 import { readWatchCommand, watchReply } from '../presence/command';
 import { isPresenceAvailable } from '../presence/native';
+import { usePersonality } from '../personality/usePersonality';
+import { fromPreset, nextPreset, nudge, personalityLabel, type Personality } from '../personality/traits';
+import { personalityReply, readPersonalityCommand } from '../personality/command';
+import { FACE_RULES, personaWith, personalityPrompt } from '../personality/prompt';
+import { PERSONA } from '../agent/persona';
+import { EXPRESSIONS } from './expression';
+import { useExpression } from './useExpression';
+import { QuestionMark } from './QuestionMark';
+import { endsWithQuestion } from './question';
 import { DEFAULT_EYE_COLOR, DESIGN_H, DESIGN_W, SIDE_COLUMN_W } from './constants';
 import { Face } from './Face';
 import { SideColumn, TranscriptEntry } from './SideColumn';
@@ -87,7 +96,7 @@ const BRAIN_KEY = 'eva.brain.v2';
  * How long a lapsed conversation keeps its realtime socket.
  *
  * The face reaches 'idle' only once the follow-up window has actually closed —
- * during a follow-up it cycles pleased → listening → thinking → speaking and
+ * during a follow-up it cycles resting → listening → thinking → speaking and
  * never touches idle — so this is a grace period on top of a conversation that
  * is already over, not a second copy of the follow-up policy. It buys the
  * common case where someone thinks of one more thing: a re-wake inside it
@@ -148,6 +157,27 @@ export function FaceScreen() {
   const [yawnNonce, setYawnNonce] = useState(0);
   const [devVisible, setDevVisible] = useState(false);
   const [pairingVisible, setPairingVisible] = useState(false);
+
+  // Who she is (ASC-59): six sliders, persisted, read by every brain at
+  // request time. And what the face is wearing over its mode — picked by Eva
+  // in her replies with `[[face …]]`, otherwise the personality's resting face.
+  const personality = usePersonality();
+
+  // A "?" floats up when she finishes speaking on a question (ASC-59): the
+  // moment she stops talking is when it becomes his turn.
+  const [questionNonce, setQuestionNonce] = useState(0);
+  const lastSaidRef = useRef<string | null>(null);
+  lastSaidRef.current = lastSaid;
+  const prevMode = useRef<FaceMode>(mode);
+  useEffect(() => {
+    if (prevMode.current === 'speaking' && mode !== 'speaking' && endsWithQuestion(lastSaidRef.current)) {
+      setQuestionNonce((n) => n + 1);
+    }
+    prevMode.current = mode;
+  }, [mode]);
+  const face = useExpression(mode, personality.personality.traits, (e) =>
+    log(`face · ${e.name}${e.intensity ? ` ${Math.round(e.intensity * 100)}%` : ''}`),
+  );
 
   const log = useCallback((text: string) => {
     setEntries((prev) => [...prev.slice(-19), { time: hhmm(), text }]);
@@ -512,6 +542,8 @@ export function FaceScreen() {
     screen: screenHandles,
     light: lightHandles,
     screenStatus: async () => screenStatusLine(await readScreenBrightness(), lightRef.current.lastReading(), Date.now()),
+    persona: () => personaWith(PERSONA, personality.ref.current),
+    personalityLine: () => [FACE_RULES, personalityPrompt(personality.ref.current)].filter(Boolean).join('\n\n'),
   };
 
   const agent = useAgent(brainOptions);
@@ -591,6 +623,49 @@ export function FaceScreen() {
       return { kind: 'reply', raw: line, speakable: line, postedAt: t, replyAt: t };
     };
 
+  /**
+   * Each round starts from the resting face, so a reaction to the last answer
+   * doesn't carry into the next one. The faces Eva picks in the reply are
+   * played by useEcho's cue player, each when the speech reaches it (onFace).
+   */
+  const withFace =
+    (ask: (text: string, opts?: AskOptions) => Promise<AskResult>) =>
+    async (text: string, opts?: AskOptions): Promise<AskResult> => {
+      face.rest();
+      return ask(text, opts);
+    };
+
+  /**
+   * "Be more sassy" is answered here, before any brain hears it, for the same
+   * reason "stop watching" is (personality/command.ts). The change reaches the
+   * brains on their next request.
+   */
+  const withPersonalityCommand =
+    (ask: (text: string, opts?: AskOptions) => Promise<AskResult>) =>
+    async (text: string, opts?: AskOptions): Promise<AskResult> => {
+      const cmd = readPersonalityCommand(text);
+      if (!cmd) return ask(text, opts);
+      const before = personality.ref.current;
+      let next: Personality = before;
+      let atLimit = false;
+      if (cmd.kind === 'preset') next = fromPreset(cmd.id);
+      else if (cmd.kind === 'nudge') {
+        next = nudge(before, cmd.trait, cmd.dir);
+        atLimit = next.traits[cmd.trait] === before.traits[cmd.trait];
+      }
+      if (next !== before) {
+        personality.set(next);
+        log(`personality · ${personalityLabel(before)} → ${personalityLabel(next)}`);
+      }
+      const line = personalityReply(cmd, personalityLabel(next), atLimit);
+      const t = Date.now();
+      return { kind: 'reply', raw: line, speakable: line, postedAt: t, replyAt: t };
+    };
+
+  /** Everything the device answers or acts on around a brain, in one place. */
+  const atDesk = (ask: (text: string, opts?: AskOptions) => Promise<AskResult>) =>
+    withWatchCommand(withPersonalityCommand(withFace(ask)));
+
   const echo = useEcho({
     setMode,
     onHeard: (text) => log(`heard · ${text}`),
@@ -608,18 +683,18 @@ export function FaceScreen() {
       brain === 'local'
         ? agent.status === 'unconfigured'
           ? undefined
-          : withWatchCommand(withDirectives(agent.ask))
+          : atDesk(withDirectives(agent.ask))
         : brain === 'realtime'
           ? realtime.status === 'unconfigured'
             ? undefined
-            : withWatchCommand(withDirectives(realtime.ask))
+            : atDesk(withDirectives(realtime.ask))
           : brain === 'hermes'
             ? hermesBrain.status === 'unconfigured'
               ? undefined
-              : withWatchCommand(withDirectives(hermesBrain.ask))
+              : atDesk(withDirectives(hermesBrain.ask))
             : slack.status === 'unpaired'
               ? undefined
-              : withWatchCommand(withLook(withDirectives((text: string) => slack.ask(text, activeThread.current ?? undefined)))),
+              : atDesk(withLook(withDirectives((text: string) => slack.ask(text, activeThread.current ?? undefined)))),
     onLatency: (line) => {
       log(line);
       console.log(`[latency] ${line}`);
@@ -627,6 +702,7 @@ export function FaceScreen() {
     conversation: convEnabled,
     asides: asidesEnabled,
     noiseFilter,
+    onFace: face.express,
   });
 
   noteToolRef.current = echo.noteToolActivity;
@@ -689,7 +765,7 @@ export function FaceScreen() {
     if (live && live.until === null) exchange.current = { ...live, until: Date.now() + FOLLOWUP_WINDOW_MS };
 
     // The conversation has actually lapsed: during a follow-up the face cycles
-    // pleased → listening → thinking → speaking and never reaches idle, so
+    // resting → listening → thinking → speaking and never reaches idle, so
     // arriving here means the window closed. Let the socket go after a grace,
     // and cancel that on the way back out — a re-wake inside it keeps the
     // session, and with it everything already said.
@@ -745,6 +821,7 @@ export function FaceScreen() {
     activeThread.current = d.item.threadTs;
     if (d.item.threadTs) holdExchange(d.item.threadTs);
     const { text } = d.item;
+    face.rest();
     // Pending until the round below has finished: she says it, then sleeps.
     if (d.item.after) applyDirective(d.item.after, 'hermes');
     if (d.item.look) {
@@ -758,8 +835,21 @@ export function FaceScreen() {
       log('hermes · asked to look, but no API server is configured to send a photo to');
       if (!text) return;
     }
+    // A message with faces or pauses in it (ASC-59) is played through the
+    // same cue player as a streamed reply, so each lands where it was written.
+    const cued = d.item.cued;
+    if (cued) {
+      startRound(() =>
+        echoRef.current.announce(text, async (opts) => {
+          const t = Date.now();
+          opts.onDelta?.(cued);
+          return { kind: 'reply', raw: cued, speakable: text, postedAt: t, replyAt: t };
+        }),
+      );
+      return;
+    }
     startRound(() => echoRef.current.announce(text));
-  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound, applyDirective]);
+  }, [mode, echoBusy, proactiveEnabled, proactiveNonce, holdExchange, startRound, applyDirective, face.rest]);
 
   const onWake = useCallback(
     (snippet: string) => {
@@ -949,7 +1039,9 @@ export function FaceScreen() {
         blinkNonce={blinkNonce}
         yawnNonce={yawnNonce}
         asleep={sleep.phase === 'asleep'}
+        expression={face.expression}
       />
+      <QuestionMark nonce={questionNonce} eyeColor={eyeColor} k={k} width={faceW} height={height} />
       {colOn && fontsLoaded && (
         <SideColumn
           mode={mode}
@@ -1087,6 +1179,17 @@ export function FaceScreen() {
           presenceEnabled={presenceEnabled}
           presenceLabel={presenceLabel}
           onTogglePresence={() => setPresenceEnabled(!presenceEnabled)}
+          personalityLabel={personalityLabel(personality.personality)}
+          onCyclePersonality={() => {
+            const next = nextPreset(personality.ref.current);
+            personality.set(next);
+            log(`personality · ${personalityLabel(next)} (overlay)`);
+          }}
+          expressionLabel={`${face.expression.name}${face.expression.intensity ? ` ${Math.round(face.expression.intensity * 100)}%` : ''}`}
+          onCycleExpression={() => {
+            const i = EXPRESSIONS.indexOf(face.expression.name);
+            face.express({ name: EXPRESSIONS[(i + 1) % EXPRESSIONS.length], strength: 1 });
+          }}
           updateLabel={updates.label}
           onCheckUpdate={() => void updates.checkNow()}
           slackStatus={slack.status}

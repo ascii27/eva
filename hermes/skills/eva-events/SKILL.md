@@ -1,6 +1,6 @@
 ---
 name: eva-events
-description: Use for the scheduled board events sync (putting Tokyo events the family picked on the kitchen board onto the family calendar, or taking them off), and when anyone asks what's on in Tokyo, what to do this weekend, or about an event they added from the board. Reads the board's requests through the script; the calendar is yours, through your own calendar tools.
+description: Use when the kitchen board asks you to run the board events sync (putting Tokyo events the family picked on the kitchen board onto the family calendar, or taking them off), and when anyone asks what's on in Tokyo, what to do this weekend, or about an event they added from the board. Reads the board's requests through the script; the calendar is yours, through your own calendar tools.
 ---
 
 # Tokyo events from the kitchen board
@@ -18,7 +18,9 @@ says "Asking Eva to add it".
 `scripts/eva_events.py` in this skill's folder (installed:
 `~/.hermes/skills/eva-events/scripts/eva_events.py`). Python standard library
 only. It needs `WALLBOARD_TOKEN` in the environment (and optionally
-`WALLBOARD_URL`), the same as the other board skills.
+`WALLBOARD_URL`), the same as the other board skills. Your terminal doesn't
+get them by itself: run `set -a; . ~/.hermes/.env; set +a` first, in the same
+command as the script.
 
 ```bash
 python3 eva_events.py pending                                   # what's waiting, with the calendar entry to make
@@ -30,10 +32,17 @@ python3 eva_events.py list                                      # every plan, in
 
 Put `--note` in single quotes, and write an apostrophe inside it as `'\''`.
 
-## The scheduled sync
+## The sync
 
-Run it every 10 minutes, with the prompt *"Run the board events sync, using the
-eva-events skill."*
+**There is no schedule.** The board wakes you itself when someone taps (about a
+minute after the last tap, one message for everything pending), with a message
+starting *"From the kitchen board: the family asked you to…"*. If a request is
+still pending 30 minutes later it asks again, at most three times in all. A
+schedule would cost a full run every time it fired, whether or not anyone had
+tapped anything. Only if the board can't reach you (no `HERMES_AGENT_URL`/`KEY`
+in its env) does this need a schedule; then once or twice a day is plenty.
+
+When woken, or asked to "run the board events sync":
 
 1. **`pending`.** If it prints `[]`, there is nothing to do. Stop, and report
    nothing.

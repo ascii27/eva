@@ -10,6 +10,7 @@ import {
   SLEEPY_START_HOUR,
   YAWN_MS,
 } from './constants';
+import { expressionPose, expressionWeight } from './expression';
 import type { CornerRadii, EyeGeo, FaceMode } from './types';
 
 /**
@@ -68,6 +69,14 @@ export const EYE_CORNERS_PLEASED = corners(
   [EYE_W * 0.5, EYE_W * 0.5, 12, 12],
   [EYE_H * 0.9, EYE_H * 0.9, 16, 16],
 );
+// The crescent upside down: flat top, round bottom — a heavy lid (ASC-59;
+// not in the design yet).
+export const EYE_CORNERS_LID = corners(
+  EYE_W,
+  EYE_H,
+  [12, 12, EYE_W * 0.5, EYE_W * 0.5],
+  [16, 16, EYE_H * 0.9, EYE_H * 0.9],
+);
 
 /** Vertical scale factor for the 170ms triangular blink. 1 = eye open. */
 export function blinkFactor(t: number, blinkT: number): number {
@@ -105,6 +114,10 @@ export function yawnFactor(
  * asleep pose (ASC-33): eyes held at the yawn's nearly-shut hold, centred,
  * with idle's slow glow pulse as breathing. It is a blend rather than a mode
  * so the face stays 'idle' — the wake watcher only listens while it is.
+ *
+ * `exprName`/`exprK` lay an expression over the mode the same way (ASC-59,
+ * expression.ts): multipliers on the mode's own scale and glow, so speaking's
+ * pulse survives inside a smile, and offsets on its position.
  */
 export function eyeGeo(
   side: number,
@@ -113,6 +126,8 @@ export function eyeGeo(
   blinkT: number,
   yawnT: number,
   sleepK = 0,
+  exprName = 'neutral',
+  exprK = 0,
 ): EyeGeo {
   'worklet';
   let sw = 1;
@@ -120,18 +135,21 @@ export function eyeGeo(
   let x = 0;
   let y = 0;
   let g = 1;
+  let r = 0;
   let corners_ = EYE_CORNERS_BASE;
 
-  if (mode === 'idle') {
+  if (mode === 'idle' || mode === 'resting') {
     x = Math.sin(t / 3700) * 10;
     y = Math.sin(t / 2600) * 5;
     g = 0.9 + 0.08 * Math.sin(t / 2000);
   } else if (mode === 'listening') {
+    // The design's listening size, as a waiting look (ASC-59): raised a little
+    // higher, a slow glance in place of the quick sway, and a breathing glow.
     sw = 1.1;
     sh = 1.22;
-    y = -6;
-    x = Math.sin(t / 900) * 8;
-    g = 1.35;
+    y = -9;
+    x = Math.sin(t / 2600) * 12;
+    g = 1.2 + 0.2 * Math.sin(t / 650);
   } else if (mode === 'thinking') {
     sh = 0.4;
     sw = 0.96;
@@ -166,6 +184,21 @@ export function eyeGeo(
     g = 1.2;
   }
 
+  const w = exprK * expressionWeight(mode);
+  if (w > 0) {
+    const p = expressionPose(exprName, side);
+    sw *= 1 + (p.sw - 1) * w;
+    sh *= 1 + (p.sh - 1) * w;
+    g *= 1 + (p.g - 1) * w;
+    x += p.x * w;
+    y += p.y * w;
+    r += p.r * w;
+    // Corners are a shape, not a number to ease: the crescent or lid comes in
+    // once the expression is more than half worn.
+    if (w >= 0.5 && p.shape === 'crescent') corners_ = EYE_CORNERS_PLEASED;
+    else if (w >= 0.5 && p.shape === 'lid') corners_ = EYE_CORNERS_LID;
+  }
+
   sh *= blinkFactor(t, blinkT);
 
   const yn = yawnFactor(t, yawnT);
@@ -182,10 +215,11 @@ export function eyeGeo(
     sh += (ASLEEP_SH - sh) * s;
     x -= x * s;
     y -= y * s;
+    r -= r * s;
     g += (ASLEEP_G * breathe - g) * s;
   }
 
-  return { sw, sh, x, y, g, corners: corners_ };
+  return { sw, sh, x, y, g, r, corners: corners_ };
 }
 
 export function isSleepyHour(hour: number): boolean {

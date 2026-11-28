@@ -105,9 +105,22 @@ export interface UseHermesOptions {
    * flash the camera on every turn.
    */
   screenStatus?: () => Promise<string | null>;
+  /**
+   * The face rules and the current personality, as one system line (ASC-59).
+   * Per turn rather than in DESK_PREAMBLE: the personality changes, and
+   * DESK_PREAMBLE stays fixed text with no imports so the probes can load it.
+   */
+  personalityLine?: () => string | null;
 }
 
-export function useHermes({ onIssue, onUsage, vision = null, batteryReading, screenStatus }: UseHermesOptions = {}) {
+export function useHermes({
+  onIssue,
+  onUsage,
+  vision = null,
+  batteryReading,
+  screenStatus,
+  personalityLine,
+}: UseHermesOptions = {}) {
   const [status, setStatus] = useState<HermesBrainStatus>('unconfigured');
   const [model, setModel] = useState<string | null>(null);
   const config = useRef<HermesConfig | null>(null);
@@ -120,8 +133,8 @@ export function useHermes({ onIssue, onUsage, vision = null, batteryReading, scr
 
   // Callbacks via ref so a re-render of FaceScreen never re-creates `ask` and
   // strands an in-flight round — same reason useAgent does it.
-  const callbacks = useRef({ onIssue, onUsage, batteryReading, screenStatus });
-  callbacks.current = { onIssue, onUsage, batteryReading, screenStatus };
+  const callbacks = useRef({ onIssue, onUsage, batteryReading, screenStatus, personalityLine });
+  callbacks.current = { onIssue, onUsage, batteryReading, screenStatus, personalityLine };
   const visionRef = useRef(vision);
   visionRef.current = vision;
   /** Something hermes should hear at the top of its next turn — a refused photo. */
@@ -197,6 +210,7 @@ export function useHermes({ onIssue, onUsage, vision = null, batteryReading, scr
       // The battery, read fresh each turn — hermes has no device_battery (ASC-45).
       const battery = callbacks.current.batteryReading?.() ?? null;
       const screen = (await callbacks.current.screenStatus?.().catch(() => null)) ?? null;
+      const manner = callbacks.current.personalityLine?.() ?? null;
 
       try {
         const res = await chatStream({
@@ -210,6 +224,7 @@ export function useHermes({ onIssue, onUsage, vision = null, batteryReading, scr
             { role: 'system', content: DESK_PREAMBLE },
             ...(battery ? [{ role: 'system' as const, content: deskStatusLine(battery) }] : []),
             ...(screen ? [{ role: 'system' as const, content: screen }] : []),
+            ...(manner ? [{ role: 'system' as const, content: manner }] : []),
             { role: 'user', content },
           ],
           baseUrl: cfg.baseUrl,
