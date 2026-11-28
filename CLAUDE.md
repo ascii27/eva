@@ -17,8 +17,8 @@ npm run probe:realtime        # realtime wire format, first-token latency agains
 npm test                      # jest (pure face-math tests); npx jest src/face/__tests__/geometry.test.ts for one file
 npx tsc --noEmit              # typecheck (TS 6 — @types globals are NOT auto-included; tests import from @jest/globals)
 npx expo start --go           # run face in Expo Go / simulator (STT unavailable there by design)
-npx expo start                # dev-client mode for the physical iPhone with the EAS dev build
-eas build --profile development --platform ios   # rebuild native shell (only when native deps change)
+eas build --profile preview --platform ios       # rebuild the desk iPhone's app (only when native deps change). Always preview — never `development` unless Michael explicitly asks
+eas update --channel preview --environment preview   # ship JS-only changes to the preview build over the air
 ```
 
 ## Architecture
@@ -149,4 +149,4 @@ A separate Node project, not device code: the family's kitchen board on an Echo 
 
 - Orientation is locked landscape in `app.json`; keep-awake is on in `App.tsx`. Don't add portrait handling.
 - Eye separation is fixed wide (300px gap) and the side column defaults to visible — both explicit product decisions; don't resurrect the toggles from the design doc.
-- Native module changes (new Expo packages with native code) require a new EAS dev build on the dedicated iPhone; JS-only changes do not.
+- Native module changes (new Expo packages with native code) require a new EAS **preview** build (`--profile preview`) on the dedicated iPhone; JS-only changes ship by `eas update`. The phone runs the preview build, not a dev client — don't build the `development` profile unless explicitly asked.
