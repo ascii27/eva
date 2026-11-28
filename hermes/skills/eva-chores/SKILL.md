@@ -130,8 +130,12 @@ of you.
 Then enter the chores with Michael (see "Changing chores") and run the sync
 once by hand.
 
-The scheduled job to add: every 15 minutes, with the prompt *"Run the chores
-sync, using the eva-chores skill."*
+The scheduled job to add: **once a day at 21:45 Tokyo time** (after bedtime,
+when the day's ticks are in), with the prompt *"Run the chores sync, using the
+eva-chores skill."* Every run is a full agent run, so more often only spends
+tokens: the Ledger is a record for browsing, not something anyone waits on, and
+a chore changed in Notion reaches the board by the next evening (or ask for a
+sync to push it sooner).
 
 ## The scheduled sync
 
@@ -179,7 +183,7 @@ only thing that can lose money records. When it is set, `rows` is empty and
    alarm with the same `kind` and the same `expected` as this one. (`found`
    moves as the girls keep ticking; that is the same alarm, not a new one.)
 3. **If it is already recorded, do nothing more.** One alarm, one task. Never a
-   task every 15 minutes.
+   task every day.
 4. **If `Alarm` is empty or holds a different alarm**, first create one
    Todoist task for Michael:
    - title: **Chores ledger: the board lost history — check Notion**
@@ -239,7 +243,7 @@ python3 eva_chores.py pay sarina 700 --note 'Nozomi: gave Sarina her 700 yen' --
 `WHO` is lowercase: `mariko` or `sarina`. `AMOUNT` is whole yen. `--note` is
 what they said, in their words, in single quotes (an apostrophe inside is
 written `'\''`). Then run the sync, so the payment reaches the
-Ledger now rather than in 15 minutes.
+Ledger now rather than tonight.
 
 **Always pass your own `--id`**, chosen before the first attempt: `ev-pay-`
 followed by 12 random letters or digits, new for every payment. If `pay` fails
