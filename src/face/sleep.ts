@@ -8,6 +8,11 @@
 // clock restarts when it's over. Quiet only counts from the start of the
 // night, so at 22:00 she dims first and dozes off ten minutes later rather
 // than falling straight asleep because the evening was quiet.
+//
+// By day (ASC-55) she also dims after DAY_DIM_AFTER_MS of quiet, but only when
+// presence is watching: its motion looks are what wake the screen again, and
+// without them a person sitting still beside her would be left with a dark
+// face until they touched it.
 
 import { isSleepyHour } from './geometry';
 import { SLEEPY_START_HOUR } from './constants';
@@ -18,6 +23,9 @@ export type SleepPhase = 'awake' | 'dim' | 'asleep';
 export const SLEEP_AFTER_MS = 10 * 60_000;
 /** After a conversation or a touch at night, stay bright this long before dimming. */
 export const NIGHT_AWAKE_GRACE_MS = 60_000;
+
+/** Quiet time by day before the screen dims, when presence is watching. */
+export const DAY_DIM_AFTER_MS = 2 * 60_000;
 
 /** Screen brightness (0–1) by phase; never brighter than the daytime level. */
 export const NIGHT_TALK_BRIGHTNESS = 0.5;
@@ -34,11 +42,14 @@ export function nightStart(now: Date): number {
 
 /**
  * The phase at `now`, given whether a round is under way (`busy`) and when
- * anything last happened (`lastActive`, ms).
+ * anything last happened (`lastActive`, ms). `dayDim` lets quiet dim her by
+ * day too — presence is watching, so motion will bring her back.
  */
-export function sleepPhase(now: Date, busy: boolean, lastActive: number): SleepPhase {
-  if (!isSleepyHour(now.getHours())) return 'awake';
+export function sleepPhase(now: Date, busy: boolean, lastActive: number, dayDim = false): SleepPhase {
   const t = now.getTime();
+  if (!isSleepyHour(now.getHours())) {
+    return dayDim && !busy && t - lastActive >= DAY_DIM_AFTER_MS ? 'dim' : 'awake';
+  }
   if (busy || t - lastActive < NIGHT_AWAKE_GRACE_MS) return 'awake';
   const quiet = t - Math.max(lastActive, nightStart(now));
   return quiet >= SLEEP_AFTER_MS ? 'asleep' : 'dim';
@@ -74,14 +85,15 @@ export function requestedPhase(
   lastActive: number,
   request: SleepRequest,
   away = false,
+  dayDim = false,
 ): SleepPhase {
   if (busy) return 'awake';
   if (request?.kind === 'asleep') return 'asleep';
   if (request?.kind === 'awake') {
     if (now.getTime() < request.until) return 'awake';
     if (away) return 'asleep';
-    return sleepPhase(now, false, Math.max(lastActive, request.until));
+    return sleepPhase(now, false, Math.max(lastActive, request.until), dayDim);
   }
   if (away) return 'asleep';
-  return sleepPhase(now, false, lastActive);
+  return sleepPhase(now, false, lastActive, dayDim);
 }

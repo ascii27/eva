@@ -1,5 +1,5 @@
-// The Expo face of PresenceDetector (ASC-47): two calls and two events.
-// Everything interesting is in PresenceDetector.swift.
+// The Expo face of PresenceDetector (ASC-47; polled since ASC-55): two calls
+// and no events. Everything interesting is in PresenceDetector.swift.
 
 import ExpoModulesCore
 
@@ -9,30 +9,17 @@ public class EvaPresenceModule: Module {
   public func definition() -> ModuleDefinition {
     Name("EvaPresence")
 
-    Events("onFaces", "onStatus")
-
-    OnCreate {
-      detector.onFaces = { [weak self] count in
-        self?.sendEvent("onFaces", ["faces": count])
-      }
-      detector.onStatus = { [weak self] status, message in
-        var body: [String: Any] = ["status": status.rawValue]
-        if let message { body["message"] = message }
-        self?.sendEvent("onStatus", body)
+    /// One look: resolves {status, faces, motion, frames, message?}. The
+    /// camera is on only while it runs. Never prompts for permission.
+    AsyncFunction("look") { (settleMs: Int, windowMs: Int, promise: Promise) in
+      self.detector.look(settleMs: settleMs, windowMs: windowMs) { look in
+        promise.resolve(look.dictionary)
       }
     }
 
-    /// Resolves "running", "denied" or "unavailable". Never prompts for permission.
-    AsyncFunction("start") { (intervalMs: Int) -> String in
-      self.detector.start(intervalMs: intervalMs).rawValue
-    }
-
+    /// Aborts a look in progress (it resolves "stopped") and turns the camera off.
     AsyncFunction("stop") {
       self.detector.stop()
-    }
-
-    Function("isRunning") {
-      self.detector.isRunning
     }
 
     OnDestroy {

@@ -4,6 +4,7 @@ import { ASLEEP_G, ASLEEP_SH, ASLEEP_SW, BLINK_MS, YAWN_MS } from '../constants'
 import {
   ASLEEP_BRIGHTNESS,
   DIM_BRIGHTNESS,
+  DAY_DIM_AFTER_MS,
   NIGHT_AWAKE_GRACE_MS,
   NIGHT_TALK_BRIGHTNESS,
   nightBrightness,
@@ -103,6 +104,17 @@ describe('sleepPhase', () => {
     expect(sleepPhase(at('22:10'), false, t)).toBe('asleep');
   });
 
+  it('by day, dims after DAY_DIM_AFTER_MS of quiet only while presence is watching', () => {
+    const t = at('14:00').getTime();
+    const after = (ms: number, dayDim: boolean) => sleepPhase(new Date(t + ms), false, t, dayDim);
+    expect(after(DAY_DIM_AFTER_MS - 1, true)).toBe('awake');
+    expect(after(DAY_DIM_AFTER_MS, true)).toBe('dim');
+    // Quiet all afternoon is dim, never asleep: that is presence's `away`.
+    expect(after(5 * 60 * min, true)).toBe('dim');
+    expect(after(5 * 60 * min, false)).toBe('awake');
+    expect(sleepPhase(new Date(t + DAY_DIM_AFTER_MS), true, t, true)).toBe('awake');
+  });
+
   it('nightStart is the most recent 22:00', () => {
     expect(nightStart(at('23:15'))).toBe(at('22:00').getTime());
     expect(nightStart(at('02:00', 19))).toBe(at('22:00', 18).getTime());
@@ -154,5 +166,13 @@ describe('requestedPhase', () => {
     expect(requestedPhase(at('14:10'), false, t, hold, true)).toBe('awake');
     expect(requestedPhase(at('14:31'), false, t, hold, true)).toBe('asleep');
     expect(requestedPhase(at('14:00'), false, t, null, false)).toBe('awake');
+  });
+
+  it('daytime dim passes through, and a stay-up hold dims only after it ends', () => {
+    const t = at('14:00').getTime();
+    expect(requestedPhase(new Date(t + DAY_DIM_AFTER_MS), false, t, null, false, true)).toBe('dim');
+    const hold = { kind: 'awake' as const, until: t + WAKE_HOLD_MS };
+    expect(requestedPhase(new Date(t + WAKE_HOLD_MS), false, t, hold, false, true)).toBe('awake');
+    expect(requestedPhase(new Date(t + WAKE_HOLD_MS + DAY_DIM_AFTER_MS), false, t, hold, false, true)).toBe('dim');
   });
 });
