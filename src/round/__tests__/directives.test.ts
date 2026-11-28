@@ -1,5 +1,13 @@
 import { describe, expect, it } from '@jest/globals';
-import { asksForBattery, asksForLight, asksForLocation, readBrightness, readDirective, wantsLook } from '../directives';
+import {
+  asksForBattery,
+  asksForLight,
+  asksForLocation,
+  endsConversation,
+  readBrightness,
+  readDirective,
+  wantsLook,
+} from '../directives';
 import { speakableFromMrkdwn } from '../speakable';
 
 describe('readDirective', () => {
@@ -141,5 +149,24 @@ describe('asksForLocation', () => {
   it('is never spoken', () => {
     expect(speakableFromMrkdwn('Quick one. [[location]]')).toBe('Quick one.');
     expect(speakableFromMrkdwn('[[location]]')).toBe('');
+  });
+});
+
+describe('endsConversation', () => {
+  it('finds [[done]] anywhere, in any case', () => {
+    expect(endsConversation('Night, Michael. [[done]]')).toBe(true);
+    expect(endsConversation('[[ DONE ]]')).toBe(true);
+    expect(endsConversation('Sure. [[sleep]] [[done]]')).toBe(true);
+  });
+
+  it('is false without it', () => {
+    expect(endsConversation("I'm done with the report draft.")).toBe(false);
+    expect(endsConversation('[[sleep]]')).toBe(false);
+  });
+
+  it('is stripped from speech, and is not a sleep directive', () => {
+    expect(speakableFromMrkdwn('Anytime. [[done]]')).toBe('Anytime.');
+    expect(speakableFromMrkdwn('[[done]]')).toBe('');
+    expect(readDirective('Bye! [[done]]')).toBeNull();
   });
 });

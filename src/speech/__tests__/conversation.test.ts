@@ -19,6 +19,10 @@ describe('decideNext', () => {
       expect(d.window).toBeGreaterThan(old);
     });
 
+    it('uses a learned window length when one is given', () => {
+      expect(decideNext('reply-delivered', NOW, null, 18_000).window).toBe(NOW + 18_000);
+    });
+
     it('revives a window that lapsed during a long think', () => {
       expect(decideNext('reply-delivered', NOW, NOW - 60_000)).toEqual({
         next: 'listen-again',

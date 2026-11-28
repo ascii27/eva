@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { EXPRESSIONS } from '../../face/expression';
 import { readFaceTokens } from '../../face/expression';
 import { speakableFromMrkdwn } from '../../round/speakable';
-import { FACE_RULES, personaWith, personalityPrompt } from '../prompt';
+import { CLOSING_RULES, DESK_RULES, FACE_RULES, personaWith, personalityPrompt } from '../prompt';
 import { fromPreset, TRAIT_KEYS, type Personality } from '../traits';
 
 const middle: Personality = {
@@ -43,6 +43,14 @@ describe('FACE_RULES', () => {
   });
 });
 
+describe('CLOSING_RULES', () => {
+  it('teaches [[done]], which is stripped from speech, and rides with the face rules', () => {
+    expect(CLOSING_RULES).toMatch(/\[\[done\]\]/);
+    expect(speakableFromMrkdwn(CLOSING_RULES)).not.toMatch(/\[\[/);
+    expect(personaWith('BASE', fromPreset('sassy'))).toContain(CLOSING_RULES);
+  });
+});
+
 describe('personaWith', () => {
   it('appends the face rules, then the personality', () => {
     const out = personaWith('BASE', fromPreset('sassy'));
@@ -55,6 +63,6 @@ describe('personaWith', () => {
   });
 
   it('carries no personality paragraph when nothing leans', () => {
-    expect(personaWith('BASE', middle)).toBe(`BASE\n\n${FACE_RULES}`);
+    expect(personaWith('BASE', middle)).toBe(`BASE\n\n${DESK_RULES}`);
   });
 });
