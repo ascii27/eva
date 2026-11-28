@@ -55,7 +55,7 @@ import { isPresenceAvailable } from '../presence/native';
 import { usePersonality } from '../personality/usePersonality';
 import { fromPreset, nextPreset, nudge, personalityLabel, type Personality } from '../personality/traits';
 import { personalityReply, readPersonalityCommand } from '../personality/command';
-import { FACE_RULES, personaWith, personalityPrompt } from '../personality/prompt';
+import { DESK_RULES, personaWith, personalityPrompt } from '../personality/prompt';
 import { PERSONA } from '../agent/persona';
 import { EXPRESSIONS } from './expression';
 import { useExpression } from './useExpression';
@@ -543,7 +543,7 @@ export function FaceScreen() {
     light: lightHandles,
     screenStatus: async () => screenStatusLine(await readScreenBrightness(), lightRef.current.lastReading(), Date.now()),
     persona: () => personaWith(PERSONA, personality.ref.current),
-    personalityLine: () => [FACE_RULES, personalityPrompt(personality.ref.current)].filter(Boolean).join('\n\n'),
+    personalityLine: () => [DESK_RULES, personalityPrompt(personality.ref.current)].filter(Boolean).join('\n\n'),
   };
 
   const agent = useAgent(brainOptions);
@@ -703,6 +703,7 @@ export function FaceScreen() {
     asides: asidesEnabled,
     noiseFilter,
     onFace: face.express,
+    onNote: log,
   });
 
   noteToolRef.current = echo.noteToolActivity;

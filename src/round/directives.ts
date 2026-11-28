@@ -4,7 +4,7 @@
 // Slack brains) or speaks first (a proactive Slack message), the only thing it
 // can hand down is text. So the face's few commands ride inside that text as
 // tokens — `[[sleep]]`, `[[wake]]`, `[[look]]`, `[[battery]]`, `[[light]]`, `[[brightness N]]`, `[[location]]`,
-// `[[face amused]]`, `[[pause 1s]]` (ASC-59; every brain, see round/cues.ts) — which speakableFromMrkdwn
+// `[[face amused]]`, `[[pause 1s]]` (ASC-59; every brain, see round/cues.ts), `[[done]]` (ASC-66) — which speakableFromMrkdwn
 // strips before anything reaches the speaker. The local brains use real tools
 // instead (go_to_sleep / wake_up / camera_look); this is the same capability
 // for the half that can't.
@@ -15,7 +15,7 @@
 export type DeskDirective = 'sleep' | 'wake';
 
 /** Every token the device acts on — and therefore strips from speech. */
-export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery|light|location|brightness(?:\s*[:=]?\s*[^\]]*)?|face\b[^\]]*|pause\b[^\]]*)\s*\]\]/gi;
+export const DIRECTIVE_RE = /\[\[\s*(sleep|wake|look|battery|light|location|done|brightness(?:\s*[:=]?\s*[^\]]*)?|face\b[^\]]*|pause\b[^\]]*)\s*\]\]/gi;
 
 /**
  * The sleep/wake directive a message carries, or null. When one message
@@ -102,5 +102,17 @@ export function readBrightness(raw: string): BrightnessToken | null {
  */
 export function asksForLocation(raw: string): boolean {
   for (const m of raw.matchAll(DIRECTIVE_RE)) if (m[1].toLowerCase() === 'location') return true;
+  return false;
+}
+
+/**
+ * Whether a reply ends the conversation (ASC-66): the brain judged it over —
+ * a goodbye, a "that's everything" — or what it heard wasn't meant for her at
+ * all (people in the room talking to each other), in which case the reply is
+ * the token alone and nothing is said. Either way the follow-up mic stays shut.
+ * Every brain can send it; the rule rides beside FACE_RULES (CLOSING_RULES).
+ */
+export function endsConversation(raw: string): boolean {
+  for (const m of raw.matchAll(DIRECTIVE_RE)) if (m[1].toLowerCase() === 'done') return true;
   return false;
 }

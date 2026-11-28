@@ -6,6 +6,10 @@ import { emptyCues, flushCues, hasCues, pushCues, type CueItem } from '../round/
 import type { FaceToken } from '../face/expression';
 import { beginAside, decideAside, noteTool, type AsideState } from './asides';
 import { type ConvWindow, decideNext } from './conversation';
+import { readClosing, readCorrection, REOPEN_LINE, type CloseReason } from './closing';
+import { useClosing } from './useClosing';
+import { endsConversation } from '../round/directives';
+import { speakableFromMrkdwn } from '../round/speakable';
 import { abortListening, addListeners, ensureReady, startListening } from './stt';
 import { playEarcon, speak, speakStream, stopSpeaking, type SpeechStream } from './tts';
 import { LIVE } from './earcon';
@@ -89,6 +93,8 @@ export interface EchoHandlers {
    * everything written before it has finished playing. See askEva's cue player.
    */
   onFace?: (token: FaceToken) => void;
+  /** Transcript breadcrumbs that are not failures — why a conversation closed (ASC-66). */
+  onNote?: (line: string) => void;
 }
 
 /**
@@ -108,7 +114,15 @@ export function useEcho({
   asides,
   noiseFilter = false,
   onFace,
+  onNote,
 }: EchoHandlers) {
+  // End of conversation (ASC-66): what has been learned, and the close that
+  // "I wasn't done" can still correct.
+  const closing = useClosing();
+  // A farewell heard on the way into askEva, which claims it for its round.
+  const pendingClose = useRef<CloseReason | null>(null);
+  // The round that ends the conversation instead of opening a follow-up, and why.
+  const roundClose = useRef<{ round: number; reason: CloseReason } | null>(null);
   // Read inside startMic, which must not be re-created when the toggle flips.
   const noiseFilterRef = useRef(noiseFilter);
   noiseFilterRef.current = noiseFilter;
@@ -153,8 +167,8 @@ export function useEcho({
    */
   const consent = useRef<{ finish: (answer: Consent) => void } | null>(null);
   // Live handler refs for the mount-once native event subscription.
-  const handlers = useRef({ ask, onLatency, conversation, asides, onVoicing, onFace });
-  handlers.current = { ask, onLatency, conversation, asides, onVoicing, onFace };
+  const handlers = useRef({ ask, onLatency, conversation, asides, onVoicing, onFace, onNote });
+  handlers.current = { ask, onLatency, conversation, asides, onVoicing, onFace, onNote };
 
   const clearTimer = useCallback(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -294,17 +308,27 @@ export function useEcho({
   const finishSpoken = useCallback(
     (round: number, via: 'resting' | 'confused') => {
       if (round !== epoch.current) return;
+      const close = roundClose.current?.round === round ? roundClose.current.reason : null;
+      roundClose.current = null;
+      if (via === 'resting' && close) {
+        // The conversation is over (a farewell, or the brain's [[done]]): the
+        // resting beat, then idle — no follow-up mic picking up the room.
+        convWindow.current = null;
+        if (voiceRound.current) handlers.current.onNote?.(closing.closed(close));
+        settle('resting', RESTING_BEAT_MS);
+        return;
+      }
       if (via === 'resting' && voiceRound.current && handlers.current.conversation) {
         // Follow-up window: the resting beat doubles as the "your turn" cue,
         // then re-open the mic instead of settling to idle.
-        convWindow.current = decideNext('reply-delivered', Date.now(), convWindow.current).window;
+        convWindow.current = decideNext('reply-delivered', Date.now(), convWindow.current, closing.windowMs()).window;
         setMode('resting');
         after(RESTING_BEAT_MS, () => void openMic());
       } else {
         settle(via, via === 'resting' ? RESTING_BEAT_MS : CONFUSED_BEAT_MS);
       }
     },
-    [after, openMic, setMode, settle],
+    [after, closing, openMic, setMode, settle],
   );
 
   /**
@@ -487,6 +511,9 @@ export function useEcho({
       }
       const round = ++epoch.current;
       clearRoundSpeech();
+      const farewell = pendingClose.current;
+      pendingClose.current = null;
+      roundClose.current = farewell ? { round, reason: farewell } : null;
       const heardAt = Date.now();
       const marks = { wokeAt: wokeAt.current, heardAt };
       clearTimer();
@@ -568,8 +595,9 @@ export function useEcho({
 
       /** Text of the reply, into the open stream (opening one if need be). */
       const sayText = (text: string) => {
-        // Whitespace between two cues is not a reason to open a stream.
-        if (!speech.current && !text.trim()) return;
+        // Whitespace between two cues is not a reason to open a stream, and
+        // nor is a bare token — a reply that is only [[done]] says nothing.
+        if (!speech.current && !speakableFromMrkdwn(text).trim()) return;
         openSpeech();
         // The answer is arriving: whatever gap a tool opened is over.
         speech.current?.hold(false);
@@ -724,6 +752,11 @@ export function useEcho({
       try {
         const result = await doAsk(text, { onDelta, onToolStart, onConsent: (q) => askForConsent(round, q) });
         if (round !== epoch.current) return; // cancelled or superseded mid-flight
+        // The brain judged the conversation over, or that what it heard wasn't
+        // meant for her (ASC-66). His own farewell, if any, is the better reason.
+        if (result.kind === 'reply' && endsConversation(result.raw) && closing.trustsModel() && !roundClose.current) {
+          roundClose.current = { round, reason: { kind: 'model' } };
+        }
         if (result.kind !== 'reply') {
           convWindow.current = decideNext('ask-failed', Date.now(), convWindow.current).window;
         }
@@ -800,7 +833,8 @@ export function useEcho({
           clearRoundSpeech();
           return void finishWhole(result);
         }
-        onSaid?.(result.kind === 'reply' ? result.speakable : spoken.current);
+        const said = result.kind === 'reply' ? result.speakable : spoken.current;
+        if (said) onSaid?.(said);
         if (result.kind === 'error') onIssue?.(result.message);
         finishSpoken(round, result.kind === 'reply' ? 'resting' : 'confused');
       }
@@ -812,6 +846,11 @@ export function useEcho({
         clearRoundSpeech();
         switch (result.kind) {
           case 'reply': {
+            // Only [[done]]: what it heard wasn't meant for her. Say nothing.
+            if (!result.speakable.trim() && roundClose.current?.round === round) {
+              finishSpoken(round, 'resting');
+              break;
+            }
             const speakable = result.speakable || 'Eva replied with something I cannot say aloud.';
             deliver(speakable, 'resting', () =>
               handlers.current.onLatency?.(
@@ -849,7 +888,43 @@ export function useEcho({
       settle,
       speakAside,
       askForConsent,
+      closing,
     ],
+  );
+
+  /**
+   * A heard utterance, before any brain (ASC-66). "I wasn't done" right after
+   * a close re-opens the conversation, and teaches; a bare sign-off either
+   * closes without a brain ("never mind") or is answered and then closes
+   * ("thanks"). Everything else is a question.
+   */
+  const route = useCallback(
+    (text: string) => {
+      const fix = readCorrection(text);
+      const lesson = fix ? closing.correct() : null;
+      if (fix && lesson) {
+        handlers.current.onNote?.(lesson);
+        voiceRound.current = true;
+        if (fix.rest) return void askEva(fix.rest);
+        setMode('thinking');
+        deliver(REOPEN_LINE, 'resting');
+        return;
+      }
+      // A new exchange: an older close is no longer what he'd be correcting.
+      closing.forget();
+      const close = readClosing(text, closing.demoted());
+      if (close?.kind === 'dismiss') {
+        ++epoch.current;
+        clearRoundSpeech();
+        convWindow.current = null;
+        handlers.current.onNote?.(closing.closed({ kind: 'phrase', phrase: close.phrase }));
+        settle('resting', RESTING_BEAT_MS);
+        return;
+      }
+      pendingClose.current = close ? { kind: 'phrase', phrase: close.phrase } : null;
+      void askEva(text);
+    },
+    [askEva, clearRoundSpeech, closing, deliver, setMode, settle],
   );
 
   /**
@@ -864,9 +939,12 @@ export function useEcho({
     const d = decideNext('empty-listen', Date.now(), inWindow ? convWindow.current : null);
     convWindow.current = d.window;
     if (d.next === 'listen-again') void openMic();
-    else if (inWindow) setMode('idle');
+    else if (inWindow) {
+      handlers.current.onNote?.(closing.closed({ kind: 'silence' }));
+      setMode('idle');
+    }
     else settle('confused', CONFUSED_BEAT_MS);
-  }, [openMic, setMode, settle]);
+  }, [closing, openMic, setMode, settle]);
 
   useEffect(() => {
     const unsubscribe = addListeners({
@@ -913,7 +991,7 @@ export function useEcho({
           onNoSpeech();
         } else {
           onHeard?.(text);
-          if (handlers.current.ask) void askEva(text);
+          if (handlers.current.ask) route(text);
           else sayBack(text);
         }
       },

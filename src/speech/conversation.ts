@@ -15,12 +15,21 @@ export interface ConvDecision {
   window: ConvWindow;
 }
 
-export function decideNext(outcome: RoundOutcome, now: number, window: ConvWindow): ConvDecision {
+/**
+ * `windowMs` is the follow-up window's length, learned from corrections
+ * (closing.ts); it only matters when a reply opens or refreshes the window.
+ */
+export function decideNext(
+  outcome: RoundOutcome,
+  now: number,
+  window: ConvWindow,
+  windowMs: number = FOLLOWUP_WINDOW_MS,
+): ConvDecision {
   switch (outcome) {
     case 'reply-delivered':
       // Always open/refresh — a window that lapsed during a long think is
       // revived by the reply; mid-exchange the deadline is dormant.
-      return { next: 'listen-again', window: now + FOLLOWUP_WINDOW_MS };
+      return { next: 'listen-again', window: now + windowMs };
     case 'empty-listen':
       // Silence re-listens but never extends the deadline.
       if (window !== null && now < window) return { next: 'listen-again', window };

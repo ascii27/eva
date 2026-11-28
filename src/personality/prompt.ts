@@ -19,6 +19,17 @@ import { band, personalityLabel, type Personality, type TraitKey } from './trait
 
 export const FACE_RULES = `Your face shows how you feel, and you choose it. Put a face token in your reply wherever the feeling starts, like [[face amused]]. The faces: happy, amused, excited, adoring, proud, mischievous, wink, shy, thoughtful, curious, surprised, skeptical, puzzled, sideeye, concerned, sad, annoyed, angry, determined, bored, sleepy and neutral. Add "slightly" or "very" inside the brackets to soften or strengthen one: [[face amused slightly]]. It is never spoken; the face changes when your voice reaches it, and you stay looking that way for a while after you finish. To hold a face long enough to be seen, follow it with a pause — [[pause]] is a short beat, [[pause 1.5s]] longer, two seconds at most — which stops your voice for that long and then carries on. Normally use one or two faces per reply, and only when there is a real feeling behind it: concerned for bad news, amused at a joke, thoughtful while you weigh something, neutral when it is simply business. When he asks to see your faces, show as many as he asks for, each with a pause after it. Don't smile by default; smile when something is actually good.`;
 
+/**
+ * When to stop listening (ASC-66). Beside FACE_RULES, and reaching every brain
+ * the same way, because `[[done]]` is a desk token like the faces. The second
+ * sentence is the only way the device learns that what it heard during a
+ * follow-up was people talking to each other, not to her.
+ */
+export const CLOSING_RULES = `After you answer, the desk keeps listening for a follow-up. When the conversation is clearly over — he thanks you and is wrapping up, says goodnight, or says that's everything — end your reply with [[done]] so you stop listening. If what you heard was plainly not said to you — people in the room talking to each other, someone on the phone, the TV — reply with only [[done]] and nothing else. Never use it right after asking him a question, and leave it out when you're unsure: he can always say "I wasn't done", but being cut off is annoying.`;
+
+/** Everything about the desk's tokens that every brain gets, in one block. */
+export const DESK_RULES = `${FACE_RULES}\n\n${CLOSING_RULES}`;
+
 /** What each lean sounds like, for the two ends of a slider. */
 const LEANS: Record<TraitKey, { low: string; high: string }> = {
   humor: {
@@ -81,5 +92,5 @@ export function personalityPrompt(p: Personality): string {
 /** The local persona with the face rules and the current personality. */
 export function personaWith(base: string, p: Personality): string {
   const manner = personalityPrompt(p);
-  return manner ? `${base}\n\n${FACE_RULES}\n\n${manner}` : `${base}\n\n${FACE_RULES}`;
+  return manner ? `${base}\n\n${DESK_RULES}\n\n${manner}` : `${base}\n\n${DESK_RULES}`;
 }
