@@ -302,8 +302,8 @@ function Mouth({ mode, eyeColor, frozen, voicing, k, cx, height, expression }: M
     return () => clearInterval(id);
   }, [speaking]);
 
-  const smiling = isSmiling(mode, frozen, expression);
   const key = pickViseme(mode, tick * VISEME_FRAME_MS, frozen, voicing, live, expression);
+  const smiling = isSmiling(mode, frozen, expression, key);
   const shape = smiling ? SMILE : VIS[key];
 
   const path = useMemo(

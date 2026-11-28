@@ -160,7 +160,9 @@ export function FaceScreen() {
   // request time. And what the face is wearing over its mode — picked by Eva
   // in her replies with `[[face …]]`, otherwise the personality's resting face.
   const personality = usePersonality();
-  const face = useExpression(mode, personality.personality.traits);
+  const face = useExpression(mode, personality.personality.traits, (e) =>
+    log(`face · ${e.name}${e.intensity ? ` ${Math.round(e.intensity * 100)}%` : ''}`),
+  );
 
   const log = useCallback((text: string) => {
     setEntries((prev) => [...prev.slice(-19), { time: hhmm(), text }]);

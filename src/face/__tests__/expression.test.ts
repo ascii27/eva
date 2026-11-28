@@ -121,9 +121,18 @@ describe('the mouth', () => {
     expect(isSmiling('pleased', null)).toBe(true);
   });
 
-  it('never replaces the speaking mouth or a frozen viseme', () => {
+  it('while talking, smiles only where the mouth would be shut', () => {
+    const happy = { name: 'happy' as const, intensity: 0.8 };
+    expect(isSmiling('speaking', null, happy, 'sil')).toBe(true);
+    expect(isSmiling('speaking', null, happy, 'AA')).toBe(false);
+    expect(isSmiling('speaking', null, { name: 'happy', intensity: 0.3 }, 'sil')).toBe(false);
+    expect(isSmiling('speaking', null, { name: 'concerned', intensity: 1 }, 'sil')).toBe(false);
+    expect(isSmiling('speaking', null, NEUTRAL, 'sil')).toBe(false);
+  });
+
+  it('never replaces a speaking viseme or a frozen one', () => {
     const happy = { name: 'happy' as const, intensity: 1 };
-    expect(isSmiling('speaking', null, happy)).toBe(false);
+    expect(isSmiling('speaking', null, happy, 'EE')).toBe(false);
     expect(isSmiling('resting', 'AA', happy)).toBe(false);
     expect(pickViseme('speaking', 0, null, true, 'EE', { name: 'surprised', intensity: 1 })).toBe('EE');
   });

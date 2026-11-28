@@ -110,14 +110,27 @@ function wearsMouth(mode: FaceMode, e: ExpressionState): boolean {
 }
 
 /**
- * Whether the smile arc replaces the viseme shape. The 'pleased' mode always
+ * Whether the smile arc replaces the viseme shape. `key` is the viseme the
+ * mouth would otherwise show, which matters only while speaking. The 'pleased' mode always
  * smiles (the overlay can still pick it); otherwise only an expression that is
  * actually a smile does. There is no longer a smile by default (ASC-59).
  */
-export function isSmiling(mode: FaceMode, frozen: VisemeKey | null, expression?: ExpressionState): boolean {
+export function isSmiling(
+  mode: FaceMode,
+  frozen: VisemeKey | null,
+  expression?: ExpressionState,
+  key?: VisemeKey,
+): boolean {
   if (frozen) return false;
   if (mode === 'pleased') return true;
-  return !!expression && wearsMouth(mode, expression) && (expression.name === 'happy' || expression.name === 'amused');
+  if (!expression || expression.intensity < EXPRESSION_MOUTH_AT) return false;
+  if (expression.name !== 'happy' && expression.name !== 'amused') return false;
+  // Talking, the lip sync owns the mouth — except where it would be shut: the
+  // gaps between words and the pauses inside a reply. There a smiling Eva
+  // smiles, which is what makes the expression readable while she speaks;
+  // the eyes alone, under speaking's pulse, were too subtle to notice.
+  if (mode === 'speaking') return key === 'sil';
+  return wearsMouth(mode, expression);
 }
 
 /** Black cut-out strip along the top edge (teeth). */

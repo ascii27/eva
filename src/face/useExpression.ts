@@ -6,13 +6,16 @@ import type { Traits } from '../personality/traits';
 import { EXPRESSION_HOLD_MS, restingExpression, wear, type ExpressionState, type FaceToken } from './expression';
 import type { FaceMode } from './types';
 
-export function useExpression(mode: FaceMode, traits: Traits) {
+/** `onPick` hears every expression Eva picks, for the transcript. */
+export function useExpression(mode: FaceMode, traits: Traits, onPick?: (e: ExpressionState) => void) {
   const [expression, setExpression] = useState<ExpressionState>(() => restingExpression(traits));
   // Whether the current expression was picked by Eva, rather than being the
   // personality's resting face. Only a picked one expires.
   const [picked, setPicked] = useState(false);
   const traitsRef = useRef(traits);
   traitsRef.current = traits;
+  const onPickRef = useRef(onPick);
+  onPickRef.current = onPick;
 
   const rest = useCallback(() => {
     setPicked(false);
@@ -21,8 +24,10 @@ export function useExpression(mode: FaceMode, traits: Traits) {
 
   /** Eva asked for a face, in a reply or a message. */
   const express = useCallback((token: FaceToken) => {
+    const worn = wear(token, traitsRef.current);
     setPicked(true);
-    setExpression(wear(token, traitsRef.current));
+    setExpression(worn);
+    onPickRef.current?.(worn);
   }, []);
 
   // A new personality changes the resting face straight away — unless she is
