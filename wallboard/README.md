@@ -46,6 +46,12 @@ microphone, shows a level meter and tries speech recognition. Every step is
 logged on the VM: `ssh eva-board.exe.xyz journalctl -u wallboard | grep mictest`.
 Verdicts (`web/mictest.js`): works, granted-silent (check the Echo's mic-off
 button), blocked-silk, blocked-device.
+Result on the Echo Show 15 (Silk 138, 2026-11-28): **blocked by the Echo
+Show**. Silk offers the prompt and Allow was tapped, but the request came back
+`NotAllowedError: Permission dismissed` and every later one was denied without a
+prompt; speech recognition gave `not-allowed`. Fire OS doesn't grant Silk the
+microphone, so the board can't hear the kitchen — that has to come from another
+device.
 
 ## Why hermes pushes and the board never pulls
 
